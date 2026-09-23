@@ -1,4 +1,4 @@
-// Shared Socket.IO event-name constants. Mirrored verbatim in public/events.js
+// Shared Socket.IO event-name constants. Mirrored verbatim in frontend/events.js
 // (no bundler here, so the two copies must be kept in sync by hand).
 const EVENTS = {
   // client -> server

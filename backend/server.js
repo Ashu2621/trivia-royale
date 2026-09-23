@@ -13,7 +13,7 @@ const app = express();
 app.get('/api/meta', (req, res) => {
   res.json({ categories: getCategoryList(), avatars: rooms.AVATARS });
 });
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 const server = http.createServer(app);
 const io = new Server(server);
