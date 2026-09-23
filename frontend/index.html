@@ -6,6 +6,7 @@
 <title>Trivia Royale — Live Multiplayer Trivia</title>
 <meta name="description" content="Play live trivia with friends anywhere — join with a room code, no login, no app install. Steal points, freeze opponents, and race to the top of the Hall of Fame." />
 <meta name="theme-color" content="#14162b" />
+<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Trivia Royale — Live Multiplayer Trivia" />
@@ -32,6 +33,7 @@
     <div class="brand"><span class="brand-bolt">⚡</span> Trivia Royale</div>
     <div class="topbar-actions">
       <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
+      <button id="themeBtn" class="icon-btn" type="button" aria-label="Change theme">🎨</button>
       <button id="hallOfFameBtn" class="link-btn" type="button">🏆 Hall of Fame</button>
       <button id="howToPlayBtn" class="link-btn" type="button">How to Play</button>
     </div>
@@ -202,10 +204,35 @@
     <div class="modal-box">
       <h3>🏆 Hall of Fame</h3>
       <p class="hint">The highest scores ever recorded, across every room ever played.</p>
+
+      <div class="leaderboard-filters">
+        <div class="filter-pills" id="periodPills">
+          <button type="button" class="filter-pill active" data-period="all">All Time</button>
+          <button type="button" class="filter-pill" data-period="year">This Year</button>
+          <button type="button" class="filter-pill" data-period="month">This Month</button>
+          <button type="button" class="filter-pill" data-period="week">This Week</button>
+        </div>
+        <select id="lbCategorySelect" class="select">
+          <option value="">All Categories</option>
+        </select>
+        <select id="lbSubjectSelect" class="select hidden">
+          <option value="">All Subjects</option>
+        </select>
+      </div>
+
       <div id="hallOfFameList" class="hall-of-fame-list"></div>
-      <p id="hallOfFameEmpty" class="hint hidden">No games finished yet — be the first on the board!</p>
+      <p id="hallOfFameEmpty" class="hint hidden">No games match these filters yet.</p>
       <p id="hallOfFameUnavailable" class="hint hidden">The Hall of Fame isn't set up on this server yet.</p>
       <button id="closeHallOfFame" class="btn btn-secondary" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- THEME PICKER -->
+  <div id="themeModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>🎨 Choose a Theme</h3>
+      <div id="themeSwatchGrid" class="theme-swatch-grid"></div>
+      <button id="closeThemeModal" class="btn btn-secondary" type="button">Close</button>
     </div>
   </div>
 

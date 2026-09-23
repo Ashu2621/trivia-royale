@@ -24,6 +24,72 @@
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* ---- Themes (5) — override the tokens above; component CSS never changes ---- */
+html[data-theme="ocean"] {
+  --bg: #071a2b;
+  --bg-card: #0e2c44;
+  --glass: rgba(14, 44, 68, 0.55);
+  --glass-border: rgba(120, 210, 255, 0.14);
+  --primary: #22b8cf;
+  --primary-light: #5ee7ec;
+  --primary-dark: #0d7e8c;
+  --accent: #ffd166;
+  --accent-dark: #cc9f38;
+}
+html[data-theme="sunset"] {
+  --bg: #200f14;
+  --bg-card: #351722;
+  --glass: rgba(53, 23, 34, 0.55);
+  --glass-border: rgba(255, 160, 130, 0.14);
+  --primary: #ff6b6b;
+  --primary-light: #ff9b8a;
+  --primary-dark: #c2483f;
+  --accent: #ffb84d;
+  --accent-dark: #cc8f2e;
+}
+html[data-theme="forest"] {
+  --bg: #0c1a13;
+  --bg-card: #143324;
+  --glass: rgba(20, 51, 36, 0.55);
+  --glass-border: rgba(120, 255, 180, 0.14);
+  --primary: #2dd881;
+  --primary-light: #6cf0ac;
+  --primary-dark: #189457;
+  --accent: #ffd166;
+  --accent-dark: #cc9f38;
+}
+html[data-theme="light"] {
+  --bg: #f2f3fb;
+  --bg-card: #ffffff;
+  --glass: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(20, 22, 43, 0.10);
+  --text: #14162b;
+  --muted: #565b78;
+  --primary: #7c5cff;
+  --primary-light: #9b7dff;
+  --primary-dark: #5636c9;
+  --accent: #e08a1e;
+  --accent-dark: #b06e17;
+}
+html[data-theme="light"] { --topbar-bg: rgba(255, 255, 255, 0.7); }
+html[data-theme="light"] .orb { opacity: 0.18; }
+html[data-theme="light"] .filter-pill { background: rgba(20,22,43,0.06); color: var(--muted); }
+html[data-theme="light"] .toast { color: #fff; }
+html[data-theme="light"] .btn-secondary,
+html[data-theme="light"] .avatar-option,
+html[data-theme="light"] .player-row,
+html[data-theme="light"] .field input,
+html[data-theme="light"] .select,
+html[data-theme="light"] #subjectInput,
+html[data-theme="light"] #manualQText,
+html[data-theme="light"] .manual-option-row input[type="text"],
+html[data-theme="light"] .custom-panel,
+html[data-theme="light"] .pool-question-row,
+html[data-theme="light"] .steal-opponents button,
+html[data-theme="light"] .hof-row {
+  box-shadow: 0 2px 8px rgba(20, 22, 43, 0.08);
+}
+
 * { box-sizing: border-box; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -104,7 +170,7 @@ h1, h2, h3, .brand, .btn, .room-code, .q-timer, .power-badge {
   justify-content: space-between;
   padding: 14px 18px;
   border-bottom: 1px solid var(--glass-border);
-  background: rgba(16, 14, 38, 0.65);
+  background: var(--topbar-bg, rgba(16, 14, 38, 0.65));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   position: sticky;
@@ -547,6 +613,40 @@ h1, h2, h3, .brand, .btn, .room-code, .q-timer, .power-badge {
 .modal-box h3 { margin-top: 0; font-family: var(--font-display); font-size: 1.3rem; }
 .rules-list { padding-left: 18px; display: flex; flex-direction: column; gap: 10px; color: var(--text); }
 .rules-list code { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 6px; }
+
+.theme-swatch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+.theme-swatch {
+  border-radius: 14px;
+  border: 2px solid var(--glass-border);
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+.theme-swatch:active { transform: scale(0.96); }
+.theme-swatch.active { border-color: var(--primary-light); box-shadow: 0 0 0 3px rgba(124,92,255,0.25); }
+.theme-swatch-preview { display: flex; gap: 6px; height: 28px; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.theme-swatch-preview span { flex: 1; }
+.theme-swatch-name { font-weight: 700; font-size: 0.9rem; }
+
+.leaderboard-filters { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: rgba(0,0,0,0.15);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.filter-pill:active { transform: scale(0.94); }
+.filter-pill.active { background: var(--primary); color: white; }
+.leaderboard-filters .select { padding: 10px 12px; font-size: 0.85rem; }
 
 .hall-of-fame-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; max-height: 50vh; overflow-y: auto; }
 .hof-row {

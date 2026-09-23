@@ -4,9 +4,12 @@ let enabled = false;
 
 const gameResultSchema = new mongoose.Schema({
   roomCode: String,
-  category: String,
+  category: { type: String, index: true },
   categoryLabel: String,
-  playedAt: { type: Date, default: Date.now },
+  levelKey: { type: String, index: true, default: null },
+  levelLabel: { type: String, default: null },
+  subject: { type: String, index: true, default: null },
+  playedAt: { type: Date, default: Date.now, index: true },
   players: [{ name: String, avatar: String, score: Number, isBot: Boolean }],
   topScore: { type: Number, index: true },
   topPlayerName: String,
@@ -34,7 +37,7 @@ function isEnabled() {
   return enabled;
 }
 
-async function saveGameResult({ roomCode, category, categoryLabel, players }) {
+async function saveGameResult({ roomCode, category, categoryLabel, levelKey, levelLabel, subject, players }) {
   if (!enabled) return;
   const top = players.slice().sort((a, b) => b.score - a.score)[0];
   if (!top || top.score <= 0) return;
@@ -43,6 +46,9 @@ async function saveGameResult({ roomCode, category, categoryLabel, players }) {
       roomCode,
       category,
       categoryLabel,
+      levelKey: levelKey || null,
+      levelLabel: levelLabel || null,
+      subject: subject || null,
       players: players.map((p) => ({ name: p.name, avatar: p.avatar, score: p.score, isBot: !!p.isBot })),
       topScore: top.score,
       topPlayerName: top.name,
@@ -53,15 +59,32 @@ async function saveGameResult({ roomCode, category, categoryLabel, players }) {
   }
 }
 
-async function getTopScores(limit = 20) {
+function periodSince(period) {
+  const now = new Date();
+  if (period === 'week') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
+  if (period === 'year') return new Date(now.getFullYear(), 0, 1);
+  return null;
+}
+
+async function getTopScores({ limit = 20, period = 'all', category = null, subject = null } = {}) {
   if (!enabled) return [];
   try {
-    const docs = await GameResult.find().sort({ topScore: -1 }).limit(limit).lean();
+    const query = {};
+    if (category) query.category = category;
+    if (subject) query.subject = subject;
+    const since = periodSince(period);
+    if (since) query.playedAt = { $gte: since };
+
+    const docs = await GameResult.find(query).sort({ topScore: -1 }).limit(limit).lean();
     return docs.map((d) => ({
       name: d.topPlayerName,
       avatar: d.topPlayerAvatar,
       score: d.topScore,
       category: d.categoryLabel,
+      categoryKey: d.category,
+      subject: d.subject,
+      levelLabel: d.levelLabel,
       playedAt: d.playedAt,
     }));
   } catch (err) {
@@ -70,4 +93,15 @@ async function getTopScores(limit = 20) {
   }
 }
 
-module.exports = { connect, isEnabled, saveGameResult, getTopScores };
+async function getSubjectsForCategory(category) {
+  if (!enabled || !category) return [];
+  try {
+    const subjects = await GameResult.distinct('subject', { category, subject: { $ne: null } });
+    return subjects.sort();
+  } catch (err) {
+    console.error('Failed to fetch leaderboard subjects:', err.message);
+    return [];
+  }
+}
+
+module.exports = { connect, isEnabled, saveGameResult, getTopScores, getSubjectsForCategory };

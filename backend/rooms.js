@@ -84,6 +84,7 @@ function newRoom(code, hostPlayer, categoryKey) {
     timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
     allDisconnectedSince: null,
     customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
+    activeQuestions: [], // the actual per-game order — shuffled static bank, or a copy of customQuestions
     levelKey: null, // last level used for AI generation in this room, for display/reuse
     subject: null, // last subject used for AI generation in this room, for display/reuse
   };

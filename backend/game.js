@@ -1,5 +1,6 @@
 const EVENTS = require('./events');
 const { getQuestions, getCategoryLabel, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
+const { getLevelLabel } = require('./levels');
 const { calculateScore } = require('./scoring');
 const { serializePlayers, countConnected, clearRoomTimers } = require('./rooms');
 const db = require('./db');
@@ -25,8 +26,17 @@ function leaderboard(room) {
   return serializePlayers(room);
 }
 
+function shuffled(list) {
+  const copy = list.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 function getActiveQuestions(room) {
-  return room.category === 'custom' ? room.customQuestions : getQuestions(room.category);
+  return room.activeQuestions;
 }
 
 function emitToRoom(io, room, event, payload) {
@@ -38,6 +48,9 @@ function startGame(io, room) {
   for (const p of room.players.values()) p.score = 0;
   room.questionIndex = -1;
   room.frozenPlayerId = null;
+  // Freshly shuffled per room so the same category never plays in the same
+  // order twice in a row — a room replayed with Play Again reshuffles again too.
+  room.activeQuestions = room.category === 'custom' ? room.customQuestions.slice() : shuffled(getQuestions(room.category));
   goToNextQuestionOrFinish(io, room);
 }
 
@@ -290,6 +303,9 @@ function finalizeGame(io, room) {
     roomCode: room.code,
     category: room.category,
     categoryLabel: getCategoryLabel(room.category),
+    levelKey: room.category === 'custom' ? room.levelKey : null,
+    levelLabel: room.category === 'custom' && room.levelKey ? getLevelLabel(room.levelKey) : null,
+    subject: room.category === 'custom' ? room.subject : null,
     players: board,
   });
 }

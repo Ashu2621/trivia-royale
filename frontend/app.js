@@ -79,6 +79,14 @@
     hallOfFameEmpty: el('hallOfFameEmpty'),
     hallOfFameUnavailable: el('hallOfFameUnavailable'),
     closeHallOfFame: el('closeHallOfFame'),
+    periodPills: el('periodPills'),
+    lbCategorySelect: el('lbCategorySelect'),
+    lbSubjectSelect: el('lbSubjectSelect'),
+
+    themeBtn: el('themeBtn'),
+    themeModal: el('themeModal'),
+    themeSwatchGrid: el('themeSwatchGrid'),
+    closeThemeModal: el('closeThemeModal'),
   };
 
   let mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
@@ -97,6 +105,48 @@
   let iAmFrozenThisQuestion = false;
   let currentPool = []; // [{text}] — this room's live custom/study question pool
   const MIN_QUESTIONS_TO_START = 4;
+  let lbPeriod = 'all';
+  let lbCategory = '';
+  let lbSubject = '';
+
+  // ---- Themes ----
+  const THEME_KEY = 'triviaRoyaleTheme';
+  const THEMES = [
+    { key: 'midnight', label: 'Midnight', colors: ['#100e26', '#7c5cff', '#ffb84d'] },
+    { key: 'ocean', label: 'Ocean', colors: ['#071a2b', '#22b8cf', '#ffd166'] },
+    { key: 'sunset', label: 'Sunset', colors: ['#200f14', '#ff6b6b', '#ffb84d'] },
+    { key: 'forest', label: 'Forest', colors: ['#0c1a13', '#2dd881', '#ffd166'] },
+    { key: 'light', label: 'Daylight', colors: ['#f2f3fb', '#7c5cff', '#e08a1e'] },
+  ];
+
+  function applyTheme(key) {
+    if (key === 'midnight') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', key);
+    try { localStorage.setItem(THEME_KEY, key); } catch (e) { /* private mode etc — theme just won't persist */ }
+    renderThemeSwatches();
+  }
+
+  function currentTheme() {
+    try { return localStorage.getItem(THEME_KEY) || 'midnight'; } catch (e) { return 'midnight'; }
+  }
+
+  function renderThemeSwatches() {
+    const active = currentTheme();
+    refs.themeSwatchGrid.innerHTML = '';
+    THEMES.forEach((t) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'theme-swatch' + (t.key === active ? ' active' : '');
+      btn.innerHTML =
+        `<div class="theme-swatch-preview">${t.colors.map((c) => `<span style="background:${c}"></span>`).join('')}</div>` +
+        `<div class="theme-swatch-name">${t.label}</div>`;
+      btn.onclick = () => {
+        SoundFX.click();
+        applyTheme(t.key);
+      };
+      refs.themeSwatchGrid.appendChild(btn);
+    });
+  }
 
   // sessionStorage (not localStorage): reconnect-on-refresh should be per-tab,
   // not shared across every tab someone happens to have this game open in.
@@ -834,10 +884,58 @@
 
   refs.hallOfFameBtn.addEventListener('click', () => {
     SoundFX.click();
+    populateLeaderboardCategorySelect();
     refs.hallOfFameModal.classList.remove('hidden');
     loadHallOfFame();
   });
   refs.closeHallOfFame.addEventListener('click', () => refs.hallOfFameModal.classList.add('hidden'));
+
+  function populateLeaderboardCategorySelect() {
+    if (refs.lbCategorySelect.options.length > 1) return; // already populated
+    CATEGORIES.forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c.key;
+      opt.textContent = `${c.emoji} ${c.label}`;
+      refs.lbCategorySelect.appendChild(opt);
+    });
+  }
+
+  refs.periodPills.addEventListener('click', (e) => {
+    const btn = e.target.closest('.filter-pill');
+    if (!btn) return;
+    SoundFX.click();
+    lbPeriod = btn.dataset.period;
+    [...refs.periodPills.children].forEach((p) => p.classList.toggle('active', p === btn));
+    loadHallOfFame();
+  });
+
+  refs.lbCategorySelect.addEventListener('change', () => {
+    lbCategory = refs.lbCategorySelect.value;
+    lbSubject = '';
+    refs.lbSubjectSelect.classList.add('hidden');
+    refs.lbSubjectSelect.innerHTML = '<option value="">All Subjects</option>';
+    if (lbCategory === 'custom') {
+      fetch(`/api/leaderboard/subjects?category=custom`)
+        .then((r) => r.json())
+        .then(({ subjects }) => {
+          if (!subjects || !subjects.length) return;
+          subjects.forEach((s) => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            refs.lbSubjectSelect.appendChild(opt);
+          });
+          refs.lbSubjectSelect.classList.remove('hidden');
+        })
+        .catch(() => {});
+    }
+    loadHallOfFame();
+  });
+
+  refs.lbSubjectSelect.addEventListener('change', () => {
+    lbSubject = refs.lbSubjectSelect.value;
+    loadHallOfFame();
+  });
 
   function formatRelativeDate(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
@@ -854,7 +952,10 @@
     refs.hallOfFameList.innerHTML = '';
     refs.hallOfFameEmpty.classList.add('hidden');
     refs.hallOfFameUnavailable.classList.add('hidden');
-    fetch('/api/leaderboard')
+    const params = new URLSearchParams({ period: lbPeriod });
+    if (lbCategory) params.set('category', lbCategory);
+    if (lbSubject) params.set('subject', lbSubject);
+    fetch(`/api/leaderboard?${params.toString()}`)
       .then((r) => r.json())
       .then(({ enabled, scores }) => {
         if (!enabled) {
@@ -868,11 +969,12 @@
         scores.forEach((s, i) => {
           const row = document.createElement('div');
           row.className = 'hof-row';
+          const metaBits = [s.subject || s.category || '', formatRelativeDate(s.playedAt)].filter(Boolean);
           row.innerHTML =
             `<div class="hof-rank">${i + 1}</div>` +
             `<div class="hof-avatar">${escapeHtml(s.avatar || '')}</div>` +
             `<div class="hof-info"><div class="hof-name">${escapeHtml(s.name)}</div>` +
-            `<div class="hof-meta">${escapeHtml(s.category || '')} · ${formatRelativeDate(s.playedAt)}</div></div>` +
+            `<div class="hof-meta">${escapeHtml(metaBits.join(' · '))}</div></div>` +
             `<div class="hof-score">${s.score}</div>`;
           refs.hallOfFameList.appendChild(row);
         });
@@ -888,8 +990,16 @@
     if (!nowMuted) SoundFX.click();
   });
 
+  refs.themeBtn.addEventListener('click', () => {
+    SoundFX.click();
+    renderThemeSwatches();
+    refs.themeModal.classList.remove('hidden');
+  });
+  refs.closeThemeModal.addEventListener('click', () => refs.themeModal.classList.add('hidden'));
+
   // ---- Boot ----
   refs.muteBtn.textContent = SoundFX.isMuted() ? '🔇' : '🔊';
+  renderThemeSwatches();
 
   const existing = loadSession();
   if (existing && existing.name) refs.nameInput.value = existing.name;

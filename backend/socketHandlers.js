@@ -2,6 +2,7 @@ const EVENTS = require('./events');
 const rooms = require('./rooms');
 const game = require('./game');
 const ai = require('./ai');
+const questionHistory = require('./questionHistory');
 const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
 
@@ -11,6 +12,7 @@ const MIN_QUESTIONS_TO_START = 4;
 const socketMeta = new Map();
 
 function activeQuestionCount(room) {
+  if (room.activeQuestions && room.activeQuestions.length) return room.activeQuestions.length;
   return room.category === 'custom' ? room.customQuestions.length : getQuestions(room.category).length;
 }
 
@@ -161,8 +163,10 @@ function register(io, socket) {
 
     io.to(room.code).emit(EVENTS.QUESTIONS_GENERATING, { level: levelLabel, subject: cleanSubject });
     try {
-      const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count });
+      const avoid = questionHistory.getRecent(levelKey, cleanSubject);
+      const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count, avoid });
       const added = rooms.addCustomQuestions(room, generated);
+      questionHistory.recordUsed(levelKey, cleanSubject, generated.map((q) => q.text));
       io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
       if (added < generated.length) {
         sendError(socket, 'POOL_FULL', `Only added ${added} — the room hit its ${rooms.MAX_CUSTOM_QUESTIONS}-question cap.`);

@@ -29,8 +29,8 @@ const QUESTION_SCHEMA = {
   required: ['questions'],
 };
 
-function buildPrompt(levelLabel, subject, count) {
-  return (
+function buildPrompt(levelLabel, subject, count, avoid) {
+  let prompt =
     `You are an expert exam-question setter. Write ${count} brand-new multiple-choice questions ` +
     `for the "${levelLabel}" level, on the subject/topic: "${subject}".\n\n` +
     `Rules:\n` +
@@ -39,16 +39,23 @@ function buildPrompt(levelLabel, subject, count) {
     `- Each question has exactly 4 answer options, in plain text, with exactly one correct answer.\n` +
     `- Keep each question and each option concise (under ~25 words).\n` +
     `- Vary the topics within the subject so the set feels like a well-rounded quiz, not repetitive.\n` +
-    `- correctIndex is the 0-based index (0, 1, 2, or 3) of the correct option in the choices array.`
-  );
+    `- correctIndex is the 0-based index (0, 1, 2, or 3) of the correct option in the choices array.`;
+
+  if (avoid && avoid.length) {
+    prompt +=
+      `\n\nThis exact level/subject combination was quizzed before in another room. To keep it fresh, ` +
+      `do NOT reuse or closely resemble any of these already-used questions:\n` +
+      avoid.map((t) => `- ${t}`).join('\n');
+  }
+  return prompt;
 }
 
-async function generateQuestions({ levelLabel, subject, count }) {
+async function generateQuestions({ levelLabel, subject, count, avoid }) {
   if (!isEnabled()) {
     throw new Error('AI question generation is not configured on this server.');
   }
   const safeCount = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Number(count) || 10));
-  const prompt = buildPrompt(levelLabel, subject, safeCount);
+  const prompt = buildPrompt(levelLabel, subject, safeCount, avoid);
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {

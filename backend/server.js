@@ -21,9 +21,19 @@ app.get('/api/meta', (req, res) => {
     aiEnabled: ai.isEnabled(),
   });
 });
+const VALID_PERIODS = new Set(['all', 'week', 'month', 'year']);
+
 app.get('/api/leaderboard', async (req, res) => {
-  const scores = await db.getTopScores(20);
+  const period = VALID_PERIODS.has(req.query.period) ? req.query.period : 'all';
+  const category = typeof req.query.category === 'string' && req.query.category ? req.query.category : null;
+  const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
+  const scores = await db.getTopScores({ limit: 20, period, category, subject });
   res.json({ enabled: db.isEnabled(), scores });
+});
+app.get('/api/leaderboard/subjects', async (req, res) => {
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+  const subjects = await db.getSubjectsForCategory(category);
+  res.json({ subjects });
 });
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
