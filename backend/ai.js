@@ -12,6 +12,34 @@ const MIN_COUNT = 4;
 const REQUEST_TIMEOUT_MS = 45000;
 
 let workingModel = null;
+let discovered = null;
+let lastDetail = '';
+
+// Ask Google which models this key can actually call, newest flash-class first.
+async function discoverModels() {
+  if (discovered) return discovered;
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY },
+    });
+    if (!res.ok) {
+      lastDetail = `ListModels ${res.status}`;
+      return [];
+    }
+    const data = await res.json();
+    const names = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => String(m.name).replace(/^models\//, ''))
+      .filter((n) => /flash/i.test(n) && !/image|tts|live|audio|thinking|preview-\d|exp/i.test(n));
+    const version = (n) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+    names.sort((a, b) => version(b) - version(a) || a.length - b.length);
+    discovered = names;
+    return names;
+  } catch (e) {
+    lastDetail = `ListModels failed: ${e.message}`;
+    return [];
+  }
+}
 
 function isEnabled() {
   return !!process.env.GEMINI_API_KEY;
@@ -112,7 +140,12 @@ async function generateQuestions({ levelLabel, subject, count, avoid }) {
   const prompt = buildPrompt(levelLabel, subject, safeCount, avoid);
 
   let lastError = null;
-  for (const model of modelCandidates()) {
+  const tried = new Set();
+  let candidates = modelCandidates();
+  for (let round = 0; round < 2; round++) {
+  for (const model of candidates) {
+    if (tried.has(model)) continue;
+    tried.add(model);
     for (let attempt = 0; attempt < 2; attempt++) {
       let res;
       try {
@@ -124,7 +157,10 @@ async function generateQuestions({ levelLabel, subject, count, avoid }) {
 
       if (res.status === 404) {
         // This model name has been retired — move on to the next candidate.
-        lastError = new Error('No available Gemini model responded — the server may need GEMINI_MODEL updated.');
+        const body404 = await res.text().catch(() => '');
+        lastDetail = `${model}: ${body404.replace(/\s+/g, ' ').slice(0, 160)}`;
+        console.error('Gemini 404 for', lastDetail);
+        lastError = new Error(`No Gemini model responded (${lastDetail})`);
         break;
       }
       if (res.status === 429 || res.status === 503) {
@@ -185,6 +221,12 @@ async function generateQuestions({ levelLabel, subject, count, avoid }) {
       workingModel = model;
       return valid;
     }
+  }
+  if (round === 0) {
+    const found = await discoverModels();
+    if (!found.length) break;
+    candidates = found.slice(0, 4);
+  }
   }
   throw lastError || new Error('AI question generation failed — try again.');
 }
