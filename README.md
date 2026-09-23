@@ -14,7 +14,7 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 6. If the host disconnects, the next connected player automatically becomes host — the game never gets stuck.
 7. After the last question, highest score wins, with confetti for the win. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
-9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), type a subject/topic, and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
+9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
 ## Running locally
 

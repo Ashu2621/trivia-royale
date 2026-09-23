@@ -28,7 +28,8 @@
     customPanel: el('customPanel'),
     customHostControls: el('customHostControls'),
     levelSelect: el('levelSelect'),
-    subjectInput: el('subjectInput'),
+    studyCategorySelect: el('studyCategorySelect'),
+    studySubcategorySelect: el('studySubcategorySelect'),
     generateBtn: el('generateBtn'),
     generatingStatus: el('generatingStatus'),
     aiDisabledHint: el('aiDisabledHint'),
@@ -165,7 +166,39 @@
       opt.textContent = l.label;
       groupEl.appendChild(opt);
     });
+    renderStudyCategorySelect();
   }
+
+  function currentLevelData() {
+    return LEVELS.find((l) => l.key === refs.levelSelect.value) || LEVELS[0];
+  }
+
+  function renderStudyCategorySelect() {
+    const level = currentLevelData();
+    refs.studyCategorySelect.innerHTML = '';
+    (level ? level.categories : []).forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c.label;
+      opt.textContent = c.label;
+      refs.studyCategorySelect.appendChild(opt);
+    });
+    renderStudySubcategorySelect();
+  }
+
+  function renderStudySubcategorySelect() {
+    const level = currentLevelData();
+    const category = level && level.categories.find((c) => c.label === refs.studyCategorySelect.value);
+    refs.studySubcategorySelect.innerHTML = '';
+    (category ? category.subcategories : ['General (mixed topics)']).forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      refs.studySubcategorySelect.appendChild(opt);
+    });
+  }
+
+  refs.levelSelect.addEventListener('change', renderStudyCategorySelect);
+  refs.studyCategorySelect.addEventListener('change', renderStudySubcategorySelect);
 
   function renderAvatarPicker() {
     refs.avatarPicker.innerHTML = '';
@@ -739,8 +772,10 @@
 
   refs.generateBtn.addEventListener('click', () => {
     SoundFX.click();
-    const subject = refs.subjectInput.value.trim();
-    if (!subject) return showToast('Enter a subject or topic first.');
+    const category = refs.studyCategorySelect.value;
+    const subcategory = refs.studySubcategorySelect.value;
+    if (!category) return showToast('Pick a category first.');
+    const subject = !subcategory || subcategory === 'General (mixed topics)' ? category : `${category}: ${subcategory}`;
     socket.emit(EVENTS.QUESTIONS_GENERATE, { levelKey: refs.levelSelect.value, subject, count: 10 });
   });
 
