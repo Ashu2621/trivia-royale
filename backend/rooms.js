@@ -11,6 +11,9 @@ const DEFAULT_AVATAR = AVATARS[0];
 const BOT_AVATAR = '🤖';
 const BOT_NAMES = ['Ada', 'Turing', 'Byte', 'Nova', 'Cipher', 'Echo', 'Volt', 'Pixel', 'Newton', 'Ranger'];
 const MAX_PLAYERS = 10;
+const MAX_CUSTOM_QUESTIONS = 40;
+const MAX_QUESTION_LENGTH = 300;
+const MAX_OPTION_LENGTH = 120;
 
 const rooms = new Map(); // roomCode -> Room
 
@@ -80,6 +83,9 @@ function newRoom(code, hostPlayer, categoryKey) {
     frozenPlayerId: null, // set by a Freeze Round choice, consumed by the next question
     timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
     allDisconnectedSince: null,
+    customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
+    levelKey: null, // last level used for AI generation in this room, for display/reuse
+    subject: null, // last subject used for AI generation in this room, for display/reuse
   };
 }
 
@@ -150,6 +156,48 @@ function removeBot(room, playerId) {
   if (!bot || !bot.isBot) return { error: { code: 'NOT_A_BOT', message: 'That player is not a computer player.' } };
   room.players.delete(playerId);
   return { removed: true };
+}
+
+function sanitizeQuestionText(s) {
+  return String(s || '').trim().slice(0, MAX_QUESTION_LENGTH);
+}
+function sanitizeOptionText(s) {
+  return String(s || '').trim().slice(0, MAX_OPTION_LENGTH);
+}
+
+function addCustomQuestion(room, { text, choices, correctIndex }) {
+  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only edit questions in the lobby.' } };
+  if (room.category !== 'custom') return { error: { code: 'WRONG_MODE', message: 'Switch the room category to Custom / Study Mode first.' } };
+  const cleanText = sanitizeQuestionText(text);
+  if (!cleanText) return { error: { code: 'INVALID_QUESTION', message: 'Question text is required.' } };
+  const cleanChoices = Array.isArray(choices) ? choices.map(sanitizeOptionText) : [];
+  if (cleanChoices.length !== 4 || cleanChoices.some((c) => !c)) {
+    return { error: { code: 'INVALID_QUESTION', message: 'Exactly 4 non-empty options are required.' } };
+  }
+  if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) {
+    return { error: { code: 'INVALID_QUESTION', message: 'Pick which option is correct.' } };
+  }
+  if (room.customQuestions.length >= MAX_CUSTOM_QUESTIONS) {
+    return { error: { code: 'POOL_FULL', message: `Rooms cap out at ${MAX_CUSTOM_QUESTIONS} questions.` } };
+  }
+  room.customQuestions.push({ text: cleanText, choices: cleanChoices, correctIndex });
+  return { ok: true };
+}
+
+function addCustomQuestions(room, list) {
+  const space = Math.max(0, MAX_CUSTOM_QUESTIONS - room.customQuestions.length);
+  const accepted = (list || []).slice(0, space);
+  room.customQuestions.push(...accepted);
+  return accepted.length;
+}
+
+function removeCustomQuestion(room, index) {
+  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only edit questions in the lobby.' } };
+  if (!Number.isInteger(index) || index < 0 || index >= room.customQuestions.length) {
+    return { error: { code: 'INVALID_INDEX', message: 'That question no longer exists.' } };
+  }
+  room.customQuestions.splice(index, 1);
+  return { ok: true };
 }
 
 function serializePlayers(room) {
@@ -235,6 +283,10 @@ module.exports = {
   joinRoom,
   addBot,
   removeBot,
+  addCustomQuestion,
+  addCustomQuestions,
+  removeCustomQuestion,
+  MAX_CUSTOM_QUESTIONS,
   serializePlayers,
   countConnected,
   markDisconnected,

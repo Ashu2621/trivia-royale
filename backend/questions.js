@@ -74,6 +74,11 @@ const CATEGORIES = {
       { text: 'How many rings are on the Olympic flag?', choices: ['4', '5', '6', '7'], correctIndex: 1 },
     ],
   },
+  custom: {
+    label: 'Custom / Study Mode',
+    emoji: '📝',
+    questions: [], // unused directly — the live pool lives on room.customQuestions
+  },
 };
 
 const DEFAULT_CATEGORY = 'general';

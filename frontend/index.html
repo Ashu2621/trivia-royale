@@ -86,6 +86,39 @@
 
       <div class="player-list" id="lobbyPlayers"></div>
 
+      <!-- CUSTOM / STUDY MODE QUESTION SETUP (host-only controls; everyone sees the pool) -->
+      <div id="customPanel" class="custom-panel hidden">
+        <h3>📝 Question Setup</h3>
+
+        <div id="customHostControls" class="hidden">
+          <div class="ai-gen-box">
+            <label class="field"><span>Level</span><select id="levelSelect" class="select"></select></label>
+            <label class="field"><span>Subject / topic</span><input id="subjectInput" type="text" placeholder="e.g. Photosynthesis, Modern History, Thermodynamics" maxlength="80" /></label>
+            <button id="generateBtn" class="btn btn-primary" type="button">🤖 Generate 10 Questions with AI</button>
+            <p id="generatingStatus" class="hint hidden"></p>
+            <p id="aiDisabledHint" class="hint hidden">AI generation isn't set up on this server — add questions manually below instead.</p>
+          </div>
+
+          <div class="or-divider">or add your own</div>
+
+          <div class="manual-add-box">
+            <input id="manualQText" type="text" placeholder="Question text" maxlength="300" />
+            <div class="manual-options">
+              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="0" id="manualCorrect0" checked /><input id="manualOpt0" type="text" placeholder="Option A" maxlength="120" /></div>
+              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="1" id="manualCorrect1" /><input id="manualOpt1" type="text" placeholder="Option B" maxlength="120" /></div>
+              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="2" id="manualCorrect2" /><input id="manualOpt2" type="text" placeholder="Option C" maxlength="120" /></div>
+              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="3" id="manualCorrect3" /><input id="manualOpt3" type="text" placeholder="Option D" maxlength="120" /></div>
+            </div>
+            <p class="hint" style="margin:2px 0 8px">Select the radio next to the correct option.</p>
+            <button id="addQuestionBtn" class="btn btn-secondary" type="button">Add Question</button>
+          </div>
+        </div>
+
+        <p class="eyebrow" id="questionPoolCount">0 questions ready</p>
+        <div id="questionPoolList" class="question-pool-list"></div>
+        <p id="needMoreQuestionsMsg" class="hint hidden">Host needs to add at least 4 questions before starting.</p>
+      </div>
+
       <button id="addBotBtn" class="btn btn-secondary hidden" type="button">🤖 Add Computer Player</button>
       <p id="soloHint" class="hint hidden">Playing solo? Add a computer player to practice against.</p>
 
@@ -157,6 +190,7 @@
         <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
         <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent, locking them out of the very next question.</li>
         <li>After the last question, whoever has the most points wins. Hit <strong>Play Again</strong> to replay with the same room and code.</li>
+        <li>📝 <strong>Custom / Study Mode</strong> — pick this category to build your own quiz: type a topic and let AI generate exam-style questions for any grade level or competitive exam, or add your own questions by hand.</li>
       </ul>
       <button id="closeHowToPlay" class="btn btn-secondary" type="button">Got it</button>
     </div>

@@ -6,13 +6,20 @@ const { Server } = require('socket.io');
 const rooms = require('./rooms');
 const socketHandlers = require('./socketHandlers');
 const db = require('./db');
+const ai = require('./ai');
 const { getCategoryList } = require('./questions');
+const { getLevelList } = require('./levels');
 
 const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.get('/api/meta', (req, res) => {
-  res.json({ categories: getCategoryList(), avatars: rooms.AVATARS });
+  res.json({
+    categories: getCategoryList(),
+    avatars: rooms.AVATARS,
+    levels: getLevelList(),
+    aiEnabled: ai.isEnabled(),
+  });
 });
 app.get('/api/leaderboard', async (req, res) => {
   const scores = await db.getTopScores(20);

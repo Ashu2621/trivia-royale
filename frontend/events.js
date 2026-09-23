@@ -11,6 +11,9 @@ const EVENTS = {
   GAME_PLAY_AGAIN: 'game:play_again',
   BOT_ADD: 'bot:add',
   BOT_REMOVE: 'bot:remove',
+  QUESTIONS_GENERATE: 'questions:generate',
+  QUESTION_ADD: 'question:add',
+  QUESTION_REMOVE: 'question:remove',
 
   // server -> client
   ROOM_JOINED: 'room:joined',
@@ -27,4 +30,6 @@ const EVENTS = {
   FREEZE_RESULT: 'freeze:result',
   GAME_FINAL: 'game:final',
   GAME_RESET_TO_LOBBY: 'game:reset_to_lobby',
+  QUESTIONS_GENERATING: 'questions:generating',
+  QUESTION_POOL_UPDATE: 'question:pool_update',
 };

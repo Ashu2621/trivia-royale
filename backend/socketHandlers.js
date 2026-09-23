@@ -1,21 +1,33 @@
 const EVENTS = require('./events');
 const rooms = require('./rooms');
 const game = require('./game');
+const ai = require('./ai');
 const { getQuestions, getCategoryList } = require('./questions');
+const { getLevelList, getLevelLabel } = require('./levels');
+
+const MIN_QUESTIONS_TO_START = 4;
 
 // socket.id -> { roomCode, playerId }, so a disconnect knows which room/player it belonged to
 const socketMeta = new Map();
 
+function activeQuestionCount(room) {
+  return room.category === 'custom' ? room.customQuestions.length : getQuestions(room.category).length;
+}
+
+function poolSummary(room) {
+  return { questions: room.customQuestions.map((q) => ({ text: q.text })), count: room.customQuestions.length };
+}
+
 function buildRoomState(room) {
-  const totalQuestions = getQuestions(room.category).length;
   const state = {
     state: room.state,
     players: rooms.serializePlayers(room),
     category: room.category,
     questionIndex: room.questionIndex,
-    totalQuestions,
+    totalQuestions: activeQuestionCount(room),
     question: null,
     final: null,
+    customPool: room.category === 'custom' ? poolSummary(room) : null,
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -85,6 +97,9 @@ function register(io, socket) {
     if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can start the game.');
     if (room.state !== 'lobby') return;
     if (rooms.countConnected(room) < 2) return sendError(socket, 'NOT_ENOUGH_PLAYERS', 'Need at least 2 players to start.');
+    if (room.category === 'custom' && room.customQuestions.length < MIN_QUESTIONS_TO_START) {
+      return sendError(socket, 'NOT_ENOUGH_QUESTIONS', `Add at least ${MIN_QUESTIONS_TO_START} questions before starting.`);
+    }
     game.startGame(io, room);
   });
 
@@ -130,6 +145,54 @@ function register(io, socket) {
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
   });
 
+  socket.on(EVENTS.QUESTIONS_GENERATE, async ({ levelKey, subject, count } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can generate questions.');
+    if (room.state !== 'lobby') return;
+    if (room.category !== 'custom') return sendError(socket, 'WRONG_MODE', 'Switch the room category to Custom / Study Mode first.');
+    if (!ai.isEnabled()) return sendError(socket, 'AI_DISABLED', 'AI question generation is not set up on this server.');
+    const cleanSubject = String(subject || '').trim().slice(0, 80);
+    if (!cleanSubject) return sendError(socket, 'INVALID_SUBJECT', 'Enter a subject or topic first.');
+    const levelLabel = getLevelLabel(levelKey);
+    room.levelKey = levelKey;
+    room.subject = cleanSubject;
+
+    io.to(room.code).emit(EVENTS.QUESTIONS_GENERATING, { level: levelLabel, subject: cleanSubject });
+    try {
+      const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count });
+      const added = rooms.addCustomQuestions(room, generated);
+      io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
+      if (added < generated.length) {
+        sendError(socket, 'POOL_FULL', `Only added ${added} — the room hit its ${rooms.MAX_CUSTOM_QUESTIONS}-question cap.`);
+      }
+    } catch (err) {
+      sendError(socket, 'AI_ERROR', err.message || 'Failed to generate questions.');
+      io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
+    }
+  });
+
+  socket.on(EVENTS.QUESTION_ADD, ({ text, choices, correctIndex } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can add questions.');
+    const result = rooms.addCustomQuestion(room, { text, choices, correctIndex });
+    if (result.error) return sendError(socket, result.error.code, result.error.message);
+    io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
+  });
+
+  socket.on(EVENTS.QUESTION_REMOVE, ({ index } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can remove questions.');
+    const result = rooms.removeCustomQuestion(room, index);
+    if (result.error) return sendError(socket, result.error.code, result.error.message);
+    io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
+  });
+
   socket.on(EVENTS.GAME_PLAY_AGAIN, () => {
     const ctx = getContext(socket);
     if (!ctx) return;
@@ -160,4 +223,4 @@ function register(io, socket) {
   });
 }
 
-module.exports = { register, getCategoryList };
+module.exports = { register, getCategoryList, getLevelList };

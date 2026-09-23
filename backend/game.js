@@ -25,6 +25,10 @@ function leaderboard(room) {
   return serializePlayers(room);
 }
 
+function getActiveQuestions(room) {
+  return room.category === 'custom' ? room.customQuestions : getQuestions(room.category);
+}
+
 function emitToRoom(io, room, event, payload) {
   io.to(room.code).emit(event, payload);
 }
@@ -39,7 +43,7 @@ function startGame(io, room) {
 
 function beginQuestion(io, room) {
   clearRoomTimers(room);
-  const questions = getQuestions(room.category);
+  const questions = getActiveQuestions(room);
   const q = questions[room.questionIndex];
   const powerRoundType = getPowerRoundType(room.questionIndex);
   const questionStartedAt = Date.now();
@@ -105,7 +109,7 @@ function scheduleBotAnswers(io, room) {
 
 function goToNextQuestionOrFinish(io, room) {
   const nextIndex = room.questionIndex + 1;
-  const questions = getQuestions(room.category);
+  const questions = getActiveQuestions(room);
   if (nextIndex >= questions.length) {
     finalizeGame(io, room);
     return;

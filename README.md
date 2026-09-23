@@ -14,6 +14,7 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 6. If the host disconnects, the next connected player automatically becomes host — the game never gets stuck.
 7. After the last question, highest score wins, with confetti for the win. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
+9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), type a subject/topic, and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
 ## Running locally
 
@@ -43,6 +44,18 @@ Finished games are saved to MongoDB for the all-time leaderboard. This is option
 
 Without `MONGODB_URI` set, the server logs a note and the Hall of Fame button just shows "not set up yet" — nothing else is affected.
 
+## Setting up AI question generation (Google Gemini — free tier)
+
+Custom / Study Mode's "Generate with AI" button uses Google Gemini to write original, exam-style questions for a given grade/exam level and subject. This is optional — hosts can always add questions by hand instead.
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey) and sign in with any Google account.
+2. Click **Create API key** — it's free, no credit card, and takes one click (no separate signup form).
+3. Set it as an environment variable named `GEMINI_API_KEY`:
+   - Locally: `GEMINI_API_KEY="..." npm start`
+   - On Render: in your Web Service's **Environment** tab, add `GEMINI_API_KEY` with that value, then redeploy.
+
+Without `GEMINI_API_KEY` set, the "Generate with AI" button is hidden and the lobby shows a hint to add questions manually instead — the rest of the game is unaffected. The AI is explicitly instructed to write brand-new questions matching a level's real difficulty and style, never to reproduce specific real past questions from anywhere.
+
 ## Deploying it live (Render — free, no credit card)
 
 This repo includes a `render.yaml` Blueprint, so Render can configure everything itself — you only fill in one field.
@@ -50,7 +63,7 @@ This repo includes a `render.yaml` Blueprint, so Render can configure everything
 1. Push this project to a GitHub repo (public or private both work).
 2. Go to [render.com](https://render.com) and sign up (you can use your GitHub account to sign in — no credit card needed for the free tier).
 3. Click **New +** → **Blueprint**, and connect the GitHub repo you just pushed. Render reads `render.yaml` and pre-fills the service (Node, `npm install`, `npm start`, free plan) automatically.
-4. It'll ask for the one env var the blueprint left blank: `MONGODB_URI`. Paste your MongoDB Atlas connection string (see above) if you set one up, or leave it empty — the game still works, just without the Hall of Fame.
+4. It'll ask for the env vars the blueprint left blank: `MONGODB_URI` and `GEMINI_API_KEY`. Paste in whichever you've set up (see above) — leave either blank and that one feature just stays off, everything else still works.
 5. Click **Apply**. Render builds and deploys — takes 1-2 minutes.
 6. Once it says "Live", your public URL is shown at the top (something like `https://trivia-royale.onrender.com`). That's the link to share with players — and the one to put in the contest submission.
 
@@ -62,5 +75,5 @@ This repo includes a `render.yaml` Blueprint, so Render can configure everything
 
 - **Title**: `Trivia Royale` (or your own spin on it).
 - **Cover image**: a 1200×630 card is included as a design Artifact from this build — open it, and use its export/screenshot to save a PNG.
-- **Description**: *"Trivia Royale is a live multiplayer trivia game — join with a 4-letter room code from any phone, no login, no app install. Every 3rd question is a power round: steal points from a rival or freeze them out of the next question. Play solo against a computer opponent, or with a group anywhere; every win gets saved to an all-time Hall of Fame."*
+- **Description**: *"Trivia Royale is a live multiplayer trivia game — join with a 4-letter room code from any phone, no login, no app install. Every 3rd question is a power round: steal points from a rival or freeze them out of the next question. Play solo against a computer opponent, or with a group anywhere; every win gets saved to an all-time Hall of Fame. Switch to Study Mode to turn any room into an AI-generated exam-prep quiz for any grade level (Class 1 through PhD) or competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT) — or add your own questions by hand."*
 - **Link**: your live Render URL from above.

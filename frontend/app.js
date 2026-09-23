@@ -25,6 +25,23 @@
     lobbyWaitingMsg: el('lobbyWaitingMsg'),
     lobbyNeedMoreMsg: el('lobbyNeedMoreMsg'),
 
+    customPanel: el('customPanel'),
+    customHostControls: el('customHostControls'),
+    levelSelect: el('levelSelect'),
+    subjectInput: el('subjectInput'),
+    generateBtn: el('generateBtn'),
+    generatingStatus: el('generatingStatus'),
+    aiDisabledHint: el('aiDisabledHint'),
+    manualQText: el('manualQText'),
+    manualOpt0: el('manualOpt0'),
+    manualOpt1: el('manualOpt1'),
+    manualOpt2: el('manualOpt2'),
+    manualOpt3: el('manualOpt3'),
+    addQuestionBtn: el('addQuestionBtn'),
+    questionPoolCount: el('questionPoolCount'),
+    questionPoolList: el('questionPoolList'),
+    needMoreQuestionsMsg: el('needMoreQuestionsMsg'),
+
     powerBadge: el('powerBadge'),
     qProgress: el('qProgress'),
     qTimer: el('qTimer'),
@@ -77,6 +94,8 @@
   let powerResultTimer = null;
   let pendingActiveType = null; // 'steal' | 'freeze' — which prompt is currently open
   let iAmFrozenThisQuestion = false;
+  let currentPool = []; // [{text}] — this room's live custom/study question pool
+  const MIN_QUESTIONS_TO_START = 4;
 
   // sessionStorage (not localStorage): reconnect-on-refresh should be per-tab,
   // not shared across every tab someone happens to have this game open in.
@@ -124,9 +143,29 @@
     if (navigator.vibrate) navigator.vibrate(pattern);
   }
 
-  // ---- Meta (avatars + categories) ----
+  // ---- Meta (avatars + categories + study levels) ----
   let AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
   let CATEGORIES = [{ key: 'general', label: 'General Knowledge', emoji: '🌍' }];
+  let LEVELS = [];
+  let AI_ENABLED = false;
+
+  function renderLevelSelect() {
+    refs.levelSelect.innerHTML = '';
+    let lastGroup = null;
+    let groupEl = refs.levelSelect;
+    LEVELS.forEach((l) => {
+      if (l.group !== lastGroup) {
+        groupEl = document.createElement('optgroup');
+        groupEl.label = l.group;
+        refs.levelSelect.appendChild(groupEl);
+        lastGroup = l.group;
+      }
+      const opt = document.createElement('option');
+      opt.value = l.key;
+      opt.textContent = l.label;
+      groupEl.appendChild(opt);
+    });
+  }
 
   function renderAvatarPicker() {
     refs.avatarPicker.innerHTML = '';
@@ -164,11 +203,17 @@
     .then((meta) => {
       if (Array.isArray(meta.avatars) && meta.avatars.length) AVATARS = meta.avatars;
       if (Array.isArray(meta.categories) && meta.categories.length) CATEGORIES = meta.categories;
+      if (Array.isArray(meta.levels) && meta.levels.length) LEVELS = meta.levels;
+      AI_ENABLED = !!meta.aiEnabled;
       const saved = loadSession();
       selectedAvatar = (saved && saved.avatar) || AVATARS[Math.floor(Math.random() * AVATARS.length)];
       renderAvatarPicker();
       renderCategorySelect();
-      if (activeView === 'lobby') renderLobbyControls();
+      renderLevelSelect();
+      if (activeView === 'lobby') {
+        renderLobbyControls();
+        renderCustomPanel();
+      }
     })
     .catch(() => {
       selectedAvatar = AVATARS[0];
@@ -233,10 +278,11 @@
   function renderLobbyControls() {
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     const connectedCount = players.filter((p) => p.connected).length;
+    const needsMoreQuestions = currentCategory === 'custom' && currentPool.length < MIN_QUESTIONS_TO_START;
     if (amHost()) {
       refs.addBotBtn.classList.remove('hidden');
       refs.startBtn.classList.remove('hidden');
-      refs.startBtn.disabled = connectedCount < 2;
+      refs.startBtn.disabled = connectedCount < 2 || needsMoreQuestions;
       refs.lobbyWaitingMsg.classList.add('hidden');
       refs.lobbyNeedMoreMsg.classList.toggle('hidden', connectedCount >= 2);
       refs.soloHint.classList.toggle('hidden', players.length >= 2);
@@ -247,6 +293,44 @@
       refs.lobbyWaitingMsg.classList.remove('hidden');
       refs.lobbyNeedMoreMsg.classList.add('hidden');
     }
+  }
+
+  function renderCustomPanel() {
+    const isCustom = currentCategory === 'custom';
+    refs.customPanel.classList.toggle('hidden', !isCustom);
+    if (!isCustom) return;
+    refs.customHostControls.classList.toggle('hidden', !amHost());
+    refs.generateBtn.classList.toggle('hidden', !AI_ENABLED);
+    refs.aiDisabledHint.classList.toggle('hidden', AI_ENABLED);
+    refs.questionPoolCount.textContent = `${currentPool.length} question${currentPool.length === 1 ? '' : 's'} ready`;
+    refs.needMoreQuestionsMsg.classList.toggle('hidden', currentPool.length >= MIN_QUESTIONS_TO_START);
+
+    refs.questionPoolList.innerHTML = '';
+    currentPool.forEach((q, i) => {
+      const row = document.createElement('div');
+      row.className = 'pool-question-row';
+      const idx = document.createElement('span');
+      idx.className = 'pool-q-index';
+      idx.textContent = `${i + 1}.`;
+      const text = document.createElement('span');
+      text.className = 'pool-q-text';
+      text.textContent = q.text;
+      row.appendChild(idx);
+      row.appendChild(text);
+      if (amHost()) {
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'pool-q-remove';
+        removeBtn.setAttribute('aria-label', 'Remove question');
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = () => {
+          SoundFX.click();
+          socket.emit(EVENTS.QUESTION_REMOVE, { index: i });
+        };
+        row.appendChild(removeBtn);
+      }
+      refs.questionPoolList.appendChild(row);
+    });
   }
 
   function renderLobbyQr(roomCode) {
@@ -364,12 +448,14 @@
   function applyRoomState(roomState) {
     players = roomState.players;
     currentCategory = roomState.category;
+    currentPool = roomState.customPool ? roomState.customPool.questions : [];
     if (roomState.state === 'lobby') {
       showView('lobby');
       refs.lobbyCategory.textContent = categoryLabel(roomState.category);
       renderLobbyQr(mySession.roomCode);
       renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
+      renderCustomPanel();
     } else if (roomState.state === 'question' && roomState.question) {
       currentQuestion = {
         ...roomState.question,
@@ -397,6 +483,7 @@
       renderLobbyQr(mySession.roomCode);
       renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
+      renderCustomPanel();
     }
   }
 
@@ -436,9 +523,24 @@
     if (activeView === 'lobby') {
       renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
+      renderCustomPanel();
     } else if (activeView === 'final') {
       renderFinal({ leaderboard: players, podium: players.slice(0, 3) });
     }
+  });
+
+  socket.on(EVENTS.QUESTIONS_GENERATING, ({ level, subject }) => {
+    refs.generateBtn.disabled = true;
+    refs.generatingStatus.textContent = `🤖 Generating questions on "${subject}" for ${level}…`;
+    refs.generatingStatus.classList.remove('hidden');
+  });
+
+  socket.on(EVENTS.QUESTION_POOL_UPDATE, ({ questions, count }) => {
+    currentPool = questions || [];
+    refs.generateBtn.disabled = false;
+    refs.generatingStatus.classList.add('hidden');
+    renderCustomPanel();
+    renderLobbyControls();
   });
 
   socket.on(EVENTS.QUESTION_START, (payload) => {
@@ -600,6 +702,7 @@
     renderLobbyQr(mySession.roomCode);
     renderPlayerRows(refs.lobbyPlayers, players, false, true);
     renderLobbyControls();
+    renderCustomPanel();
   });
 
   // ---- UI wiring ----
@@ -632,6 +735,31 @@
   refs.addBotBtn.addEventListener('click', () => {
     SoundFX.click();
     socket.emit(EVENTS.BOT_ADD);
+  });
+
+  refs.generateBtn.addEventListener('click', () => {
+    SoundFX.click();
+    const subject = refs.subjectInput.value.trim();
+    if (!subject) return showToast('Enter a subject or topic first.');
+    socket.emit(EVENTS.QUESTIONS_GENERATE, { levelKey: refs.levelSelect.value, subject, count: 10 });
+  });
+
+  refs.addQuestionBtn.addEventListener('click', () => {
+    SoundFX.click();
+    const text = refs.manualQText.value.trim();
+    const choices = [refs.manualOpt0.value.trim(), refs.manualOpt1.value.trim(), refs.manualOpt2.value.trim(), refs.manualOpt3.value.trim()];
+    if (!text) return showToast('Enter the question text.');
+    if (choices.some((c) => !c)) return showToast('Fill in all 4 options.');
+    const correctRadio = document.querySelector('input[name="manualCorrect"]:checked');
+    const correctIndex = correctRadio ? Number(correctRadio.value) : 0;
+    socket.emit(EVENTS.QUESTION_ADD, { text, choices, correctIndex });
+    refs.manualQText.value = '';
+    refs.manualOpt0.value = '';
+    refs.manualOpt1.value = '';
+    refs.manualOpt2.value = '';
+    refs.manualOpt3.value = '';
+    document.getElementById('manualCorrect0').checked = true;
+    refs.manualQText.focus();
   });
 
   refs.copyCodeBtn.addEventListener('click', async () => {
