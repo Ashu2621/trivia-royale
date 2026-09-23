@@ -158,13 +158,16 @@ function register(io, socket) {
     const cleanSubject = String(subject || '').trim().slice(0, 80);
     if (!cleanSubject) return sendError(socket, 'INVALID_SUBJECT', 'Enter a subject or topic first.');
     const levelLabel = getLevelLabel(levelKey);
-    room.levelKey = levelKey;
-    room.subject = cleanSubject;
 
     io.to(room.code).emit(EVENTS.QUESTIONS_GENERATING, { level: levelLabel, subject: cleanSubject });
     try {
       const avoid = questionHistory.getRecent(levelKey, cleanSubject);
       const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count, avoid });
+      // Only commit the room's level/subject once generation actually succeeds —
+      // otherwise a failed regenerate attempt would mislabel the existing pool
+      // (from an earlier, successful subject) with the new, unused one.
+      room.levelKey = levelKey;
+      room.subject = cleanSubject;
       const added = rooms.addCustomQuestions(room, generated);
       questionHistory.recordUsed(levelKey, cleanSubject, generated.map((q) => q.text));
       io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));

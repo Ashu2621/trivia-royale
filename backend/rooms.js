@@ -4,6 +4,7 @@ const { resolveCategory } = require('./questions');
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O, avoids look-alike confusion
 const CODE_LENGTH = 4;
 const IDLE_ROOM_TTL_MS = 10 * 60 * 1000; // 10 minutes with everyone disconnected -> reap
+const NAME_RECONNECT_GRACE_MS = 2 * 60 * 1000; // window for a lost-playerId reconnect to claim a seat by name
 const MAX_NAME_LENGTH = 20;
 
 const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
@@ -106,10 +107,22 @@ function getRoom(code) {
 
 function findExistingPlayerByIdentity(room, playerId, name) {
   if (playerId && room.players.has(playerId)) return room.players.get(playerId);
-  // Fallback: same name, currently disconnected (covers a client that lost its localStorage playerId)
+  // Fallback: same name, currently disconnected, and disconnected recently enough
+  // that this is almost certainly the same client reconnecting after losing its
+  // stored playerId (e.g. a refresh) — not a stranger claiming someone else's
+  // seat/score by guessing their name once they've been gone a while.
   const lowerName = name.toLowerCase();
+  const now = Date.now();
   for (const p of room.players.values()) {
-    if (!p.connected && p.name.toLowerCase() === lowerName) return p;
+    if (
+      !p.connected &&
+      !p.isBot &&
+      p.name.toLowerCase() === lowerName &&
+      p.disconnectedAt &&
+      now - p.disconnectedAt < NAME_RECONNECT_GRACE_MS
+    ) {
+      return p;
+    }
   }
   return null;
 }
@@ -213,13 +226,23 @@ function countConnected(room) {
   return n;
 }
 
+// Bots are always "connected" (they have no socket to drop), so counting them
+// here would mean a room with only a bot left in it never looks idle and the
+// cleanup sweep would never reap it — a permanent per-room memory leak on a
+// long-running server. Idle detection should only care about humans.
+function countConnectedHumans(room) {
+  let n = 0;
+  for (const p of room.players.values()) if (p.connected && !p.isBot) n += 1;
+  return n;
+}
+
 function markDisconnected(room, playerId) {
   const player = room.players.get(playerId);
   if (!player) return;
   player.connected = false;
   player.socketId = null;
   player.disconnectedAt = Date.now();
-  if (countConnected(room) === 0) room.allDisconnectedSince = Date.now();
+  if (countConnectedHumans(room) === 0) room.allDisconnectedSince = Date.now();
 }
 
 /**
