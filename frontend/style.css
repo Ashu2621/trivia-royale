@@ -17,12 +17,35 @@
 
 * { box-sizing: border-box; }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
 html, body {
   margin: 0;
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.view:not(.hidden) { animation: fadeSlideIn 0.28s ease both; }
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal:not(.hidden) .modal-box { animation: popIn 0.22s ease both; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 .topbar {
@@ -113,8 +136,21 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.12s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
-.avatar-option.selected { border-color: var(--primary); background: rgba(124,92,255,0.2); }
+.avatar-option:active { transform: scale(0.9); }
+.avatar-option.selected { border-color: var(--primary); background: rgba(124,92,255,0.2); transform: scale(1.06); }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, rgba(255,255,255,0.06) 50%, var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 12px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
 .btn {
   width: 100%;
@@ -125,11 +161,16 @@ html, body {
   border: none;
   cursor: pointer;
   margin-top: 10px;
+  transition: transform 0.12s ease, background-color 0.15s ease;
 }
+.btn:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary { background: var(--primary); color: white; }
-.btn-primary:active { background: var(--primary-dark); }
+.btn-primary:active:not(:disabled) { background: var(--primary-dark); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid rgba(255,255,255,0.2); }
+
+.icon-btn, .link-btn { transition: transform 0.12s ease; }
+.icon-btn:active, .link-btn:active { transform: scale(0.93); }
 
 .or-divider { text-align: center; color: var(--muted); margin: 14px 0; font-size: 0.85rem; }
 
@@ -138,6 +179,10 @@ html, body {
 .hint { color: var(--muted); font-size: 0.9rem; text-align: center; }
 .eyebrow { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; text-align: center; }
 
+.room-code-wrap {
+  position: relative;
+  margin: 8px 0 14px;
+}
 .room-code {
   font-size: 3rem;
   font-weight: 800;
@@ -146,8 +191,23 @@ html, body {
   background: var(--bg-card);
   border-radius: var(--radius);
   padding: 20px;
-  margin: 8px 0 14px;
 }
+.copy-code-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.copy-code-btn:active { transform: translateY(-50%) scale(0.92); }
+.copy-code-btn.copied { background: rgba(53,208,127,0.25); border-color: var(--good); color: var(--good); }
 
 .player-list {
   display: flex;
@@ -252,7 +312,9 @@ html, body {
   cursor: pointer;
   text-align: left;
   line-height: 1.25;
+  transition: transform 0.12s ease, opacity 0.25s ease, outline-color 0.2s ease;
 }
+.choice:active:not(:disabled) { transform: scale(0.96); }
 .choice-0 { background: var(--c0); }
 .choice-1 { background: var(--c1); }
 .choice-2 { background: var(--c2); color: #201400; }
@@ -364,6 +426,8 @@ html, body {
   z-index: 100;
   max-width: 90vw;
   text-align: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  animation: toastIn 0.25s ease both;
 }
 
 @media (min-width: 520px) {

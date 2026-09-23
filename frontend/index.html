@@ -44,7 +44,9 @@
 
       <div class="field">
         <span>Pick an avatar</span>
-        <div id="avatarPicker" class="avatar-picker"></div>
+        <div id="avatarPicker" class="avatar-picker">
+          <div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div>
+        </div>
       </div>
 
       <div class="home-actions">
@@ -65,7 +67,10 @@
     <!-- LOBBY -->
     <section id="view-lobby" class="view hidden">
       <p class="eyebrow">Room code</p>
-      <div class="room-code" id="lobbyCode">----</div>
+      <div class="room-code-wrap">
+        <div class="room-code" id="lobbyCode">----</div>
+        <button id="copyCodeBtn" class="copy-code-btn" type="button" aria-label="Copy room code">Copy</button>
+      </div>
       <p class="hint">Share this code, or have others scan the QR — anyone can join from their own phone or laptop, no app needed.</p>
 
       <div id="lobbyQr" class="qr-wrap"></div>

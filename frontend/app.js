@@ -15,6 +15,7 @@
     joinBtn: el('joinBtn'),
 
     lobbyCode: el('lobbyCode'),
+    copyCodeBtn: el('copyCodeBtn'),
     lobbyQr: el('lobbyQr'),
     lobbyCategory: el('lobbyCategory'),
     lobbyPlayers: el('lobbyPlayers'),
@@ -631,6 +632,30 @@
   refs.addBotBtn.addEventListener('click', () => {
     SoundFX.click();
     socket.emit(EVENTS.BOT_ADD);
+  });
+
+  refs.copyCodeBtn.addEventListener('click', async () => {
+    SoundFX.click();
+    const code = mySession.roomCode || '';
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch (e) {
+      // Clipboard API unavailable (older browser, insecure context) — fall back to a manual-select textarea.
+      const ta = document.createElement('textarea');
+      ta.value = code;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* nothing more we can do */ }
+      document.body.removeChild(ta);
+    }
+    refs.copyCodeBtn.textContent = 'Copied!';
+    refs.copyCodeBtn.classList.add('copied');
+    setTimeout(() => {
+      refs.copyCodeBtn.textContent = 'Copy';
+      refs.copyCodeBtn.classList.remove('copied');
+    }, 1600);
   });
   refs.startBtn.addEventListener('click', () => {
     SoundFX.click();
