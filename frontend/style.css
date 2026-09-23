@@ -1038,8 +1038,9 @@ html[data-theme="light"] .cd-ready { color: #fff; }
   .home-grid { grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
   .home-grid .panel { margin-bottom: 0; }
   .lobby-grid { grid-template-columns: 5fr 7fr; gap: 18px; align-items: start; }
-  .q-layout { grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
-  .q-side { display: block; position: sticky; top: 84px; }
+  .q-layout { grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
+  .q-side { display: block; }
+  .q-side .studio { margin-top: 0; margin-bottom: 14px; }
   .kill-feed { bottom: 22px; left: auto; right: 22px; transform: none; align-items: flex-end; }
   .mini-leaderboard { display: none !important; }
   .hero { margin-bottom: 26px; }

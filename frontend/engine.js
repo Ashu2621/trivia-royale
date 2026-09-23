@@ -26,6 +26,7 @@ const Engine = (function () {
     candy: ['#ff4d8d', '#ffb627', '#38d9a9', '#4dabf7', '#b26bff', '#ff7043'],
     battle: ['#ffb300', '#ff7a00', '#ffe066', '#d4dcc0', '#ff3d2e'],
     vice: ['#ff2e93', '#2ee6ff', '#ffd23f', '#b26bff', '#ff8a3d'],
+    hotseat: ['#f5c542', '#ffe08a', '#4c8dff', '#ffffff', '#ff9d2e'],
     midnight: ['#9b7dff', '#ffb84d', '#5cb2ff', '#57d68c', '#ff6b8b'],
     light: ['#7c5cff', '#ff8a3d', '#3aa0ff', '#35c46f', '#ff5c7c'],
   };
@@ -602,6 +603,91 @@ const Engine = (function () {
     };
   }
 
+  /* --- Hot Seat: a game-show studio --- */
+  function hotseatScene() {
+    const dust = Array.from({ length: Math.round(46 * quality) }, () => ({ x: rand(0, W), y: rand(0, H), vy: rand(-32, -10), r: rand(0.8, 2.2), ph: rand(0, TAU) }));
+    const beams = [
+      { x: 0.18, ph: 0, c: '90,150,255' },
+      { x: 0.5, ph: 2.1, c: '255,214,120' },
+      { x: 0.82, ph: 4.2, c: '90,150,255' },
+    ];
+
+    // faint hexagon lattice, rendered once
+    const lattice = document.createElement('canvas');
+    const sp = Math.min(dpr, 2);
+    lattice.width = Math.ceil(W * sp);
+    lattice.height = Math.ceil(H * sp);
+    const lc = lattice.getContext('2d');
+    lc.scale(sp, sp);
+    lc.strokeStyle = 'rgba(130,180,255,0.11)';
+    lc.lineWidth = 1;
+    const hr = 36;
+    const dx = Math.sqrt(3) * hr;
+    const dy = 1.5 * hr;
+    for (let row = -1; row * dy < H + hr; row++) {
+      for (let col = -1; col * dx < W + dx; col++) {
+        const cx = col * dx + (row % 2 ? dx / 2 : 0);
+        const cy = row * dy;
+        lc.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 6 + (i * Math.PI) / 3;
+          lc.lineTo(cx + Math.cos(a) * hr, cy + Math.sin(a) * hr);
+        }
+        lc.closePath();
+        lc.stroke();
+      }
+    }
+
+    return {
+      draw(t, dt) {
+        const g = bgCtx.createRadialGradient(W / 2, H * 0.32, 0, W / 2, H * 0.32, Math.hypot(W, H) * 0.7);
+        g.addColorStop(0, '#2258d6');
+        g.addColorStop(0.42, '#0c2678');
+        g.addColorStop(1, '#020728');
+        bgCtx.fillStyle = g;
+        bgCtx.fillRect(0, 0, W, H);
+        bgCtx.drawImage(lattice, px * 8, py * 6, W, H);
+
+        bgCtx.globalCompositeOperation = 'lighter';
+        for (const b of beams) {
+          const ox = W * b.x + px * 14;
+          const ang = Math.sin(t * 0.5 + b.ph) * 0.32;
+          const spread = 0.11;
+          const gr = bgCtx.createLinearGradient(ox, 0, ox + Math.tan(ang) * H, H);
+          gr.addColorStop(0, `rgba(${b.c},0.24)`);
+          gr.addColorStop(1, `rgba(${b.c},0)`);
+          bgCtx.fillStyle = gr;
+          bgCtx.beginPath();
+          bgCtx.moveTo(ox, -10);
+          bgCtx.lineTo(ox + Math.tan(ang - spread) * H, H);
+          bgCtx.lineTo(ox + Math.tan(ang + spread) * H, H);
+          bgCtx.closePath();
+          bgCtx.fill();
+        }
+        bgCtx.globalCompositeOperation = 'source-over';
+
+        // floor glow
+        const fg = bgCtx.createRadialGradient(W / 2, H * 1.02, 0, W / 2, H * 1.02, W * 0.7);
+        fg.addColorStop(0, 'rgba(255,200,90,0.32)');
+        fg.addColorStop(1, 'rgba(255,200,90,0)');
+        bgCtx.fillStyle = fg;
+        bgCtx.fillRect(0, H * 0.5, W, H * 0.5);
+
+        for (const d of dust) {
+          d.y += d.vy * dt;
+          if (d.y < -6) {
+            d.y = H + 6;
+            d.x = rand(0, W);
+          }
+          bgCtx.fillStyle = `rgba(255,224,138,${0.25 + 0.5 * Math.abs(Math.sin(t * 1.5 + d.ph))})`;
+          bgCtx.beginPath();
+          bgCtx.arc(d.x + Math.sin(t + d.ph) * 6, d.y, d.r, 0, TAU);
+          bgCtx.fill();
+        }
+      },
+    };
+  }
+
   /* --- Midnight & Daylight --- */
   function softScene(dark) {
     const blobs = Array.from({ length: 4 }, (_, i) => ({
@@ -643,6 +729,7 @@ const Engine = (function () {
     if (themeKey === 'candy') scene = candyScene();
     else if (themeKey === 'battle') scene = battleScene();
     else if (themeKey === 'vice') scene = viceScene();
+    else if (themeKey === 'hotseat') scene = hotseatScene();
     else scene = softScene(themeKey !== 'light');
   }
 

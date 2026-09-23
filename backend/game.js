@@ -2,7 +2,7 @@ const EVENTS = require('./events');
 const { getQuestions, getCategoryLabel, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
 const { getLevelLabel } = require('./levels');
 const { calculateScore } = require('./scoring');
-const { serializePlayers, countConnected, clearRoomTimers, LIFELINES_PER_GAME } = require('./rooms');
+const { serializePlayers, countConnected, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } = require('./rooms');
 const bots = require('./bots');
 const db = require('./db');
 
@@ -11,7 +11,7 @@ const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
 const POWER_RESULT_TO_NEXT_MS = 4000;
 const STEAL_POINTS = 150;
-const LIFELINE_SCORE_FACTOR = 0.6; // an answer made with a 50/50 booster earns 60% of the normal points
+const LIFELINE_SCORE_FACTOR = { fifty: 0.6, poll: 0.8 }; // points kept when an answer used a booster
 const STREAK_BONUS_STEP = 50; // each consecutive correct answer beyond the first adds this much...
 const STREAK_BONUS_CAP = 200; // ...up to this cap
 
@@ -46,6 +46,7 @@ function startGame(io, room) {
     p.score = 0;
     p.streak = 0;
     p.lifelines = LIFELINES_PER_GAME;
+    p.polls = POLLS_PER_GAME;
   }
   room.questionIndex = -1;
   room.frozenPlayerId = null;
@@ -79,7 +80,7 @@ function beginQuestion(io, room) {
 
   room.state = 'question';
   room.answers = new Map();
-  room.assisted = new Set();
+  room.assisted = new Map(); // playerId -> 'fifty' | 'poll'
   room.stealState = null;
   room.currentQuestion = {
     text: q.text,
@@ -155,27 +156,53 @@ function handleAnswerSubmit(io, room, playerId, choiceIndex) {
   room.answers.set(playerId, { choiceIndex, answeredAt: Date.now() });
   if (player.socketId) io.to(player.socketId).emit(EVENTS.ANSWER_ACK, { choiceIndex });
   // Tell everyone who has locked in (never which answer) so the room can feel the race.
-  emitToRoom(io, room, EVENTS.ANSWER_PROGRESS, { playerId, answered: room.answers.size, total: countConnected(room) });
+  emitToRoom(io, room, EVENTS.ANSWER_PROGRESS, {
+    playerId,
+    answered: room.answers.size,
+    total: countConnected(room),
+    elapsedMs: Math.max(0, Date.now() - room.currentQuestion.questionStartedAt),
+  });
 
   maybeEndQuestionEarly(io, room);
 }
 
-// 50/50 booster: remove two wrong answers for this player, at a points discount.
-function useLifeline(io, room, playerId) {
+// Audience poll: a fake-but-plausible studio audience vote. Usually leans toward the
+// right answer, but (like the real thing) is sometimes confidently wrong.
+function buildPoll(correctIndex) {
+  const misleading = Math.random() < 0.14;
+  const leader = misleading ? [0, 1, 2, 3].filter((i) => i !== correctIndex)[Math.floor(Math.random() * 3)] : correctIndex;
+  const leaderShare = misleading ? 38 + Math.random() * 14 : 48 + Math.random() * 34;
+  const weights = [0, 1, 2, 3].map((i) => (i === leader ? 0 : 0.2 + Math.random()));
+  const rest = weights.reduce((n, w) => n + w, 0);
+  const poll = weights.map((w, i) => (i === leader ? Math.round(leaderShare) : Math.floor(((100 - leaderShare) * w) / rest)));
+  poll[leader] += 100 - poll.reduce((n, v) => n + v, 0);
+  return poll;
+}
+
+// Boosters: 'fifty' removes two wrong answers, 'poll' shows the audience vote.
+// One booster per question, each at a points discount.
+function useLifeline(io, room, playerId, type) {
   if (room.state !== 'question' || !room.currentQuestion) return;
+  const kind = type === 'poll' ? 'poll' : 'fifty';
   const player = room.players.get(playerId);
   if (!player || !player.connected || player.isBot) return;
-  if (player.lifelines <= 0) return;
   if (room.answers.has(playerId)) return; // already answered or frozen
   if (room.assisted.has(playerId)) return; // once per question
+  if ((kind === 'poll' ? player.polls : player.lifelines) <= 0) return;
 
-  const wrong = [0, 1, 2, 3].filter((i) => i !== room.currentQuestion.correctIndex);
-  const removed = shuffled(wrong).slice(0, 2);
-  player.lifelines -= 1;
-  room.assisted.add(playerId);
-  if (player.socketId) {
-    io.to(player.socketId).emit(EVENTS.LIFELINE_RESULT, { removed, lifelines: player.lifelines });
+  const payload = { type: kind };
+  if (kind === 'poll') {
+    player.polls -= 1;
+    payload.poll = buildPoll(room.currentQuestion.correctIndex);
+  } else {
+    const wrong = [0, 1, 2, 3].filter((i) => i !== room.currentQuestion.correctIndex);
+    payload.removed = shuffled(wrong).slice(0, 2);
+    player.lifelines -= 1;
   }
+  room.assisted.set(playerId, kind);
+  payload.lifelines = player.lifelines;
+  payload.polls = player.polls;
+  if (player.socketId) io.to(player.socketId).emit(EVENTS.LIFELINE_RESULT, payload);
 }
 
 function maybeEndQuestionEarly(io, room) {
@@ -203,8 +230,9 @@ function endQuestion(io, room) {
       if (isCorrect) {
         let base = calculateScore(answer.answeredAt, questionStartedAt, QUESTION_DURATION_MS, true);
         if (room.assisted && room.assisted.has(playerId)) {
-          base = Math.round(base * LIFELINE_SCORE_FACTOR);
-          assisted[playerId] = true;
+          const kind = room.assisted.get(playerId);
+          base = Math.round(base * LIFELINE_SCORE_FACTOR[kind]);
+          assisted[playerId] = kind;
         }
         player.streak = (player.streak || 0) + 1;
         bonus = streakBonus(player.streak);
@@ -239,6 +267,8 @@ function endQuestion(io, room) {
     deltas,
     bonuses,
     assisted,
+    choices: Object.fromEntries([...room.answers.entries()].filter(([, a]) => a.choiceIndex >= 0).map(([id, a]) => [id, a.choiceIndex])),
+    times: Object.fromEntries([...room.answers.entries()].filter(([, a]) => a.choiceIndex >= 0).map(([id, a]) => [id, a.answeredAt - questionStartedAt])),
     streaks: Object.fromEntries([...room.players.entries()].map(([id, p]) => [id, p.streak || 0])),
     leaderboard: leaderboard(room),
     powerRoundType,
@@ -368,6 +398,7 @@ function resetToLobby(io, room) {
     p.score = 0;
     p.streak = 0;
     p.lifelines = 0;
+    p.polls = 0;
   }
   room.questionIndex = -1;
   room.answers = new Map();

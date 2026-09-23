@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Trivia Royale" />
 <meta name="format-detection" content="telephone=no" />
 <link rel="manifest" href="manifest.webmanifest" />
-<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(['candy','battle','vice','midnight','light'].indexOf(t)<0)t='candy';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','candy');}</script>
+<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(['candy','battle','vice','hotseat','midnight','light'].indexOf(t)<0)t='candy';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','candy');}</script>
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Trivia Royale — Live Multiplayer Trivia" />
@@ -28,6 +28,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Sora:wght@700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="studio.css" />
 </head>
 <body>
   <!-- Engine layers: scene behind the UI, particles in front (never blocks input) -->
@@ -201,15 +202,36 @@
           </div>
 
           <div class="choices" id="choicesGrid">
-            <button class="choice choice-0" data-i="0" type="button"><span class="choice-key">A</span><span class="choice-label"></span></button>
-            <button class="choice choice-1" data-i="1" type="button"><span class="choice-key">B</span><span class="choice-label"></span></button>
-            <button class="choice choice-2" data-i="2" type="button"><span class="choice-key">C</span><span class="choice-label"></span></button>
-            <button class="choice choice-3" data-i="3" type="button"><span class="choice-key">D</span><span class="choice-label"></span></button>
+            <button class="choice choice-0" data-i="0" type="button"><span class="choice-key">A</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
+            <button class="choice choice-1" data-i="1" type="button"><span class="choice-key">B</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
+            <button class="choice choice-2" data-i="2" type="button"><span class="choice-key">C</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
+            <button class="choice choice-3" data-i="3" type="button"><span class="choice-key">D</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
           </div>
 
           <div class="q-actions">
             <button id="lifelineBtn" class="lifeline-btn" type="button" aria-label="Use 50/50 booster">✂️ 50/50 <b id="lifelineCount">2</b></button>
+            <button id="pollBtn" class="lifeline-btn" type="button" aria-label="Ask the audience">📊 Audience Poll <b id="pollCount">1</b></button>
             <span class="kbd-hint">Tap an answer to lock it in · keys 1–4 / A–D on a keyboard</span>
+          </div>
+
+          <!-- Studio floor: four contestant desks + the fastest-finger lane + the live audience -->
+          <div id="studioMainSlot">
+          <div class="studio" id="studio">
+            <div class="stage" id="stage">
+              <div class="stage-lane-label">⚡ Fastest finger</div>
+              <div class="desk-row desk-tops" aria-hidden="true">
+                <div class="desk-top" data-i="0"></div><div class="desk-top" data-i="1"></div><div class="desk-top" data-i="2"></div><div class="desk-top" data-i="3"></div>
+              </div>
+              <div class="stage-avatars" id="stageAvatars"></div>
+              <div class="desk-row desk-fronts" aria-hidden="true">
+                <div class="desk" data-i="0"><span class="plate">A</span></div>
+                <div class="desk" data-i="1"><span class="plate">B</span></div>
+                <div class="desk" data-i="2"><span class="plate">C</span></div>
+                <div class="desk" data-i="3"><span class="plate">D</span></div>
+              </div>
+            </div>
+            <canvas id="audienceCanvas" class="audience" aria-hidden="true"></canvas>
+          </div>
           </div>
 
           <p id="answerLockedMsg" class="hint locked-msg hidden">🔒 Locked in! Waiting for the others…</p>
@@ -222,6 +244,7 @@
         </div>
 
         <aside class="q-side">
+          <div id="studioSideSlot"></div>
           <div class="panel">
             <div class="panel-title"><span>Live Ranking</span></div>
             <div id="liveBoard" class="live-board"></div>
@@ -265,7 +288,8 @@
         <li>Join with a room code (or scan the lobby QR) — no account needed. Playing alone? Hit <strong>Quick Play vs Bot</strong>, or add a 🤖 computer player of any level: 🍬 Rookie, ⚔️ Veteran, 🔥 Elite or 👑 Legend.</li>
         <li>Each question gives everyone 15 seconds. <strong>Tap an answer and it locks in instantly.</strong> Faster and correct = more points: <code>200–1000</code> per question. Wrong or no answer = 0.</li>
         <li>🔥 <strong>Combos</strong> — answer correctly in a row and every extra streak step adds bonus points (up to +200).</li>
-        <li>✂️ <strong>50/50 booster</strong> — you get 2 per game. It removes two wrong answers, but that answer earns 60% points.</li>
+        <li>✂️ <strong>50/50</strong> (2 per game) removes two wrong answers for 60% points. 📊 <strong>Audience Poll</strong> (1 per game) shows what the studio audience thinks — usually right, not always — for 80% points.</li>
+        <li>🎬 <strong>Hot Seat studio</strong> — when a quiz starts you're on a game-show set: four contestant desks (A–D), a <strong>Fastest Finger</strong> lane showing who locked in first and how quickly, and a live audience that gasps, claps and cheers. When the answer is revealed, everyone takes the desk they chose.</li>
         <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
         <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
         <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent out of the very next question.</li>
@@ -310,6 +334,7 @@
     <div class="modal-box">
       <h3>🎨 Choose a Theme</h3>
       <div id="themeSwatchGrid" class="theme-swatch-grid"></div>
+      <label class="toggle-row"><input type="checkbox" id="autoStageToggle" checked /><span>Switch to the <strong>Hot Seat</strong> studio panel when a quiz starts</span></label>
       <button id="closeThemeModal" class="btn btn-secondary" type="button">Close</button>
     </div>
   </div>
@@ -318,6 +343,7 @@
   <script src="vendor/qrcode.js"></script>
   <script src="sound.js"></script>
   <script src="engine.js"></script>
+  <script src="studio.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>

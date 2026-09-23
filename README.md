@@ -18,6 +18,16 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
 9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
+## The Hot Seat studio
+
+When a quiz starts, the screen becomes a game-show set (you can turn this off in the 🎨 menu):
+
+- **Four contestant desks (A–D)** — you sit at the desk you lock in; when the answer is revealed everyone takes the desk they chose, the right desk lights up green, and wrong answers slump.
+- **Fastest Finger lane** — every player's avatar is shown thinking, then buzzes in with a rank badge and their reaction time (`1st · 1.8s`). Only *who* has locked in is shared, never *which* answer, so nothing is given away.
+- **A live audience** (`frontend/studio.js`) — three rows of people who lean in as time runs out, gasp or groan on a miss, and clap or cheer (with camera flashes) on a streak, with synthesized crowd sound.
+- **📊 Audience Poll** — a second booster besides 50/50: shows what the studio thinks, at a small points discount. The audience is usually right, and sometimes confidently wrong.
+- A drumroll before each reveal, and a low tension drone in the last five seconds.
+
 ## Computer opponents
 
 Add a 🤖 computer player from the lobby (or use Quick Play) and pick its level — each has its own accuracy and reaction-time profile, reads longer questions more slowly, and chooses steal/freeze targets tactically:

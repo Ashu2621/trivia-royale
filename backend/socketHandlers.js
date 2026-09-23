@@ -114,10 +114,10 @@ function register(io, socket) {
     game.handleAnswerSubmit(io, ctx.room, ctx.player.playerId, choiceIndex);
   });
 
-  socket.on(EVENTS.LIFELINE_USE, () => {
+  socket.on(EVENTS.LIFELINE_USE, ({ type } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
-    game.useLifeline(io, ctx.room, ctx.player.playerId);
+    game.useLifeline(io, ctx.room, ctx.player.playerId, type);
   });
 
   socket.on(EVENTS.STEAL_CHOOSE, ({ targetPlayerId } = {}) => {

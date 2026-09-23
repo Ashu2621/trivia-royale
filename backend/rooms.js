@@ -13,6 +13,7 @@ const DEFAULT_AVATAR = AVATARS[0];
 const BOT_NAMES = ['Ada', 'Turing', 'Byte', 'Nova', 'Cipher', 'Echo', 'Volt', 'Pixel', 'Newton', 'Ranger'];
 const MAX_PLAYERS = 10;
 const LIFELINES_PER_GAME = 2;
+const POLLS_PER_GAME = 1;
 const MAX_CUSTOM_QUESTIONS = 40;
 const MAX_QUESTION_LENGTH = 300;
 const MAX_OPTION_LENGTH = 120;
@@ -53,6 +54,7 @@ function createPlayer(name, avatar, socketId, isCreator) {
     botTier: null,
     streak: 0,
     lifelines: 0,
+    polls: 0,
   };
 }
 
@@ -74,6 +76,7 @@ function createBot(existingNames, tierKey) {
     botTier: tier.key,
     streak: 0,
     lifelines: 0,
+    polls: 0,
   };
 }
 
@@ -234,6 +237,7 @@ function serializePlayers(room) {
       botTier: p.botTier ? getTier(p.botTier).label : null,
       streak: p.streak || 0,
       lifelines: p.lifelines || 0,
+      polls: p.polls || 0,
       score: p.score,
     }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
@@ -331,6 +335,7 @@ module.exports = {
   removeCustomQuestion,
   MAX_CUSTOM_QUESTIONS,
   LIFELINES_PER_GAME,
+  POLLS_PER_GAME,
   serializePlayers,
   countConnected,
   markDisconnected,

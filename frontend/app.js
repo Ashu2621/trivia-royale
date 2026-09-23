@@ -1,6 +1,7 @@
 (function () {
   const SESSION_KEY = 'triviaRoyaleSession';
   const THEME_KEY = 'triviaRoyaleTheme';
+  const AUTO_STAGE_KEY = 'triviaRoyaleAutoStage';
   const TIER_KEY = 'triviaRoyaleBotTier';
   const QUESTION_DURATION_MS = 15000;
   const RING_C = 119.38; // circumference of the timer ring (r = 19)
@@ -72,6 +73,12 @@
     choicesGrid: el('choicesGrid'),
     lifelineBtn: el('lifelineBtn'),
     lifelineCount: el('lifelineCount'),
+    pollBtn: el('pollBtn'),
+    pollCount: el('pollCount'),
+    stage: el('stage'),
+    stageAvatars: el('stageAvatars'),
+    audienceCanvas: el('audienceCanvas'),
+    autoStageToggle: el('autoStageToggle'),
     answerLockedMsg: el('answerLockedMsg'),
     frozenLockedMsg: el('frozenLockedMsg'),
     revealBanner: el('revealBanner'),
@@ -133,6 +140,11 @@
   let iAmFrozenThisQuestion = false;
   let lifelineUsedThisQuestion = false;
   let myLifelines = 0;
+  let myPolls = 0;
+  let tensionOn = false;
+  let revealTimer = null;
+  let userTheme = 'candy';
+  let stageActive = false;
   let currentPool = [];
   let answered = new Set();
   let lastTickSecond = null;
@@ -154,6 +166,7 @@
     { key: 'candy', label: 'Candy Blast', tag: 'Sugar rush & jelly buttons', colors: ['#4b2bd4', '#ff4d9d', '#ffd23f'], meta: '#3d1fb0' },
     { key: 'battle', label: 'Battle Zone', tag: 'Last squad standing', colors: ['#10160c', '#f2a900', '#ff6b1a'], meta: '#10160c' },
     { key: 'vice', label: 'Neon City', tag: 'Sunset drive, neon lights', colors: ['#12002e', '#ff2e93', '#2ee6ff'], meta: '#12002e' },
+    { key: 'hotseat', label: 'Hot Seat', tag: 'Game-show studio & live audience', colors: ['#0c2278', '#f5c542', '#3ee08f'], meta: '#050d3a' },
     { key: 'midnight', label: 'Midnight', tag: 'Calm & classic', colors: ['#100e26', '#7c5cff', '#ffb84d'], meta: '#100e26' },
     { key: 'light', label: 'Daylight', tag: 'Bright & clean', colors: ['#f2f3fb', '#7c5cff', '#e08a1e'], meta: '#f2f3fb' },
   ];
@@ -189,6 +202,13 @@
       final: 'Final Results', finalLose: 'Final Results',
     },
   };
+  COPY.hotseat = {
+    ready: 'Hot Seat', go: 'Khel shuru!',
+    correct: ['Sahi jawab!', 'Shandaar!', 'Kya baat hai!', 'Lajawab!', 'Crorepati!'],
+    wrong: 'Galat jawab', timeout: 'Time khatam', frozen: 'Freeze',
+    combo: ['', 'x2 streak', 'x3 streak', 'x4 streak', 'x5 streak'],
+    final: 'Hot Seat Champion', finalLose: 'Game Over',
+  };
   COPY.light = COPY.midnight;
 
   function currentTheme() {
@@ -199,18 +219,40 @@
     return COPY[currentTheme()] || COPY.midnight;
   }
 
-  function applyTheme(key) {
+  function setVisualTheme(key) {
     const theme = THEMES.find((t) => t.key === key) || THEMES[0];
     document.documentElement.setAttribute('data-theme', theme.key);
-    safeSet(THEME_KEY, theme.key);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme.meta);
     Engine.setTheme(theme.key);
+  }
+
+  function autoStageEnabled() {
+    return safeGet(AUTO_STAGE_KEY) !== '0';
+  }
+
+  // When a quiz starts, the whole screen becomes the Hot Seat studio; the player's own theme returns in the lobby.
+  function enterStage() {
+    if (stageActive || !autoStageEnabled() || userTheme === 'hotseat') return;
+    stageActive = true;
+    setVisualTheme('hotseat');
+  }
+  function leaveStage() {
+    if (!stageActive) return;
+    stageActive = false;
+    setVisualTheme(userTheme);
+  }
+
+  function applyTheme(key) {
+    const theme = THEMES.find((t) => t.key === key) || THEMES[0];
+    userTheme = theme.key;
+    safeSet(THEME_KEY, theme.key);
+    if (!(stageActive && autoStageEnabled())) setVisualTheme(theme.key);
     renderThemeSwatches();
   }
 
   function renderThemeSwatches() {
-    const active = currentTheme();
+    const active = userTheme;
     refs.themeSwatchGrid.innerHTML = '';
     THEMES.forEach((t) => {
       const btn = document.createElement('button');
@@ -273,7 +315,15 @@
     document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
     el('view-' + id).classList.remove('hidden');
     window.scrollTo(0, 0);
-    if (id === 'question') acquireWakeLock();
+    if (id === 'question') {
+      acquireWakeLock();
+      Audience.start();
+    } else {
+      Audience.stop();
+      SoundFX.tension(false);
+      tensionOn = false;
+    }
+    if (id === 'lobby' || id === 'home') leaveStage();
   }
 
   function me() {
@@ -616,6 +666,183 @@
     renderCustomPanel();
   }
 
+  // ---- Studio floor: four desks, contestant avatars, fastest-finger lane ----
+  const LANE_Y = 22;
+  const SEAT_Y = 92;
+  const SUITS = [['#3b5bdb', '#1c2f8a'], ['#c2255c', '#7a1238'], ['#0ca678', '#066a4d'], ['#e8590c', '#9c3a06'], ['#7048e8', '#43229a'], ['#1098ad', '#0a6172'], ['#495057', '#212529'], ['#d6336c', '#8a1a44']];
+  const stageState = { avatars: new Map(), locked: [] };
+  let questionStartLocal = 0;
+
+  function hashStr(str) {
+    let h = 0;
+    for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return Math.abs(h);
+  }
+
+  function layoutStage() {
+    const w = refs.stageAvatars.clientWidth;
+    if (!w) return;
+    const colW = w / 4;
+    const lane = [];
+    const desks = [[], [], [], []];
+    players.forEach((p) => {
+      const a = stageState.avatars.get(p.playerId);
+      if (!a) return;
+      if (a.desk === null) lane.push(a);
+      else desks[a.desk].push(a);
+    });
+    lane.sort((a, b) => (a.order || 99) - (b.order || 99));
+
+    const slot = Math.min(58, (w - 24) / Math.max(lane.length, 1));
+    const laneScale = slot < 48 ? Math.max(0.6, slot / 48) : 1;
+    const startX = (w - slot * lane.length) / 2 + slot / 2;
+    lane.forEach((a, i) => place(a, startX + slot * i, LANE_Y, laneScale));
+
+    desks.forEach((list, d) => {
+      const c = list.length;
+      const s = c <= 2 ? 1 : c <= 4 ? 0.8 : 0.66;
+      const itemW = 40 * s;
+      const perRow = Math.max(1, Math.floor((colW - 8) / itemW));
+      const cx = colW * (d + 0.5);
+      list.forEach((a, k) => {
+        const row = Math.floor(k / perRow);
+        const col = k % perRow;
+        const inRow = Math.min(perRow, c - row * perRow);
+        place(a, cx + (col - (inRow - 1) / 2) * itemW, SEAT_Y - row * 24 * s, s, 10 - row);
+      });
+    });
+  }
+
+  function place(a, x, y, scale, z) {
+    a.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    a.el.style.setProperty('--s', scale);
+    a.el.style.zIndex = z !== undefined ? z : 5;
+  }
+
+  function avatarMeta(a, p) {
+    const meta = a.el.querySelector('.sa-meta');
+    if (a.order) meta.textContent = `${(a.ms / 1000).toFixed(1)}s`;
+    else meta.textContent = (p.name || '').slice(0, 7);
+  }
+
+  function stageReset() {
+    refs.stage.classList.remove('revealed');
+    refs.stage.querySelectorAll('.desk, .desk-top').forEach((d) => d.classList.remove('win'));
+    refs.stageAvatars.innerHTML = '';
+    stageState.avatars.clear();
+    stageState.locked = [];
+    questionStartLocal = Date.now();
+    players.forEach((p, i) => {
+      const el = document.createElement('div');
+      el.className = 'sa lane thinking' + (p.playerId === mySession.playerId ? ' me' : '');
+      const [suit, dark] = SUITS[hashStr(p.playerId) % SUITS.length];
+      el.style.setProperty('--suit', suit);
+      el.style.setProperty('--suit-dark', dark);
+      el.title = p.name;
+      el.innerHTML =
+        `<div class="sa-inner"><div class="sa-torso"></div><div class="sa-head">${escapeHtml(p.avatar || '🙂')}</div>` +
+        `<span class="sa-rank"></span><span class="sa-you">YOU</span></div><span class="sa-meta"></span>`;
+      el.style.opacity = '0';
+      refs.stageAvatars.appendChild(el);
+      const a = { el, desk: null, order: 0, ms: 0 };
+      stageState.avatars.set(p.playerId, a);
+      avatarMeta(a, p);
+    });
+    layoutStage();
+    // drop the contestants in from above, staggered
+    stageState.avatars.forEach((a, id) => {
+      const idx = players.findIndex((p) => p.playerId === id);
+      a.el.style.transitionDelay = `${idx * 60}ms`;
+      requestAnimationFrame(() => { a.el.style.opacity = '1'; });
+      setTimeout(() => { a.el.style.transitionDelay = ''; }, 900 + idx * 60);
+    });
+  }
+
+  function stageLock(playerId, ms) {
+    const a = stageState.avatars.get(playerId);
+    if (!a) return;
+    const p = players.find((x) => x.playerId === playerId) || {};
+    if (!a.order) {
+      stageState.locked.push(playerId);
+      a.order = stageState.locked.length;
+      a.el.classList.remove('thinking');
+      a.el.classList.add('locked');
+      a.el.querySelector('.sa-rank').textContent = a.order;
+    }
+    a.ms = ms;
+    avatarMeta(a, p);
+    layoutStage();
+  }
+
+  function stageSeat(playerId, desk) {
+    const a = stageState.avatars.get(playerId);
+    if (!a) return;
+    a.desk = desk;
+    a.el.classList.remove('lane', 'thinking');
+    a.el.classList.add('seated');
+    layoutStage();
+  }
+
+  function stageReveal(choices, correctIndex) {
+    refs.stage.classList.add('revealed');
+    refs.stage.querySelectorAll(`.desk[data-i="${correctIndex}"], .desk-top[data-i="${correctIndex}"]`).forEach((d) => d.classList.add('win'));
+    stageState.avatars.forEach((a, id) => {
+      const c = choices[id];
+      if (c === undefined) {
+        a.el.classList.add('sleep');
+        if (currentQuestion && currentQuestion.frozenPlayerId === id) a.el.classList.add('frozen');
+        return;
+      }
+      a.desk = c;
+      a.el.classList.remove('lane', 'thinking');
+      a.el.classList.add('seated', 'locked');
+    });
+    layoutStage();
+    setTimeout(() => {
+      stageState.avatars.forEach((a, id) => {
+        if (choices[id] === undefined) return;
+        if (choices[id] === correctIndex) {
+          a.el.classList.add('cheer');
+          Engine.burst(a.el, { kind: 'star', count: 6, power: 0.6 });
+        } else {
+          a.el.classList.add('oops');
+        }
+      });
+    }, Engine.reduceMotion ? 0 : 650);
+  }
+
+  // On laptops the studio lives in the right-hand column so it sits on-screen next to the question.
+  const wideMq = window.matchMedia('(min-width: 1024px)');
+  function placeStudio() {
+    const studio = el('studio');
+    const target = wideMq.matches ? el('studioSideSlot') : el('studioMainSlot');
+    if (studio && target && studio.parentElement !== target) {
+      target.appendChild(studio);
+      setTimeout(layoutStage, 60);
+    }
+  }
+  if (wideMq.addEventListener) wideMq.addEventListener('change', placeStudio);
+  else if (wideMq.addListener) wideMq.addListener(placeStudio);
+  placeStudio();
+
+  let stageResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(stageResizeTimer);
+    stageResizeTimer = setTimeout(layoutStage, 150);
+  });
+
+  function showPoll(poll) {
+    refs.choicesGrid.querySelectorAll('.choice').forEach((b, i) => {
+      const pct = poll[i] || 0;
+      b.classList.add('polled');
+      b.querySelector('.poll').innerHTML = `<span class="poll-bar"><i style="--pct:0%"></i></span><span>${pct}%</span>`;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const bar = b.querySelector('.poll-bar i');
+        if (bar) bar.style.setProperty('--pct', pct + '%');
+      }));
+    });
+  }
+
   // ---- Question screen ----
   function powerBadgeLabel(type) {
     return type === 'freeze' ? '🥶 FREEZE ROUND' : '⚡ STEAL ROUND';
@@ -640,12 +867,16 @@
 
   function updateLifelineButton() {
     refs.lifelineCount.textContent = myLifelines;
-    refs.lifelineBtn.disabled = myLifelines <= 0 || answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion;
+    refs.pollCount.textContent = myPolls;
+    const blocked = answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion;
+    refs.lifelineBtn.disabled = myLifelines <= 0 || blocked;
+    refs.pollBtn.disabled = myPolls <= 0 || blocked;
   }
 
   function syncMyStats() {
     const m = me();
     myLifelines = m ? m.lifelines || 0 : 0;
+    myPolls = m ? m.polls || 0 : 0;
   }
 
   function renderQuestion() {
@@ -676,7 +907,8 @@
     refs.choicesGrid.querySelectorAll('.choice').forEach((btn, i) => {
       btn.querySelector('.choice-label').textContent = currentQuestion.choices[i];
       btn.disabled = iAmFrozenThisQuestion;
-      btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated');
+      btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated', 'polled');
+      btn.querySelector('.poll').innerHTML = '';
       btn.onclick = iAmFrozenThisQuestion ? null : () => selectChoice(i);
       replayAnimation(btn);
     });
@@ -691,6 +923,7 @@
     updateStreakChip();
     updateLifelineButton();
     renderLiveBoard();
+    stageReset();
   }
 
   // Tapping an answer locks it in instantly on-screen and sends it at the same moment —
@@ -710,23 +943,29 @@
     });
     refs.answerLockedMsg.classList.remove('hidden');
     updateLifelineButton();
+    stageLock(mySession.playerId, Date.now() - questionStartLocal);
+    stageSeat(mySession.playerId, i);
+    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
     SoundFX.lock();
     vibrate(18);
     Engine.burst(btn, { kind: 'spark', count: 16, power: 0.8 });
     Engine.shockwave(btn);
   }
 
-  function useLifeline() {
-    if (refs.lifelineBtn.disabled || answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion || myLifelines <= 0) return;
+  function useLifeline(type) {
+    const kind = type === 'poll' ? 'poll' : 'fifty';
+    const left = kind === 'poll' ? myPolls : myLifelines;
+    if (answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion || left <= 0) return;
     SoundFX.click();
     lifelineUsedThisQuestion = true;
     updateLifelineButton();
-    socket.emit(EVENTS.LIFELINE_USE);
+    socket.emit(EVENTS.LIFELINE_USE, { type: kind });
   }
 
   function startQuestionCountdown(endsAt, serverNow) {
     clockOffset = serverNow - Date.now();
     lastTickSecond = null;
+    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
     if (questionRAF) cancelAnimationFrame(questionRAF);
     function tick() {
       const now = Date.now() + clockOffset;
@@ -742,6 +981,11 @@
       if (urgent && remaining > 0 && secs !== lastTickSecond && !answerLocked) {
         lastTickSecond = secs;
         SoundFX.tick();
+      }
+      if (urgent && remaining > 0 && !answerLocked && !tensionOn) {
+        tensionOn = true;
+        SoundFX.tension(true);
+        Audience.setMood('tense', remaining + 200);
       }
       if (remaining > 0) questionRAF = requestAnimationFrame(tick);
     }
@@ -856,6 +1100,7 @@
       showLobby();
     } else if (roomState.state === 'starting') {
       showLobby();
+      enterStage();
       runCountdown(roomState.startsAt, roomState.serverNow);
     } else if (roomState.state === 'question' && roomState.question) {
       currentQuestion = {
@@ -866,6 +1111,7 @@
       };
       selectedChoice = null;
       answered = new Set();
+      enterStage();
       showView('question');
       renderQuestion();
       startQuestionCountdown(roomState.question.questionEndsAt, roomState.question.serverNow);
@@ -962,6 +1208,7 @@
     syncMyStats();
     answered = new Set();
     rankChanges = {};
+    enterStage();
     runCountdown(startsAt, serverNow);
   });
 
@@ -972,6 +1219,7 @@
     currentQuestion = payload;
     selectedChoice = null;
     answered = new Set();
+    enterStage();
     showView('question');
     renderQuestion();
     startQuestionCountdown(payload.questionEndsAt, payload.serverNow);
@@ -992,34 +1240,46 @@
     }
   });
 
-  socket.on(EVENTS.ANSWER_PROGRESS, ({ playerId }) => {
+  socket.on(EVENTS.ANSWER_PROGRESS, ({ playerId, elapsedMs }) => {
     answered.add(playerId);
     renderLiveBoard();
+    const firstLock = stageState.locked.length === 0;
+    stageLock(playerId, elapsedMs);
     if (playerId !== mySession.playerId) {
+      SoundFX.buzz();
       const p = players.find((x) => x.playerId === playerId);
-      if (p) pushFeed(`${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} locked in`);
+      if (p && firstLock) pushFeed(`⚡ ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} is fastest — ${(elapsedMs / 1000).toFixed(1)}s`);
     }
   });
 
-  socket.on(EVENTS.LIFELINE_RESULT, ({ removed, lifelines }) => {
+  socket.on(EVENTS.LIFELINE_RESULT, ({ type, removed, poll, lifelines, polls }) => {
     myLifelines = lifelines;
+    myPolls = polls;
     SoundFX.lifeline();
     vibrate(25);
-    const buttons = refs.choicesGrid.querySelectorAll('.choice');
-    removed.forEach((idx) => {
-      const b = buttons[idx];
-      if (!b) return;
-      Engine.burst(b, { kind: 'spark', count: 14, colors: ['#ffffff', '#ffd23f'] });
-      b.classList.add('eliminated');
-      b.disabled = true;
-    });
-    Engine.floatText(refs.lifelineBtn, '50/50', { cls: 'gold' });
+    if (type === 'poll' && poll) {
+      showPoll(poll);
+      Audience.setMood('tense', 2500);
+      Engine.floatText(refs.pollBtn, 'Audience says…', { cls: 'gold' });
+    } else {
+      const buttons = refs.choicesGrid.querySelectorAll('.choice');
+      (removed || []).forEach((idx) => {
+        const b = buttons[idx];
+        if (!b) return;
+        Engine.burst(b, { kind: 'spark', count: 14, colors: ['#ffffff', '#ffd23f'] });
+        b.classList.add('eliminated');
+        b.disabled = true;
+      });
+      Engine.floatText(refs.lifelineBtn, '50/50', { cls: 'gold' });
+    }
     updateLifelineButton();
   });
 
-  socket.on(EVENTS.QUESTION_REVEAL, ({ correctIndex, deltas, bonuses, assisted, streaks, leaderboard }) => {
+  socket.on(EVENTS.QUESTION_REVEAL, (data) => {
+    const { leaderboard } = data;
     if (questionRAF) cancelAnimationFrame(questionRAF);
     refs.timerRing.classList.remove('urgent');
+    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
 
     // Work out who climbed/dropped before replacing the list.
     const oldRank = {};
@@ -1031,6 +1291,17 @@
     players = leaderboard;
     syncMyStats();
 
+    // A beat of suspense — drumroll — before the answer is revealed.
+    refs.choicesGrid.querySelectorAll('.choice').forEach((b) => { b.disabled = true; });
+    refs.choicesGrid.classList.add('suspense');
+    const suspense = Engine.reduceMotion ? 0 : 800;
+    if (suspense) SoundFX.drumroll(0.8);
+    clearTimeout(revealTimer);
+    revealTimer = setTimeout(() => applyReveal(data), suspense);
+  });
+
+  function applyReveal({ correctIndex, deltas, bonuses, assisted, choices, streaks, leaderboard }) {
+    refs.choicesGrid.classList.remove('suspense');
     refs.choicesGrid.classList.remove('locked');
     const buttons = refs.choicesGrid.querySelectorAll('.choice');
     buttons.forEach((btn, i) => {
@@ -1047,13 +1318,18 @@
     const myStreak = (streaks && streaks[myId]) || 0;
     const c = copy();
     const correctBtn = buttons[correctIndex];
+    const wasFrozen = iAmFrozenThisQuestion;
     refs.revealBanner.classList.remove('hidden', 'good', 'bad');
     replayAnimation(refs.revealBanner);
+
+    stageReveal(choices || {}, correctIndex);
+    const correctCount = Object.values(choices || {}).filter((ch) => ch === correctIndex).length;
 
     if (myDelta > 0) {
       const label = c.correct[Math.min(Math.max(myStreak - 1, 0), c.correct.length - 1)];
       const parts = [];
-      if (assisted && assisted[myId]) parts.push('50/50 −40%');
+      if (assisted && assisted[myId] === 'fifty') parts.push('50/50 −40%');
+      if (assisted && assisted[myId] === 'poll') parts.push('poll −20%');
       if (myBonus > 0) parts.push(`streak bonus +${myBonus}`);
       refs.revealBanner.innerHTML = `${escapeHtml(label)} +${myDelta}` + (parts.length ? `<span class="sub">${escapeHtml(parts.join(' · '))}</span>` : '');
       refs.revealBanner.classList.add('good');
@@ -1067,8 +1343,9 @@
       Engine.floatText(correctBtn, `+${myDelta}`, { cls: 'gold' });
       if (myStreak >= 2) showCombo(c.combo[Math.min(myStreak - 1, c.combo.length - 1)], `+${myBonus} bonus`);
       if (myStreak >= 4) Engine.flash('rgba(255,210,63,0.35)');
+      if (myStreak >= 3) { Audience.setMood('cheer', 3400); SoundFX.cheer(); }
+      else { Audience.setMood('clap', 2600); SoundFX.applause(2.2, 0.14); }
     } else {
-      const wasFrozen = iAmFrozenThisQuestion;
       refs.revealBanner.innerHTML = escapeHtml(wasFrozen ? c.frozen : selectedChoice === null ? c.timeout : c.wrong) + '<span class="sub">+0 points</span>';
       refs.revealBanner.classList.add('bad');
       if (!wasFrozen) {
@@ -1078,6 +1355,9 @@
         Engine.flash('rgba(255,60,90,0.28)');
         if (selectedChoice !== null) Engine.floatText(buttons[selectedChoice], '✗', { cls: 'bad' });
       }
+      if (correctCount === 0) { Audience.setMood('gasp', 1900); SoundFX.gasp(); }
+      else if (!wasFrozen) { Audience.setMood('groan', 2000); SoundFX.groan(); }
+      else { Audience.setMood('clap', 1800); SoundFX.applause(1.4, 0.08); }
     }
 
     // A rival on a hot streak makes the room feel it.
@@ -1086,7 +1366,6 @@
       if (p.playerId !== myId && s >= 3) pushFeed(`🔥 ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} is on a ${s} streak`);
     });
 
-    // Score change pops over each row that gained points.
     refs.miniLeaderboard.classList.remove('hidden');
     renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
     renderLiveBoard();
@@ -1094,7 +1373,8 @@
     updateStreakChip();
     refs.answerLockedMsg.classList.add('hidden');
     refs.lifelineBtn.disabled = true;
-  });
+    refs.pollBtn.disabled = true;
+  }
 
   function showCombo(text, sub) {
     refs.comboBurst.innerHTML = `${escapeHtml(text)}<span class="sub">${escapeHtml(sub)}</span>`;
@@ -1298,7 +1578,8 @@
     socket.emit(EVENTS.BOT_ADD, { difficulty: selectedTier });
   });
 
-  refs.lifelineBtn.addEventListener('click', useLifeline);
+  refs.lifelineBtn.addEventListener('click', () => useLifeline('fifty'));
+  refs.pollBtn.addEventListener('click', () => useLifeline('poll'));
 
   refs.generateBtn.addEventListener('click', () => {
     SoundFX.click();
@@ -1368,7 +1649,8 @@
     const map = { '1': 0, '2': 1, '3': 2, '4': 3, a: 0, b: 1, c: 2, d: 3 };
     const idx = map[e.key.toLowerCase()];
     if (idx !== undefined) selectChoice(idx);
-    else if (e.key.toLowerCase() === 'f') useLifeline();
+    else if (e.key.toLowerCase() === 'f') useLifeline('fifty');
+    else if (e.key.toLowerCase() === 'p') useLifeline('poll');
   });
 
   function openModal(modal) {
@@ -1498,9 +1780,16 @@
     openModal(refs.themeModal);
   });
   refs.closeThemeModal.addEventListener('click', () => refs.themeModal.classList.add('hidden'));
+  refs.autoStageToggle.checked = autoStageEnabled();
+  refs.autoStageToggle.addEventListener('change', () => {
+    safeSet(AUTO_STAGE_KEY, refs.autoStageToggle.checked ? '1' : '0');
+    if (!refs.autoStageToggle.checked) leaveStage();
+  });
 
   // ---- Boot ----
+  userTheme = currentTheme();
   Engine.init(currentTheme());
+  Audience.mount(refs.audienceCanvas);
   const bootTheme = THEMES.find((t) => t.key === currentTheme());
   const bootMeta = document.querySelector('meta[name="theme-color"]');
   if (bootMeta && bootTheme) bootMeta.setAttribute('content', bootTheme.meta);
