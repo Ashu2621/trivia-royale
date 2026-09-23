@@ -8,6 +8,9 @@ const MAX_NAME_LENGTH = 20;
 
 const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
 const DEFAULT_AVATAR = AVATARS[0];
+const BOT_AVATAR = '🤖';
+const BOT_NAMES = ['Ada', 'Turing', 'Byte', 'Nova', 'Cipher', 'Echo', 'Volt', 'Pixel', 'Newton', 'Ranger'];
+const MAX_PLAYERS = 10;
 
 const rooms = new Map(); // roomCode -> Room
 
@@ -41,6 +44,24 @@ function createPlayer(name, avatar, socketId, isCreator) {
     score: 0,
     isCreator,
     disconnectedAt: null,
+    isBot: false,
+  };
+}
+
+function createBot(existingNames) {
+  const taken = new Set(existingNames);
+  const pool = BOT_NAMES.filter((n) => !taken.has(`Bot ${n}`));
+  const pick = (pool.length ? pool : BOT_NAMES)[Math.floor(Math.random() * (pool.length ? pool.length : BOT_NAMES.length))];
+  return {
+    playerId: crypto.randomUUID(),
+    name: `Bot ${pick}`,
+    avatar: BOT_AVATAR,
+    socketId: null,
+    connected: true,
+    score: 0,
+    isCreator: false,
+    disconnectedAt: null,
+    isBot: true,
   };
 }
 
@@ -57,7 +78,7 @@ function newRoom(code, hostPlayer, categoryKey) {
     currentQuestion: null,
     stealState: null, // { type: 'steal'|'freeze', chooserId, decisionEndsAt, resolved }
     frozenPlayerId: null, // set by a Freeze Round choice, consumed by the next question
-    timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null },
+    timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
     allDisconnectedSince: null,
   };
 }
@@ -115,9 +136,25 @@ function joinRoom({ roomCode, name: rawName, avatar: rawAvatar, socketId, player
   return { room, player, reconnected: false };
 }
 
+function addBot(room) {
+  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only add a computer player in the lobby.' } };
+  if (room.players.size >= MAX_PLAYERS) return { error: { code: 'ROOM_FULL', message: `Rooms cap out at ${MAX_PLAYERS} players.` } };
+  const bot = createBot([...room.players.values()].map((p) => p.name));
+  room.players.set(bot.playerId, bot);
+  return { bot };
+}
+
+function removeBot(room, playerId) {
+  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only remove a computer player in the lobby.' } };
+  const bot = room.players.get(playerId);
+  if (!bot || !bot.isBot) return { error: { code: 'NOT_A_BOT', message: 'That player is not a computer player.' } };
+  room.players.delete(playerId);
+  return { removed: true };
+}
+
 function serializePlayers(room) {
   return [...room.players.values()]
-    .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, connected: p.connected, isCreator: p.isCreator, score: p.score }))
+    .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, connected: p.connected, isCreator: p.isCreator, isBot: p.isBot, score: p.score }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
@@ -146,7 +183,7 @@ function promoteNextHostIfNeeded(room, disconnectedPlayerId) {
   const oldHost = room.players.get(disconnectedPlayerId);
   if (oldHost) oldHost.isCreator = false;
   for (const p of room.players.values()) {
-    if (p.connected) {
+    if (p.connected && !p.isBot) {
       p.isCreator = true;
       room.hostPlayerId = p.playerId;
       return p;
@@ -162,8 +199,14 @@ function findPlayerBySocketId(room, socketId) {
 
 function clearRoomTimers(room) {
   for (const key of Object.keys(room.timers)) {
-    if (room.timers[key]) clearTimeout(room.timers[key]);
-    room.timers[key] = null;
+    const value = room.timers[key];
+    if (Array.isArray(value)) {
+      value.forEach((t) => clearTimeout(t));
+      room.timers[key] = [];
+    } else if (value) {
+      clearTimeout(value);
+      room.timers[key] = null;
+    }
   }
 }
 
@@ -190,6 +233,8 @@ module.exports = {
   createRoom,
   getRoom,
   joinRoom,
+  addBot,
+  removeBot,
   serializePlayers,
   countConnected,
   markDisconnected,

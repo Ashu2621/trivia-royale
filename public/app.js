@@ -18,6 +18,8 @@
     lobbyQr: el('lobbyQr'),
     lobbyCategory: el('lobbyCategory'),
     lobbyPlayers: el('lobbyPlayers'),
+    addBotBtn: el('addBotBtn'),
+    soloHint: el('soloHint'),
     startBtn: el('startBtn'),
     lobbyWaitingMsg: el('lobbyWaitingMsg'),
     lobbyNeedMoreMsg: el('lobbyNeedMoreMsg'),
@@ -166,7 +168,7 @@
       renderCategorySelect();
     });
 
-  function renderPlayerRows(container, list, showScore) {
+  function renderPlayerRows(container, list, showScore, allowBotRemove) {
     container.innerHTML = '';
     list.forEach((p) => {
       const row = document.createElement('div');
@@ -204,6 +206,18 @@
         right.textContent = p.score;
         row.appendChild(right);
       }
+      if (allowBotRemove && p.isBot && amHost()) {
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'bot-remove-btn';
+        removeBtn.setAttribute('aria-label', `Remove ${p.name}`);
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = () => {
+          SoundFX.click();
+          socket.emit(EVENTS.BOT_REMOVE, { playerId: p.playerId });
+        };
+        row.appendChild(removeBtn);
+      }
       container.appendChild(row);
     });
   }
@@ -212,11 +226,15 @@
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     const connectedCount = players.filter((p) => p.connected).length;
     if (amHost()) {
+      refs.addBotBtn.classList.remove('hidden');
       refs.startBtn.classList.remove('hidden');
       refs.startBtn.disabled = connectedCount < 2;
       refs.lobbyWaitingMsg.classList.add('hidden');
       refs.lobbyNeedMoreMsg.classList.toggle('hidden', connectedCount >= 2);
+      refs.soloHint.classList.toggle('hidden', players.length >= 2);
     } else {
+      refs.addBotBtn.classList.add('hidden');
+      refs.soloHint.classList.add('hidden');
       refs.startBtn.classList.add('hidden');
       refs.lobbyWaitingMsg.classList.remove('hidden');
       refs.lobbyNeedMoreMsg.classList.add('hidden');
@@ -342,7 +360,7 @@
       showView('lobby');
       refs.lobbyCategory.textContent = categoryLabel(roomState.category);
       renderLobbyQr(mySession.roomCode);
-      renderPlayerRows(refs.lobbyPlayers, players, false);
+      renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
     } else if (roomState.state === 'question' && roomState.question) {
       currentQuestion = {
@@ -369,7 +387,7 @@
       showView('lobby');
       refs.lobbyCategory.textContent = categoryLabel(roomState.category);
       renderLobbyQr(mySession.roomCode);
-      renderPlayerRows(refs.lobbyPlayers, players, false);
+      renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
     }
   }
@@ -408,7 +426,7 @@
   socket.on(EVENTS.PLAYER_LIST_UPDATE, ({ players: p }) => {
     players = p;
     if (activeView === 'lobby') {
-      renderPlayerRows(refs.lobbyPlayers, players, false);
+      renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
     } else if (activeView === 'final') {
       renderFinal({ leaderboard: players, podium: players.slice(0, 3) });
@@ -572,7 +590,7 @@
     showView('lobby');
     refs.lobbyCategory.textContent = categoryLabel(currentCategory);
     renderLobbyQr(mySession.roomCode);
-    renderPlayerRows(refs.lobbyPlayers, players, false);
+    renderPlayerRows(refs.lobbyPlayers, players, false, true);
     renderLobbyControls();
   });
 
@@ -603,6 +621,10 @@
     socket.emit(EVENTS.ROOM_JOIN, { roomCode: code, name, avatar: selectedAvatar });
   });
 
+  refs.addBotBtn.addEventListener('click', () => {
+    SoundFX.click();
+    socket.emit(EVENTS.BOT_ADD);
+  });
   refs.startBtn.addEventListener('click', () => {
     SoundFX.click();
     socket.emit(EVENTS.GAME_START);

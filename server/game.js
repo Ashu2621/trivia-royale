@@ -7,6 +7,18 @@ const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
 const POWER_RESULT_TO_NEXT_MS = 4000;
 const STEAL_POINTS = 150;
+const BOT_ACCURACY = 0.65; // chance a bot answers correctly
+const BOT_ANSWER_MIN_DELAY_MS = 1500;
+const BOT_POWER_DECISION_DELAY_MS = [1200, 3200]; // [min, max]
+const BOT_POWER_ACT_CHANCE = 0.85; // chance a bot uses its steal/freeze rather than skipping
+
+function randomWrongIndex(correctIndex) {
+  let i;
+  do {
+    i = Math.floor(Math.random() * 4);
+  } while (i === correctIndex);
+  return i;
+}
 
 function leaderboard(room) {
   return serializePlayers(room);
@@ -69,7 +81,25 @@ function beginQuestion(io, room) {
     serverNow: Date.now(),
   });
 
+  scheduleBotAnswers(io, room);
   maybeEndQuestionEarly(io, room);
+}
+
+function scheduleBotAnswers(io, room) {
+  const { correctIndex } = room.currentQuestion;
+  const expectedIndex = room.questionIndex;
+  for (const bot of room.players.values()) {
+    if (!bot.isBot || !bot.connected) continue;
+    if (room.answers.has(bot.playerId)) continue; // frozen this round
+    const window = Math.max(2000, QUESTION_DURATION_MS - BOT_ANSWER_MIN_DELAY_MS * 2);
+    const delay = BOT_ANSWER_MIN_DELAY_MS + Math.random() * window;
+    const choice = Math.random() < BOT_ACCURACY ? correctIndex : randomWrongIndex(correctIndex);
+    const timer = setTimeout(() => {
+      if (room.questionIndex !== expectedIndex || room.state !== 'question') return;
+      handleAnswerSubmit(io, room, bot.playerId, choice);
+    }, delay);
+    room.timers.botTimeouts.push(timer);
+  }
 }
 
 function goToNextQuestionOrFinish(io, room) {
@@ -185,6 +215,19 @@ function beginPowerPrompt(io, room, type, chooserId) {
     if (room.state !== 'steal_prompt' && room.state !== 'freeze_prompt') return;
     resolvePowerChoice(io, room, null);
   }, POWER_DECISION_MS);
+
+  if (chooser && chooser.isBot) {
+    const [minDelay, maxDelay] = BOT_POWER_DECISION_DELAY_MS;
+    const delay = minDelay + Math.random() * (maxDelay - minDelay);
+    const botTimer = setTimeout(() => {
+      if (room.questionIndex !== expectedIndex) return;
+      if (room.state !== 'steal_prompt' && room.state !== 'freeze_prompt') return;
+      const willAct = Math.random() < BOT_POWER_ACT_CHANCE;
+      const best = willAct ? opponents.slice().sort((a, b) => b.score - a.score)[0] : null;
+      resolvePowerChoice(io, room, best ? best.playerId : null);
+    }, delay);
+    room.timers.botTimeouts.push(botTimer);
+  }
 }
 
 function resolvePowerChoice(io, room, targetPlayerId) {

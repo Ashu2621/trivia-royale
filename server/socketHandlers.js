@@ -110,6 +110,26 @@ function register(io, socket) {
     game.resolvePowerChoice(io, room, targetPlayerId || null);
   });
 
+  socket.on(EVENTS.BOT_ADD, () => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can add a computer player.');
+    const result = rooms.addBot(room);
+    if (result.error) return sendError(socket, result.error.code, result.error.message);
+    io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
+  });
+
+  socket.on(EVENTS.BOT_REMOVE, ({ playerId: botId } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can remove a computer player.');
+    const result = rooms.removeBot(room, botId);
+    if (result.error) return sendError(socket, result.error.code, result.error.message);
+    io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
+  });
+
   socket.on(EVENTS.GAME_PLAY_AGAIN, () => {
     const ctx = getContext(socket);
     if (!ctx) return;

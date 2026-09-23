@@ -9,6 +9,8 @@ const EVENTS = {
   STEAL_CHOOSE: 'steal:choose',
   FREEZE_CHOOSE: 'freeze:choose',
   GAME_PLAY_AGAIN: 'game:play_again',
+  BOT_ADD: 'bot:add',
+  BOT_REMOVE: 'bot:remove',
 
   // server -> client
   ROOM_JOINED: 'room:joined',

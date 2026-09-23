@@ -171,6 +171,16 @@ html, body {
 .player-row .pname .host-tag { color: var(--muted); font-weight: 400; font-size: 0.8rem; margin-left: 6px; }
 .player-row .pname .frozen-tag { color: #7fd4ff; font-weight: 400; font-size: 0.8rem; margin-left: 6px; }
 .player-row .pscore { font-variant-numeric: tabular-nums; color: var(--muted); }
+.bot-remove-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin-left: 4px;
+}
+.bot-remove-btn:hover { color: var(--bad); }
 
 .qr-wrap { display: flex; justify-content: center; margin: 4px 0 14px; }
 .qr-wrap svg { background: white; padding: 10px; border-radius: 12px; width: 160px; height: 160px; }

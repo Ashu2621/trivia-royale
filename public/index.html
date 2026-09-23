@@ -59,6 +59,9 @@
 
       <div class="player-list" id="lobbyPlayers"></div>
 
+      <button id="addBotBtn" class="btn btn-secondary hidden" type="button">🤖 Add Computer Player</button>
+      <p id="soloHint" class="hint hidden">Playing solo? Add a computer player to practice against.</p>
+
       <button id="startBtn" class="btn btn-primary hidden" type="button">Start Game</button>
       <p id="lobbyWaitingMsg" class="hint hidden">Waiting for the host to start the game…</p>
       <p id="lobbyNeedMoreMsg" class="hint hidden">Need at least 2 players to start.</p>
@@ -121,7 +124,7 @@
     <div class="modal-box">
       <h3>How to Play</h3>
       <ul class="rules-list">
-        <li>Join with a room code (or scan the lobby QR code) — no account needed.</li>
+        <li>Join with a room code (or scan the lobby QR code) — no account needed. Playing alone? The host can add a 🤖 computer player from the lobby instead of waiting for a second human.</li>
         <li>Each question gives everyone 15 seconds. Answer fast <strong>and</strong> correctly for more points: <code>200–1000</code> points based on speed. Wrong or no answer = 0.</li>
         <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
         <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
