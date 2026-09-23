@@ -4,12 +4,15 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 
 ## How to play
 
-1. One player taps **Create a Room** and shares the 4-letter code with everyone else.
-2. Everyone else taps **Join a Room**, enters their name and that code.
+1. One player picks a name, an avatar, and a category, then taps **Create a Room** — they get a 4-letter code and a QR code to share.
+2. Everyone else taps **Join a Room** (or scans the QR code) and enters their name and that code.
 3. Once 2+ players have joined, the host taps **Start Game**.
 4. Each question gives everyone 15 seconds. Answer fast *and* correctly for more points (200–1000, scaled by speed). Wrong or no answer = 0.
-5. Every 3rd question is a **⚡ Steal Round** — whoever answers it correctly fastest can steal 150 points from one opponent.
-6. After the last question, highest score wins. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
+5. Every 3rd question is a power round, alternating:
+   - **⚡ Steal Round** — the fastest correct answer steals 150 points from one opponent.
+   - **🥶 Freeze Round** — the fastest correct answer locks one opponent out of the very next question.
+6. If the host disconnects, the next connected player automatically becomes host — the game never gets stuck.
+7. After the last question, highest score wins, with confetti for the win. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
 
 ## Running locally
 
@@ -22,7 +25,7 @@ Then open `http://localhost:3000` in a couple of browser tabs (or on your phone 
 
 ## Tech
 
-Node.js + Express + Socket.IO, single process, in-memory game state (no database). Plain HTML/CSS/JS on the client — no build step.
+Node.js + Express + Socket.IO, single process, in-memory game state (no database). Plain HTML/CSS/JS on the client — no build step. Sound effects are synthesized with the Web Audio API (no audio files), and the QR code is generated client-side.
 
 ## Deploying it live (Render — free, no credit card)
 

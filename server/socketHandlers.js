@@ -1,17 +1,19 @@
 const EVENTS = require('./events');
 const rooms = require('./rooms');
 const game = require('./game');
-const { QUESTIONS } = require('./questions');
+const { getQuestions, getCategoryList } = require('./questions');
 
 // socket.id -> { roomCode, playerId }, so a disconnect knows which room/player it belonged to
 const socketMeta = new Map();
 
 function buildRoomState(room) {
+  const totalQuestions = getQuestions(room.category).length;
   const state = {
     state: room.state,
     players: rooms.serializePlayers(room),
+    category: room.category,
     questionIndex: room.questionIndex,
-    totalQuestions: QUESTIONS.length,
+    totalQuestions,
     question: null,
     final: null,
   };
@@ -21,7 +23,7 @@ function buildRoomState(room) {
       text: q.text,
       choices: q.choices,
       questionEndsAt: q.questionEndsAt,
-      isStealRound: q.isStealRound,
+      powerRoundType: q.powerRoundType,
       serverNow: Date.now(),
     };
   }
@@ -47,8 +49,8 @@ function getContext(socket) {
 }
 
 function register(io, socket) {
-  socket.on(EVENTS.ROOM_CREATE, ({ name } = {}) => {
-    const result = rooms.createRoom(name, socket.id);
+  socket.on(EVENTS.ROOM_CREATE, ({ name, avatar, category } = {}) => {
+    const result = rooms.createRoom(name, avatar, socket.id, category);
     if (result.error) return sendError(socket, result.error.code, result.error.message);
     const { room, player } = result;
     socket.join(room.code);
@@ -61,8 +63,8 @@ function register(io, socket) {
     });
   });
 
-  socket.on(EVENTS.ROOM_JOIN, ({ roomCode, name, playerId } = {}) => {
-    const result = rooms.joinRoom({ roomCode, name, socketId: socket.id, playerId });
+  socket.on(EVENTS.ROOM_JOIN, ({ roomCode, name, avatar, playerId } = {}) => {
+    const result = rooms.joinRoom({ roomCode, name, avatar, socketId: socket.id, playerId });
     if (result.error) return sendError(socket, result.error.code, result.error.message);
     const { room, player } = result;
     socket.join(room.code);
@@ -80,7 +82,7 @@ function register(io, socket) {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
-    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room creator can start the game.');
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can start the game.');
     if (room.state !== 'lobby') return;
     if (rooms.countConnected(room) < 2) return sendError(socket, 'NOT_ENOUGH_PLAYERS', 'Need at least 2 players to start.');
     game.startGame(io, room);
@@ -96,15 +98,23 @@ function register(io, socket) {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
-    if (room.state !== 'steal_prompt' || !room.stealState || room.stealState.stealerId !== player.playerId) return;
-    game.resolveSteal(io, room, targetPlayerId || null);
+    if (room.state !== 'steal_prompt' || !room.stealState || room.stealState.chooserId !== player.playerId) return;
+    game.resolvePowerChoice(io, room, targetPlayerId || null);
+  });
+
+  socket.on(EVENTS.FREEZE_CHOOSE, ({ targetPlayerId } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (room.state !== 'freeze_prompt' || !room.stealState || room.stealState.chooserId !== player.playerId) return;
+    game.resolvePowerChoice(io, room, targetPlayerId || null);
   });
 
   socket.on(EVENTS.GAME_PLAY_AGAIN, () => {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
-    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room creator can restart.');
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can restart.');
     game.resetToLobby(io, room);
   });
 
@@ -115,14 +125,19 @@ function register(io, socket) {
     const room = rooms.getRoom(meta.roomCode);
     if (!room) return;
     rooms.markDisconnected(room, meta.playerId);
+    rooms.promoteNextHostIfNeeded(room, meta.playerId);
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
 
     if (room.state === 'question') {
       game.maybeEndQuestionEarly(io, room);
-    } else if (room.state === 'steal_prompt' && room.stealState && room.stealState.stealerId === meta.playerId) {
-      game.resolveSteal(io, room, null);
+    } else if (
+      (room.state === 'steal_prompt' || room.state === 'freeze_prompt') &&
+      room.stealState &&
+      room.stealState.chooserId === meta.playerId
+    ) {
+      game.resolvePowerChoice(io, room, null);
     }
   });
 }
 
-module.exports = { register };
+module.exports = { register, getCategoryList };

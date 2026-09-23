@@ -2,7 +2,7 @@
   "name": "trivia-royale",
   "version": "1.0.0",
   "private": true,
-  "description": "Live multiplayer trivia game with a Steal Round twist. Join with a room code, no login.",
+  "description": "Live multiplayer trivia game with Steal and Freeze power rounds. Join with a room code, no login.",
   "engines": {
     "node": ">=18"
   },

@@ -7,6 +7,7 @@ const EVENTS = {
   GAME_START: 'game:start',
   ANSWER_SUBMIT: 'answer:submit',
   STEAL_CHOOSE: 'steal:choose',
+  FREEZE_CHOOSE: 'freeze:choose',
   GAME_PLAY_AGAIN: 'game:play_again',
 
   // server -> client
@@ -19,6 +20,9 @@ const EVENTS = {
   STEAL_PROMPT: 'steal:prompt',
   STEAL_WAITING: 'steal:waiting',
   STEAL_RESULT: 'steal:result',
+  FREEZE_PROMPT: 'freeze:prompt',
+  FREEZE_WAITING: 'freeze:waiting',
+  FREEZE_RESULT: 'freeze:result',
   GAME_FINAL: 'game:final',
   GAME_RESET_TO_LOBBY: 'game:reset_to_lobby',
 };

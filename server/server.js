@@ -5,10 +5,14 @@ const { Server } = require('socket.io');
 
 const rooms = require('./rooms');
 const socketHandlers = require('./socketHandlers');
+const { getCategoryList } = require('./questions');
 
 const PORT = process.env.PORT || 3000;
 
 const app = express();
+app.get('/api/meta', (req, res) => {
+  res.json({ categories: getCategoryList(), avatars: rooms.AVATARS });
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const server = http.createServer(app);

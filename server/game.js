@@ -1,11 +1,11 @@
 const EVENTS = require('./events');
-const { QUESTIONS, QUESTION_DURATION_MS, isStealRound } = require('./questions');
+const { getQuestions, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
 const { calculateScore } = require('./scoring');
 const { serializePlayers, countConnected, clearRoomTimers } = require('./rooms');
 
 const REVEAL_TO_NEXT_MS = 5000;
-const STEAL_DECISION_MS = 10000;
-const STEAL_RESULT_TO_NEXT_MS = 4000;
+const POWER_DECISION_MS = 10000;
+const POWER_RESULT_TO_NEXT_MS = 4000;
 const STEAL_POINTS = 150;
 
 function leaderboard(room) {
@@ -20,13 +20,15 @@ function startGame(io, room) {
   if (room.state !== 'lobby') return;
   for (const p of room.players.values()) p.score = 0;
   room.questionIndex = -1;
+  room.frozenPlayerId = null;
   goToNextQuestionOrFinish(io, room);
 }
 
 function beginQuestion(io, room) {
   clearRoomTimers(room);
-  const q = QUESTIONS[room.questionIndex];
-  const stealRound = isStealRound(room.questionIndex);
+  const questions = getQuestions(room.category);
+  const q = questions[room.questionIndex];
+  const powerRoundType = getPowerRoundType(room.questionIndex);
   const questionStartedAt = Date.now();
   const questionEndsAt = questionStartedAt + QUESTION_DURATION_MS;
 
@@ -37,10 +39,18 @@ function beginQuestion(io, room) {
     text: q.text,
     choices: q.choices,
     correctIndex: q.correctIndex,
-    isStealRound: stealRound,
+    powerRoundType,
     questionStartedAt,
     questionEndsAt,
   };
+
+  // A Freeze Round choice from the previous question locks this one player
+  // out of answering — pre-seed a losing "answer" so they can't submit one.
+  const frozenId = room.frozenPlayerId;
+  room.frozenPlayerId = null;
+  if (frozenId && room.players.has(frozenId)) {
+    room.answers.set(frozenId, { choiceIndex: -1, answeredAt: questionStartedAt });
+  }
 
   const expectedIndex = room.questionIndex;
   room.timers.questionTimeout = setTimeout(() => {
@@ -50,18 +60,22 @@ function beginQuestion(io, room) {
 
   emitToRoom(io, room, EVENTS.QUESTION_START, {
     questionIndex: room.questionIndex,
-    totalQuestions: QUESTIONS.length,
+    totalQuestions: questions.length,
     text: q.text,
     choices: q.choices,
     questionEndsAt,
-    isStealRound: stealRound,
+    powerRoundType,
+    frozenPlayerId: frozenId || null,
     serverNow: Date.now(),
   });
+
+  maybeEndQuestionEarly(io, room);
 }
 
 function goToNextQuestionOrFinish(io, room) {
   const nextIndex = room.questionIndex + 1;
-  if (nextIndex >= QUESTIONS.length) {
+  const questions = getQuestions(room.category);
+  if (nextIndex >= questions.length) {
     finalizeGame(io, room);
     return;
   }
@@ -73,7 +87,7 @@ function handleAnswerSubmit(io, room, playerId, choiceIndex) {
   if (room.state !== 'question') return;
   const player = room.players.get(playerId);
   if (!player || !player.connected) return;
-  if (room.answers.has(playerId)) return; // already answered, ignore repeats
+  if (room.answers.has(playerId)) return; // already answered (or frozen this round), ignore
   if (typeof choiceIndex !== 'number' || choiceIndex < 0 || choiceIndex > 3) return;
 
   room.answers.set(playerId, { choiceIndex, answeredAt: Date.now() });
@@ -92,7 +106,7 @@ function maybeEndQuestionEarly(io, room) {
 function endQuestion(io, room) {
   if (room.state !== 'question') return;
   clearRoomTimers(room);
-  const { correctIndex, questionStartedAt, isStealRound: stealRound } = room.currentQuestion;
+  const { correctIndex, questionStartedAt, powerRoundType } = room.currentQuestion;
   const deltas = {};
 
   for (const [playerId, player] of room.players.entries()) {
@@ -109,12 +123,12 @@ function endQuestion(io, room) {
   room.state = 'reveal';
 
   // Fastest correct answer = first matching entry in the answers Map (insertion order = arrival order)
-  let stealEligiblePlayerId = null;
-  if (stealRound) {
+  let powerEligiblePlayerId = null;
+  if (powerRoundType) {
     for (const [playerId, answer] of room.answers.entries()) {
       if (answer.choiceIndex === correctIndex) {
         const player = room.players.get(playerId);
-        if (player && player.connected) stealEligiblePlayerId = playerId;
+        if (player && player.connected) powerEligiblePlayerId = playerId;
         break;
       }
     }
@@ -124,12 +138,12 @@ function endQuestion(io, room) {
     correctIndex,
     deltas,
     leaderboard: leaderboard(room),
-    isStealRound: stealRound,
-    stealEligiblePlayerId,
+    powerRoundType,
+    powerEligiblePlayerId,
   });
 
-  if (stealRound && stealEligiblePlayerId) {
-    beginSteal(io, room, stealEligiblePlayerId);
+  if (powerRoundType && powerEligiblePlayerId) {
+    beginPowerPrompt(io, room, powerRoundType, powerEligiblePlayerId);
   } else {
     scheduleAdvance(io, room, REVEAL_TO_NEXT_MS);
   }
@@ -144,56 +158,75 @@ function scheduleAdvance(io, room, delayMs) {
   }, delayMs);
 }
 
-function beginSteal(io, room, stealerId) {
-  room.state = 'steal_prompt';
-  const decisionEndsAt = Date.now() + STEAL_DECISION_MS;
-  room.stealState = { stealerId, decisionEndsAt, resolved: false };
+function beginPowerPrompt(io, room, type, chooserId) {
+  room.state = type === 'steal' ? 'steal_prompt' : 'freeze_prompt';
+  const decisionEndsAt = Date.now() + POWER_DECISION_MS;
+  room.stealState = { type, chooserId, decisionEndsAt, resolved: false };
 
-  const stealer = room.players.get(stealerId);
+  const chooser = room.players.get(chooserId);
   const opponents = [...room.players.values()]
-    .filter((p) => p.playerId !== stealerId)
-    .map((p) => ({ playerId: p.playerId, name: p.name, score: p.score }));
+    .filter((p) => p.playerId !== chooserId)
+    .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, score: p.score }));
 
-  if (stealer && stealer.socketId) {
-    io.to(stealer.socketId).emit(EVENTS.STEAL_PROMPT, { opponents, decisionEndsAt });
+  const promptEvent = type === 'steal' ? EVENTS.STEAL_PROMPT : EVENTS.FREEZE_PROMPT;
+  const waitingEvent = type === 'steal' ? EVENTS.STEAL_WAITING : EVENTS.FREEZE_WAITING;
+
+  if (chooser && chooser.socketId) {
+    io.to(chooser.socketId).emit(promptEvent, { opponents, decisionEndsAt });
   }
   for (const p of room.players.values()) {
-    if (p.playerId === stealerId || !p.socketId) continue;
-    io.to(p.socketId).emit(EVENTS.STEAL_WAITING, { stealerName: stealer ? stealer.name : '', decisionEndsAt });
+    if (p.playerId === chooserId || !p.socketId) continue;
+    io.to(p.socketId).emit(waitingEvent, { chooserName: chooser ? chooser.name : '', decisionEndsAt });
   }
 
   const expectedIndex = room.questionIndex;
   room.timers.stealTimeout = setTimeout(() => {
     if (room.questionIndex !== expectedIndex) return;
-    if (room.state !== 'steal_prompt') return;
-    resolveSteal(io, room, null);
-  }, STEAL_DECISION_MS);
+    if (room.state !== 'steal_prompt' && room.state !== 'freeze_prompt') return;
+    resolvePowerChoice(io, room, null);
+  }, POWER_DECISION_MS);
 }
 
-function resolveSteal(io, room, targetPlayerId) {
-  if (room.state !== 'steal_prompt' || !room.stealState || room.stealState.resolved) return;
+function resolvePowerChoice(io, room, targetPlayerId) {
+  if ((room.state !== 'steal_prompt' && room.state !== 'freeze_prompt') || !room.stealState || room.stealState.resolved) return;
   clearRoomTimers(room);
   room.stealState.resolved = true;
 
-  const stealer = room.players.get(room.stealState.stealerId);
+  const { type, chooserId } = room.stealState;
+  const chooser = room.players.get(chooserId);
   const target = targetPlayerId ? room.players.get(targetPlayerId) : null;
-  let pointsMoved = 0;
-
-  if (stealer && target && target.playerId !== stealer.playerId) {
-    pointsMoved = Math.min(STEAL_POINTS, target.score);
-    target.score -= pointsMoved;
-    stealer.score += pointsMoved;
-  }
+  const validTarget = chooser && target && target.playerId !== chooser.playerId;
 
   room.state = 'reveal';
-  emitToRoom(io, room, EVENTS.STEAL_RESULT, {
-    stealerId: stealer ? stealer.playerId : null,
-    targetId: pointsMoved > 0 ? target.playerId : null,
-    pointsMoved,
-    leaderboard: leaderboard(room),
-  });
 
-  scheduleAdvance(io, room, STEAL_RESULT_TO_NEXT_MS);
+  if (type === 'steal') {
+    let pointsMoved = 0;
+    if (validTarget) {
+      pointsMoved = Math.min(STEAL_POINTS, target.score);
+      target.score -= pointsMoved;
+      chooser.score += pointsMoved;
+    }
+    emitToRoom(io, room, EVENTS.STEAL_RESULT, {
+      stealerId: chooser ? chooser.playerId : null,
+      targetId: pointsMoved > 0 ? target.playerId : null,
+      pointsMoved,
+      leaderboard: leaderboard(room),
+    });
+  } else {
+    let frozenTargetId = null;
+    if (validTarget) {
+      room.frozenPlayerId = target.playerId;
+      frozenTargetId = target.playerId;
+    }
+    emitToRoom(io, room, EVENTS.FREEZE_RESULT, {
+      freezerId: chooser ? chooser.playerId : null,
+      targetId: frozenTargetId,
+      targetName: frozenTargetId ? target.name : null,
+      leaderboard: leaderboard(room),
+    });
+  }
+
+  scheduleAdvance(io, room, POWER_RESULT_TO_NEXT_MS);
 }
 
 function finalizeGame(io, room) {
@@ -201,6 +234,7 @@ function finalizeGame(io, room) {
   room.state = 'final';
   room.currentQuestion = null;
   room.stealState = null;
+  room.frozenPlayerId = null;
   const board = leaderboard(room);
   emitToRoom(io, room, EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3) });
 }
@@ -213,6 +247,7 @@ function resetToLobby(io, room) {
   room.answers = new Map();
   room.currentQuestion = null;
   room.stealState = null;
+  room.frozenPlayerId = null;
   room.state = 'lobby';
   emitToRoom(io, room, EVENTS.GAME_RESET_TO_LOBBY, { players: serializePlayers(room) });
 }
@@ -221,7 +256,7 @@ module.exports = {
   startGame,
   handleAnswerSubmit,
   maybeEndQuestionEarly,
-  resolveSteal,
+  resolvePowerChoice,
   resetToLobby,
   leaderboard,
 };

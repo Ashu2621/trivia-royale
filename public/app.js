@@ -6,33 +6,42 @@
 
   const refs = {
     toast: el('toast'),
+    muteBtn: el('muteBtn'),
     nameInput: el('nameInput'),
+    avatarPicker: el('avatarPicker'),
+    categorySelect: el('categorySelect'),
     createBtn: el('createBtn'),
     joinCodeInput: el('joinCodeInput'),
     joinBtn: el('joinBtn'),
 
     lobbyCode: el('lobbyCode'),
+    lobbyQr: el('lobbyQr'),
+    lobbyCategory: el('lobbyCategory'),
     lobbyPlayers: el('lobbyPlayers'),
     startBtn: el('startBtn'),
     lobbyWaitingMsg: el('lobbyWaitingMsg'),
     lobbyNeedMoreMsg: el('lobbyNeedMoreMsg'),
 
-    stealBadge: el('stealBadge'),
+    powerBadge: el('powerBadge'),
     qProgress: el('qProgress'),
     qTimer: el('qTimer'),
     timerFill: el('timerFill'),
+    frozenNotice: el('frozenNotice'),
     questionText: el('questionText'),
     choicesGrid: el('choicesGrid'),
     answerLockedMsg: el('answerLockedMsg'),
+    frozenLockedMsg: el('frozenLockedMsg'),
     revealBanner: el('revealBanner'),
     miniLeaderboard: el('miniLeaderboard'),
 
-    stealModal: el('stealModal'),
-    stealOpponents: el('stealOpponents'),
-    stealSkipBtn: el('stealSkipBtn'),
-    stealCountdown: el('stealCountdown'),
-    stealWaitingBanner: el('stealWaitingBanner'),
-    stealResultBanner: el('stealResultBanner'),
+    powerModal: el('powerModal'),
+    powerModalTitle: el('powerModalTitle'),
+    powerModalDesc: el('powerModalDesc'),
+    powerOpponents: el('powerOpponents'),
+    powerSkipBtn: el('powerSkipBtn'),
+    powerCountdown: el('powerCountdown'),
+    powerWaitingBanner: el('powerWaitingBanner'),
+    powerResultBanner: el('powerResultBanner'),
 
     podium: el('podium'),
     finalPlayers: el('finalPlayers'),
@@ -46,28 +55,34 @@
 
   let mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
   let players = [];
+  let currentCategory = null;
   let currentQuestion = null;
   let selectedChoice = null;
+  let selectedAvatar = '🦊'; // overwritten once /api/meta resolves or a saved session is restored
   let activeView = 'home';
   let clockOffset = 0;
   let questionRAF = null;
-  let stealRAF = null;
+  let powerRAF = null;
   let toastTimer = null;
-  let stealResultTimer = null;
+  let powerResultTimer = null;
+  let pendingActiveType = null; // 'steal' | 'freeze' — which prompt is currently open
+  let iAmFrozenThisQuestion = false;
 
+  // sessionStorage (not localStorage): reconnect-on-refresh should be per-tab,
+  // not shared across every tab someone happens to have this game open in.
   function saveSession() {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(mySession));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(mySession));
   }
   function loadSession() {
     try {
-      const raw = localStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (e) {
       return null;
     }
   }
   function clearSession() {
-    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
     mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
   }
 
@@ -90,11 +105,80 @@
     el('view-' + id).classList.remove('hidden');
   }
 
+  function amHost() {
+    const me = players.find((p) => p.playerId === mySession.playerId);
+    return !!(me && me.isCreator);
+  }
+
+  function vibrate(pattern) {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  }
+
+  // ---- Meta (avatars + categories) ----
+  let AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
+  let CATEGORIES = [{ key: 'general', label: 'General Knowledge', emoji: '🌍' }];
+
+  function renderAvatarPicker() {
+    refs.avatarPicker.innerHTML = '';
+    AVATARS.forEach((a) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'avatar-option' + (a === selectedAvatar ? ' selected' : '');
+      btn.textContent = a;
+      btn.onclick = () => {
+        selectedAvatar = a;
+        SoundFX.click();
+        renderAvatarPicker();
+      };
+      refs.avatarPicker.appendChild(btn);
+    });
+  }
+
+  function renderCategorySelect() {
+    refs.categorySelect.innerHTML = '';
+    CATEGORIES.forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c.key;
+      opt.textContent = `${c.emoji} ${c.label}`;
+      refs.categorySelect.appendChild(opt);
+    });
+  }
+
+  function categoryLabel(key) {
+    const c = CATEGORIES.find((c) => c.key === key);
+    return c ? `${c.emoji} ${c.label}` : '';
+  }
+
+  fetch('/api/meta')
+    .then((r) => r.json())
+    .then((meta) => {
+      if (Array.isArray(meta.avatars) && meta.avatars.length) AVATARS = meta.avatars;
+      if (Array.isArray(meta.categories) && meta.categories.length) CATEGORIES = meta.categories;
+      const saved = loadSession();
+      selectedAvatar = (saved && saved.avatar) || AVATARS[Math.floor(Math.random() * AVATARS.length)];
+      renderAvatarPicker();
+      renderCategorySelect();
+      if (activeView === 'lobby') renderLobbyControls();
+    })
+    .catch(() => {
+      selectedAvatar = AVATARS[0];
+      renderAvatarPicker();
+      renderCategorySelect();
+    });
+
   function renderPlayerRows(container, list, showScore) {
     container.innerHTML = '';
     list.forEach((p) => {
       const row = document.createElement('div');
       row.className = 'player-row' + (p.connected ? '' : ' disconnected');
+
+      const identity = document.createElement('div');
+      identity.className = 'pidentity';
+
+      const avatar = document.createElement('span');
+      avatar.className = 'pavatar';
+      avatar.textContent = p.avatar || '🙂';
+      identity.appendChild(avatar);
 
       const left = document.createElement('div');
       left.className = 'pname';
@@ -111,7 +195,8 @@
         tag.textContent = '· host';
         left.appendChild(tag);
       }
-      row.appendChild(left);
+      identity.appendChild(left);
+      row.appendChild(identity);
 
       if (showScore) {
         const right = document.createElement('div');
@@ -126,7 +211,7 @@
   function renderLobbyControls() {
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     const connectedCount = players.filter((p) => p.connected).length;
-    if (mySession.isCreator) {
+    if (amHost()) {
       refs.startBtn.classList.remove('hidden');
       refs.startBtn.disabled = connectedCount < 2;
       refs.lobbyWaitingMsg.classList.add('hidden');
@@ -138,30 +223,66 @@
     }
   }
 
+  function renderLobbyQr(roomCode) {
+    refs.lobbyQr.innerHTML = '';
+    if (typeof qrcode === 'undefined' || !roomCode) return;
+    try {
+      const url = `${location.origin}${location.pathname}?join=${roomCode}`;
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      refs.lobbyQr.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+    } catch (e) {
+      // QR generation is a nice-to-have; join-by-code still works without it.
+    }
+  }
+
+  function powerBadgeLabel(type) {
+    return type === 'freeze' ? '🥶 FREEZE ROUND' : '⚡ STEAL ROUND';
+  }
+
   function renderQuestion() {
     refs.qProgress.textContent = `Question ${currentQuestion.questionIndex + 1}/${currentQuestion.totalQuestions}`;
-    refs.stealBadge.classList.toggle('hidden', !currentQuestion.isStealRound);
+    if (currentQuestion.powerRoundType) {
+      refs.powerBadge.textContent = powerBadgeLabel(currentQuestion.powerRoundType);
+      refs.powerBadge.className = 'power-badge' + (currentQuestion.powerRoundType === 'freeze' ? ' freeze' : '');
+    } else {
+      refs.powerBadge.classList.add('hidden');
+    }
     refs.questionText.textContent = currentQuestion.text;
+
+    iAmFrozenThisQuestion = currentQuestion.frozenPlayerId === mySession.playerId;
+    const frozenPlayer = players.find((p) => p.playerId === currentQuestion.frozenPlayerId);
+    if (currentQuestion.frozenPlayerId && frozenPlayer) {
+      refs.frozenNotice.textContent = iAmFrozenThisQuestion
+        ? "🥶 You're frozen this round — sit this one out."
+        : `🥶 ${frozenPlayer.name} is frozen this round.`;
+      refs.frozenNotice.classList.remove('hidden');
+    } else {
+      refs.frozenNotice.classList.add('hidden');
+    }
 
     const buttons = refs.choicesGrid.querySelectorAll('.choice');
     buttons.forEach((btn, i) => {
       btn.textContent = currentQuestion.choices[i];
-      btn.disabled = false;
+      btn.disabled = iAmFrozenThisQuestion;
       btn.classList.remove('selected', 'correct', 'wrong', 'dim');
-      btn.onclick = () => selectChoice(i);
+      btn.onclick = iAmFrozenThisQuestion ? null : () => selectChoice(i);
     });
 
     refs.answerLockedMsg.classList.add('hidden');
+    refs.frozenLockedMsg.classList.toggle('hidden', !iAmFrozenThisQuestion);
     refs.revealBanner.classList.add('hidden');
     refs.miniLeaderboard.classList.add('hidden');
-    refs.stealWaitingBanner.classList.add('hidden');
-    refs.stealResultBanner.classList.add('hidden');
-    refs.stealModal.classList.add('hidden');
+    refs.powerWaitingBanner.classList.add('hidden');
+    refs.powerResultBanner.classList.add('hidden');
+    refs.powerModal.classList.add('hidden');
   }
 
   function selectChoice(i) {
-    if (selectedChoice !== null) return;
+    if (selectedChoice !== null || iAmFrozenThisQuestion) return;
     selectedChoice = i;
+    SoundFX.click();
     socket.emit(EVENTS.ANSWER_SUBMIT, { choiceIndex: i });
   }
 
@@ -180,13 +301,13 @@
     tick();
   }
 
-  function startStealCountdown(endsAt) {
-    if (stealRAF) cancelAnimationFrame(stealRAF);
+  function startPowerCountdown(endsAt) {
+    if (powerRAF) cancelAnimationFrame(powerRAF);
     function tick() {
       const now = Date.now() + clockOffset;
       const remaining = Math.max(0, endsAt - now);
-      refs.stealCountdown.textContent = Math.ceil(remaining / 1000);
-      if (remaining > 0) stealRAF = requestAnimationFrame(tick);
+      refs.powerCountdown.textContent = Math.ceil(remaining / 1000);
+      if (remaining > 0) powerRAF = requestAnimationFrame(tick);
     }
     tick();
   }
@@ -199,12 +320,13 @@
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
       slot.innerHTML =
         `<div class="medal">${medal}</div>` +
+        `<div style="font-size:1.4rem">${escapeHtml(p.avatar || '')}</div>` +
         `<div class="pname">${escapeHtml(p.name)}</div>` +
         `<div class="pscore">${p.score} pts</div>`;
       refs.podium.appendChild(slot);
     });
     renderPlayerRows(refs.finalPlayers, data.leaderboard, true);
-    if (mySession.isCreator) {
+    if (amHost()) {
       refs.playAgainBtn.classList.remove('hidden');
       refs.finalWaitingMsg.classList.add('hidden');
     } else {
@@ -215,8 +337,11 @@
 
   function applyRoomState(roomState) {
     players = roomState.players;
+    currentCategory = roomState.category;
     if (roomState.state === 'lobby') {
       showView('lobby');
+      refs.lobbyCategory.textContent = categoryLabel(roomState.category);
+      renderLobbyQr(mySession.roomCode);
       renderPlayerRows(refs.lobbyPlayers, players, false);
       renderLobbyControls();
     } else if (roomState.state === 'question' && roomState.question) {
@@ -224,12 +349,13 @@
         ...roomState.question,
         questionIndex: roomState.questionIndex,
         totalQuestions: roomState.totalQuestions,
+        frozenPlayerId: null,
       };
       selectedChoice = null;
       showView('question');
       renderQuestion();
       startQuestionCountdown(roomState.question.questionEndsAt, roomState.question.serverNow);
-    } else if (roomState.state === 'reveal' || roomState.state === 'steal_prompt') {
+    } else if (roomState.state === 'reveal' || roomState.state === 'steal_prompt' || roomState.state === 'freeze_prompt') {
       showView('question');
       refs.questionText.textContent = 'Reconnected — syncing with the game…';
       refs.choicesGrid.querySelectorAll('.choice').forEach((btn) => {
@@ -241,6 +367,8 @@
       renderFinal(roomState.final);
     } else {
       showView('lobby');
+      refs.lobbyCategory.textContent = categoryLabel(roomState.category);
+      renderLobbyQr(mySession.roomCode);
       renderPlayerRows(refs.lobbyPlayers, players, false);
       renderLobbyControls();
     }
@@ -253,7 +381,7 @@
     const s = loadSession();
     if (s && s.roomCode && s.playerId && s.name) {
       mySession = s;
-      socket.emit(EVENTS.ROOM_JOIN, { roomCode: s.roomCode, name: s.name, playerId: s.playerId });
+      socket.emit(EVENTS.ROOM_JOIN, { roomCode: s.roomCode, name: s.name, playerId: s.playerId, avatar: s.avatar });
     }
   });
 
@@ -262,6 +390,7 @@
       playerId: data.playerId,
       roomCode: data.roomCode,
       name: mySession.name || refs.nameInput.value.trim(),
+      avatar: mySession.avatar || selectedAvatar,
       isCreator: data.isCreator,
     };
     saveSession();
@@ -281,6 +410,8 @@
     if (activeView === 'lobby') {
       renderPlayerRows(refs.lobbyPlayers, players, false);
       renderLobbyControls();
+    } else if (activeView === 'final') {
+      renderFinal({ leaderboard: players, podium: players.slice(0, 3) });
     }
   });
 
@@ -301,7 +432,7 @@
     refs.answerLockedMsg.classList.remove('hidden');
   });
 
-  socket.on(EVENTS.QUESTION_REVEAL, ({ correctIndex, deltas, leaderboard, stealEligiblePlayerId }) => {
+  socket.on(EVENTS.QUESTION_REVEAL, ({ correctIndex, deltas, leaderboard }) => {
     if (questionRAF) cancelAnimationFrame(questionRAF);
     players = leaderboard;
     const buttons = refs.choicesGrid.querySelectorAll('.choice');
@@ -317,73 +448,130 @@
     if (myDelta > 0) {
       refs.revealBanner.textContent = `Correct! +${myDelta} points`;
       refs.revealBanner.classList.add('good');
+      SoundFX.correct();
+      vibrate(40);
     } else {
-      refs.revealBanner.textContent = selectedChoice === null ? "Time's up — no points" : 'Wrong answer — +0 points';
+      refs.revealBanner.textContent = iAmFrozenThisQuestion
+        ? "You were frozen this round — 0 points"
+        : selectedChoice === null
+        ? "Time's up — no points"
+        : 'Wrong answer — +0 points';
       refs.revealBanner.classList.add('bad');
+      if (!iAmFrozenThisQuestion) {
+        SoundFX.wrong();
+        vibrate([30, 50, 30]);
+      }
     }
     refs.miniLeaderboard.classList.remove('hidden');
     renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
     refs.answerLockedMsg.classList.add('hidden');
   });
 
-  socket.on(EVENTS.STEAL_PROMPT, ({ opponents, decisionEndsAt }) => {
-    refs.stealOpponents.innerHTML = '';
+  function showPowerPrompt(type, opponents, decisionEndsAt) {
+    pendingActiveType = type;
+    refs.powerModalTitle.textContent = type === 'freeze' ? '🥶 You can freeze!' : '⚡ You can steal!';
+    refs.powerModalDesc.textContent =
+      type === 'freeze'
+        ? 'You answered fastest and correctly. Freeze one opponent out of the next question, or skip.'
+        : 'You answered fastest and correctly. Take 150 points from one opponent, or skip.';
+
+    refs.powerOpponents.innerHTML = '';
     opponents.forEach((o) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = `${o.name} — ${o.score} pts`;
+      btn.textContent = type === 'freeze' ? `${o.avatar || ''} ${o.name}` : `${o.avatar || ''} ${o.name} — ${o.score} pts`;
       btn.onclick = () => {
-        socket.emit(EVENTS.STEAL_CHOOSE, { targetPlayerId: o.playerId });
-        refs.stealModal.classList.add('hidden');
-        if (stealRAF) cancelAnimationFrame(stealRAF);
+        const event = type === 'freeze' ? EVENTS.FREEZE_CHOOSE : EVENTS.STEAL_CHOOSE;
+        socket.emit(event, { targetPlayerId: o.playerId });
+        SoundFX.click();
+        refs.powerModal.classList.add('hidden');
+        if (powerRAF) cancelAnimationFrame(powerRAF);
       };
-      refs.stealOpponents.appendChild(btn);
+      refs.powerOpponents.appendChild(btn);
     });
-    refs.stealModal.classList.remove('hidden');
-    startStealCountdown(decisionEndsAt);
+    refs.powerModal.classList.remove('hidden');
+    startPowerCountdown(decisionEndsAt);
+  }
+
+  refs.powerSkipBtn.addEventListener('click', () => {
+    const event = pendingActiveType === 'freeze' ? EVENTS.FREEZE_CHOOSE : EVENTS.STEAL_CHOOSE;
+    socket.emit(event, { targetPlayerId: null });
+    refs.powerModal.classList.add('hidden');
+    if (powerRAF) cancelAnimationFrame(powerRAF);
   });
 
-  refs.stealSkipBtn.addEventListener('click', () => {
-    socket.emit(EVENTS.STEAL_CHOOSE, { targetPlayerId: null });
-    refs.stealModal.classList.add('hidden');
-    if (stealRAF) cancelAnimationFrame(stealRAF);
-  });
+  socket.on(EVENTS.STEAL_PROMPT, ({ opponents, decisionEndsAt }) => showPowerPrompt('steal', opponents, decisionEndsAt));
+  socket.on(EVENTS.FREEZE_PROMPT, ({ opponents, decisionEndsAt }) => showPowerPrompt('freeze', opponents, decisionEndsAt));
 
-  socket.on(EVENTS.STEAL_WAITING, ({ stealerName }) => {
-    refs.stealWaitingBanner.classList.remove('hidden');
-    refs.stealWaitingBanner.textContent = `⚡ Waiting for ${stealerName} to decide whether to steal…`;
+  socket.on(EVENTS.STEAL_WAITING, ({ chooserName }) => {
+    refs.powerWaitingBanner.classList.remove('hidden');
+    refs.powerWaitingBanner.textContent = `⚡ Waiting for ${chooserName} to decide whether to steal…`;
+  });
+  socket.on(EVENTS.FREEZE_WAITING, ({ chooserName }) => {
+    refs.powerWaitingBanner.classList.remove('hidden');
+    refs.powerWaitingBanner.textContent = `🥶 Waiting for ${chooserName} to decide whether to freeze…`;
   });
 
   socket.on(EVENTS.STEAL_RESULT, ({ stealerId, targetId, pointsMoved, leaderboard }) => {
-    refs.stealModal.classList.add('hidden');
-    refs.stealWaitingBanner.classList.add('hidden');
+    refs.powerModal.classList.add('hidden');
+    refs.powerWaitingBanner.classList.add('hidden');
     players = leaderboard;
     const stealer = leaderboard.find((p) => p.playerId === stealerId);
     const target = targetId ? leaderboard.find((p) => p.playerId === targetId) : null;
 
-    refs.stealResultBanner.classList.remove('hidden', 'good');
+    refs.powerResultBanner.classList.remove('hidden', 'good', 'frozen');
     if (pointsMoved > 0 && stealer && target) {
-      refs.stealResultBanner.textContent = `⚡ ${stealer.name} stole ${pointsMoved} points from ${target.name}!`;
-      refs.stealResultBanner.classList.add('good');
+      refs.powerResultBanner.textContent = `⚡ ${stealer.name} stole ${pointsMoved} points from ${target.name}!`;
+      refs.powerResultBanner.classList.add('good');
+      SoundFX.steal();
+      if (target.playerId === mySession.playerId) vibrate([20, 40, 20, 40, 20]);
+      else if (stealer.playerId === mySession.playerId) vibrate(60);
     } else {
-      refs.stealResultBanner.textContent = `${stealer ? stealer.name : 'No one'} chose not to steal.`;
+      refs.powerResultBanner.textContent = `${stealer ? stealer.name : 'No one'} chose not to steal.`;
     }
     renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
     refs.miniLeaderboard.classList.remove('hidden');
 
-    clearTimeout(stealResultTimer);
-    stealResultTimer = setTimeout(() => refs.stealResultBanner.classList.add('hidden'), 3800);
+    clearTimeout(powerResultTimer);
+    powerResultTimer = setTimeout(() => refs.powerResultBanner.classList.add('hidden'), 3800);
+  });
+
+  socket.on(EVENTS.FREEZE_RESULT, ({ freezerId, targetId, targetName, leaderboard }) => {
+    refs.powerModal.classList.add('hidden');
+    refs.powerWaitingBanner.classList.add('hidden');
+    players = leaderboard;
+    const freezer = leaderboard.find((p) => p.playerId === freezerId);
+
+    refs.powerResultBanner.classList.remove('hidden', 'good', 'frozen');
+    if (targetId && freezer) {
+      refs.powerResultBanner.textContent = `🥶 ${freezer.name} froze ${targetName} out of the next question!`;
+      refs.powerResultBanner.classList.add('frozen');
+      SoundFX.freeze();
+      if (targetId === mySession.playerId) vibrate([20, 60, 20, 60]);
+    } else {
+      refs.powerResultBanner.textContent = `${freezer ? freezer.name : 'No one'} chose not to freeze anyone.`;
+    }
+    renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
+    refs.miniLeaderboard.classList.remove('hidden');
+
+    clearTimeout(powerResultTimer);
+    powerResultTimer = setTimeout(() => refs.powerResultBanner.classList.add('hidden'), 3800);
   });
 
   socket.on(EVENTS.GAME_FINAL, ({ leaderboard, podium }) => {
     players = leaderboard;
     showView('final');
     renderFinal({ leaderboard, podium });
+    SoundFX.win();
+    vibrate([40, 60, 40, 60, 80]);
+    fireConfetti();
   });
 
   socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
     players = p;
     showView('lobby');
+    refs.lobbyCategory.textContent = categoryLabel(currentCategory);
+    renderLobbyQr(mySession.roomCode);
     renderPlayerRows(refs.lobbyPlayers, players, false);
     renderLobbyControls();
   });
@@ -394,29 +582,58 @@
   });
 
   refs.createBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
     const name = refs.nameInput.value.trim();
     if (!name) return showToast('Enter your name first.');
     mySession.name = name;
-    socket.emit(EVENTS.ROOM_CREATE, { name });
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: refs.categorySelect.value });
   });
 
   refs.joinBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
     const name = refs.nameInput.value.trim();
     const code = refs.joinCodeInput.value.trim().toUpperCase();
     if (!name) return showToast('Enter your name first.');
     if (code.length !== 4) return showToast('Enter the 4-letter room code.');
     mySession.name = name;
-    socket.emit(EVENTS.ROOM_JOIN, { roomCode: code, name });
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_JOIN, { roomCode: code, name, avatar: selectedAvatar });
   });
 
-  refs.startBtn.addEventListener('click', () => socket.emit(EVENTS.GAME_START));
-  refs.playAgainBtn.addEventListener('click', () => socket.emit(EVENTS.GAME_PLAY_AGAIN));
+  refs.startBtn.addEventListener('click', () => {
+    SoundFX.click();
+    socket.emit(EVENTS.GAME_START);
+  });
+  refs.playAgainBtn.addEventListener('click', () => {
+    SoundFX.click();
+    socket.emit(EVENTS.GAME_PLAY_AGAIN);
+  });
 
   refs.howToPlayBtn.addEventListener('click', () => refs.howToPlayModal.classList.remove('hidden'));
   refs.closeHowToPlay.addEventListener('click', () => refs.howToPlayModal.classList.add('hidden'));
 
+  refs.muteBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    const nowMuted = !SoundFX.isMuted();
+    SoundFX.setMuted(nowMuted);
+    refs.muteBtn.textContent = nowMuted ? '🔇' : '🔊';
+    if (!nowMuted) SoundFX.click();
+  });
+
   // ---- Boot ----
+  refs.muteBtn.textContent = SoundFX.isMuted() ? '🔇' : '🔊';
+
   const existing = loadSession();
   if (existing && existing.name) refs.nameInput.value = existing.name;
+  if (existing && existing.avatar) selectedAvatar = existing.avatar;
+
+  const joinParam = new URLSearchParams(location.search).get('join');
+  if (joinParam && (!existing || !existing.roomCode)) {
+    refs.joinCodeInput.value = joinParam.toUpperCase().slice(0, 4);
+  }
+
   if (!existing || !existing.roomCode) showView('home');
 })();
