@@ -11,6 +11,7 @@
     <div class="brand">⚡ Trivia Royale</div>
     <div class="topbar-actions">
       <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
+      <button id="hallOfFameBtn" class="link-btn" type="button">🏆 Hall of Fame</button>
       <button id="howToPlayBtn" class="link-btn" type="button">How to Play</button>
     </div>
   </header>
@@ -132,6 +133,18 @@
         <li>After the last question, whoever has the most points wins. Hit <strong>Play Again</strong> to replay with the same room and code.</li>
       </ul>
       <button id="closeHowToPlay" class="btn btn-secondary" type="button">Got it</button>
+    </div>
+  </div>
+
+  <!-- HALL OF FAME -->
+  <div id="hallOfFameModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>🏆 Hall of Fame</h3>
+      <p class="hint">The highest scores ever recorded, across every room ever played.</p>
+      <div id="hallOfFameList" class="hall-of-fame-list"></div>
+      <p id="hallOfFameEmpty" class="hint hidden">No games finished yet — be the first on the board!</p>
+      <p id="hallOfFameUnavailable" class="hint hidden">The Hall of Fame isn't set up on this server yet.</p>
+      <button id="closeHallOfFame" class="btn btn-secondary" type="button">Close</button>
     </div>
   </div>
 

@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 
 const rooms = require('./rooms');
 const socketHandlers = require('./socketHandlers');
+const db = require('./db');
 const { getCategoryList } = require('./questions');
 
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,10 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 app.get('/api/meta', (req, res) => {
   res.json({ categories: getCategoryList(), avatars: rooms.AVATARS });
+});
+app.get('/api/leaderboard', async (req, res) => {
+  const scores = await db.getTopScores(20);
+  res.json({ enabled: db.isEnabled(), scores });
 });
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
@@ -21,6 +26,7 @@ const io = new Server(server);
 io.on('connection', (socket) => socketHandlers.register(io, socket));
 
 rooms.startCleanupSweep();
+db.connect();
 
 server.listen(PORT, () => {
   console.log(`Trivia Royale listening on port ${PORT}`);

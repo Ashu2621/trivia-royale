@@ -90,6 +90,11 @@ function getQuestions(categoryKey) {
   return CATEGORIES[resolveCategory(categoryKey)].questions;
 }
 
+function getCategoryLabel(categoryKey) {
+  const c = CATEGORIES[resolveCategory(categoryKey)];
+  return `${c.emoji} ${c.label}`;
+}
+
 /**
  * Every 3rd question is a "power round." They alternate flavor:
  * the 1st, 3rd, 5th... power round is a Steal Round; the 2nd, 4th... is a Freeze Round.
@@ -106,6 +111,7 @@ module.exports = {
   CATEGORIES,
   DEFAULT_CATEGORY,
   getCategoryList,
+  getCategoryLabel,
   resolveCategory,
   getQuestions,
   QUESTION_DURATION_MS,

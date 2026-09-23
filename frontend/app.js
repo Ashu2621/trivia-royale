@@ -53,6 +53,13 @@
     howToPlayBtn: el('howToPlayBtn'),
     howToPlayModal: el('howToPlayModal'),
     closeHowToPlay: el('closeHowToPlay'),
+
+    hallOfFameBtn: el('hallOfFameBtn'),
+    hallOfFameModal: el('hallOfFameModal'),
+    hallOfFameList: el('hallOfFameList'),
+    hallOfFameEmpty: el('hallOfFameEmpty'),
+    hallOfFameUnavailable: el('hallOfFameUnavailable'),
+    closeHallOfFame: el('closeHallOfFame'),
   };
 
   let mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
@@ -636,6 +643,54 @@
 
   refs.howToPlayBtn.addEventListener('click', () => refs.howToPlayModal.classList.remove('hidden'));
   refs.closeHowToPlay.addEventListener('click', () => refs.howToPlayModal.classList.add('hidden'));
+
+  refs.hallOfFameBtn.addEventListener('click', () => {
+    SoundFX.click();
+    refs.hallOfFameModal.classList.remove('hidden');
+    loadHallOfFame();
+  });
+  refs.closeHallOfFame.addEventListener('click', () => refs.hallOfFameModal.classList.add('hidden'));
+
+  function formatRelativeDate(iso) {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  function loadHallOfFame() {
+    refs.hallOfFameList.innerHTML = '';
+    refs.hallOfFameEmpty.classList.add('hidden');
+    refs.hallOfFameUnavailable.classList.add('hidden');
+    fetch('/api/leaderboard')
+      .then((r) => r.json())
+      .then(({ enabled, scores }) => {
+        if (!enabled) {
+          refs.hallOfFameUnavailable.classList.remove('hidden');
+          return;
+        }
+        if (!scores.length) {
+          refs.hallOfFameEmpty.classList.remove('hidden');
+          return;
+        }
+        scores.forEach((s, i) => {
+          const row = document.createElement('div');
+          row.className = 'hof-row';
+          row.innerHTML =
+            `<div class="hof-rank">${i + 1}</div>` +
+            `<div class="hof-avatar">${escapeHtml(s.avatar || '')}</div>` +
+            `<div class="hof-info"><div class="hof-name">${escapeHtml(s.name)}</div>` +
+            `<div class="hof-meta">${escapeHtml(s.category || '')} · ${formatRelativeDate(s.playedAt)}</div></div>` +
+            `<div class="hof-score">${s.score}</div>`;
+          refs.hallOfFameList.appendChild(row);
+        });
+      })
+      .catch(() => refs.hallOfFameUnavailable.classList.remove('hidden'));
+  }
 
   refs.muteBtn.addEventListener('click', () => {
     SoundFX.unlock();

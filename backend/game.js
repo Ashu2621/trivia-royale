@@ -1,7 +1,8 @@
 const EVENTS = require('./events');
-const { getQuestions, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
+const { getQuestions, getCategoryLabel, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
 const { calculateScore } = require('./scoring');
 const { serializePlayers, countConnected, clearRoomTimers } = require('./rooms');
+const db = require('./db');
 
 const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
@@ -280,6 +281,13 @@ function finalizeGame(io, room) {
   room.frozenPlayerId = null;
   const board = leaderboard(room);
   emitToRoom(io, room, EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3) });
+
+  db.saveGameResult({
+    roomCode: room.code,
+    category: room.category,
+    categoryLabel: getCategoryLabel(room.category),
+    players: board,
+  });
 }
 
 function resetToLobby(io, room) {
