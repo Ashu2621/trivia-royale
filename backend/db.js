@@ -39,7 +39,7 @@ function isEnabled() {
 
 async function saveGameResult({ roomCode, category, categoryLabel, levelKey, levelLabel, subject, players }) {
   if (!enabled) return;
-  const top = players.slice().sort((a, b) => b.score - a.score)[0];
+  const top = players[0]; // callers pass the final ranking, survivors first
   if (!top || top.score <= 0) return;
   try {
     await GameResult.create({

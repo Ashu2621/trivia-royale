@@ -75,8 +75,20 @@
     lifelineCount: el('lifelineCount'),
     pollBtn: el('pollBtn'),
     pollCount: el('pollCount'),
-    stage: el('stage'),
-    stageAvatars: el('stageAvatars'),
+    arenaCanvas: el('arenaCanvas'),
+    arenaLevel: el('arenaLevel'),
+    aliveChip: el('aliveChip'),
+    aliveCount: el('aliveCount'),
+    mapBtn: el('mapBtn'),
+    stageBanner: el('stageBanner'),
+    levelMap: el('levelMap'),
+    spectatorMsg: el('spectatorMsg'),
+    backBtn: el('backBtn'),
+    leaveModal: el('leaveModal'),
+    leaveTitle: el('leaveTitle'),
+    leaveDesc: el('leaveDesc'),
+    leaveConfirmBtn: el('leaveConfirmBtn'),
+    leaveStayBtn: el('leaveStayBtn'),
     audienceCanvas: el('audienceCanvas'),
     autoStageToggle: el('autoStageToggle'),
     answerLockedMsg: el('answerLockedMsg'),
@@ -145,6 +157,7 @@
   let revealTimer = null;
   let userTheme = 'candy';
   let stageActive = false;
+  let historyArmed = false;
   let currentPool = [];
   let answered = new Set();
   let lastTickSecond = null;
@@ -324,6 +337,12 @@
       tensionOn = false;
     }
     if (id === 'lobby' || id === 'home') leaveStage();
+    refs.backBtn.classList.toggle('hidden', id === 'home');
+    if (id !== 'home' && !historyArmed) {
+      historyArmed = true;
+      try { history.pushState({ trivia: 1 }, ''); } catch (e) { /* ignore */ }
+    }
+    if (id === 'home') historyArmed = false;
   }
 
   function me() {
@@ -508,7 +527,7 @@
     container.innerHTML = '';
     list.forEach((p, i) => {
       const row = document.createElement('div');
-      row.className = 'player-row' + (p.connected ? '' : ' disconnected');
+      row.className = 'player-row' + (p.connected ? '' : ' disconnected') + (p.eliminated ? ' out' : '');
       row.style.animationDelay = `${Math.min(i, 8) * 40}ms`;
 
       const identity = document.createElement('div');
@@ -532,6 +551,12 @@
         const tag = document.createElement('span');
         tag.className = 'host-tag';
         tag.textContent = '👑 host';
+        left.appendChild(tag);
+      }
+      if (p.eliminated) {
+        const tag = document.createElement('span');
+        tag.className = 'tier-badge out-badge';
+        tag.textContent = p.place ? `OUT #${p.place}` : 'OUT';
         left.appendChild(tag);
       }
       if (p.isBot && p.botTier) {
@@ -571,13 +596,13 @@
     refs.liveBoard.innerHTML = '';
     players.forEach((p, i) => {
       const row = document.createElement('div');
-      row.className = 'lb-row' + (p.playerId === mySession.playerId ? ' me' : '') + (answered.has(p.playerId) ? ' answered' : '');
+      row.className = 'lb-row' + (p.playerId === mySession.playerId ? ' me' : '') + (answered.has(p.playerId) ? ' answered' : '') + (p.eliminated ? ' out' : '');
       const change = rankChanges[p.playerId] || 0;
       const arrow = change > 0 ? `<span class="rank-up">▲${change}</span>` : change < 0 ? `<span class="rank-down">▼${-change}</span>` : '';
       row.innerHTML =
         `<span class="lb-rank">${i + 1}</span>` +
         `<span class="lb-avatar">${escapeHtml(p.avatar || '')}</span>` +
-        `<span class="lb-name">${escapeHtml(p.name)}${arrow}</span>` +
+        `<span class="lb-name">${p.eliminated ? '☠ ' : ''}${escapeHtml(p.name)}${arrow}</span>` +
         `<span class="lb-check">✓</span>` +
         `<span class="lb-score">${p.score}</span>`;
       refs.liveBoard.appendChild(row);
@@ -666,150 +691,135 @@
     renderCustomPanel();
   }
 
-  // ---- Studio floor: four desks, contestant avatars, fastest-finger lane ----
-  const LANE_Y = 22;
-  const SEAT_Y = 92;
-  const SUITS = [['#3b5bdb', '#1c2f8a'], ['#c2255c', '#7a1238'], ['#0ca678', '#066a4d'], ['#e8590c', '#9c3a06'], ['#7048e8', '#43229a'], ['#1098ad', '#0a6172'], ['#495057', '#212529'], ['#d6336c', '#8a1a44']];
-  const stageState = { avatars: new Map(), locked: [] };
+  // ---- Arena: the match map (rooms = levels, tables = players) ----
+  let arenaReady = false;
+  let iAmEliminated = false;
+  let lockedIds = [];
   let questionStartLocal = 0;
+  let stageInfo = null;
+  let lastAlive = -1;
+  let bannerTimer = null;
+  let transitionTimers = [];
 
-  function hashStr(str) {
-    let h = 0;
-    for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) | 0;
-    return Math.abs(h);
-  }
-
-  function layoutStage() {
-    const w = refs.stageAvatars.clientWidth;
-    if (!w) return;
-    const colW = w / 4;
-    const lane = [];
-    const desks = [[], [], [], []];
-    players.forEach((p) => {
-      const a = stageState.avatars.get(p.playerId);
-      if (!a) return;
-      if (a.desk === null) lane.push(a);
-      else desks[a.desk].push(a);
-    });
-    lane.sort((a, b) => (a.order || 99) - (b.order || 99));
-
-    const slot = Math.min(58, (w - 24) / Math.max(lane.length, 1));
-    const laneScale = slot < 48 ? Math.max(0.6, slot / 48) : 1;
-    const startX = (w - slot * lane.length) / 2 + slot / 2;
-    lane.forEach((a, i) => place(a, startX + slot * i, LANE_Y, laneScale));
-
-    desks.forEach((list, d) => {
-      const c = list.length;
-      const s = c <= 2 ? 1 : c <= 4 ? 0.8 : 0.66;
-      const itemW = 40 * s;
-      const perRow = Math.max(1, Math.floor((colW - 8) / itemW));
-      const cx = colW * (d + 0.5);
-      list.forEach((a, k) => {
-        const row = Math.floor(k / perRow);
-        const col = k % perRow;
-        const inRow = Math.min(perRow, c - row * perRow);
-        place(a, cx + (col - (inRow - 1) / 2) * itemW, SEAT_Y - row * 24 * s, s, 10 - row);
-      });
-    });
-  }
-
-  function place(a, x, y, scale, z) {
-    a.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
-    a.el.style.setProperty('--s', scale);
-    a.el.style.zIndex = z !== undefined ? z : 5;
-  }
-
-  function avatarMeta(a, p) {
-    const meta = a.el.querySelector('.sa-meta');
-    if (a.order) meta.textContent = `${(a.ms / 1000).toFixed(1)}s`;
-    else meta.textContent = (p.name || '').slice(0, 7);
-  }
-
-  function stageReset() {
-    refs.stage.classList.remove('revealed');
-    refs.stage.querySelectorAll('.desk, .desk-top').forEach((d) => d.classList.remove('win'));
-    refs.stageAvatars.innerHTML = '';
-    stageState.avatars.clear();
-    stageState.locked = [];
-    questionStartLocal = Date.now();
-    players.forEach((p, i) => {
-      const el = document.createElement('div');
-      el.className = 'sa lane thinking' + (p.playerId === mySession.playerId ? ' me' : '');
-      const [suit, dark] = SUITS[hashStr(p.playerId) % SUITS.length];
-      el.style.setProperty('--suit', suit);
-      el.style.setProperty('--suit-dark', dark);
-      el.title = p.name;
-      el.innerHTML =
-        `<div class="sa-inner"><div class="sa-torso"></div><div class="sa-head">${escapeHtml(p.avatar || '🙂')}</div>` +
-        `<span class="sa-rank"></span><span class="sa-you">YOU</span></div><span class="sa-meta"></span>`;
-      el.style.opacity = '0';
-      refs.stageAvatars.appendChild(el);
-      const a = { el, desk: null, order: 0, ms: 0 };
-      stageState.avatars.set(p.playerId, a);
-      avatarMeta(a, p);
-    });
-    layoutStage();
-    // drop the contestants in from above, staggered
-    stageState.avatars.forEach((a, id) => {
-      const idx = players.findIndex((p) => p.playerId === id);
-      a.el.style.transitionDelay = `${idx * 60}ms`;
-      requestAnimationFrame(() => { a.el.style.opacity = '1'; });
-      setTimeout(() => { a.el.style.transitionDelay = ''; }, 900 + idx * 60);
-    });
-  }
-
-  function stageLock(playerId, ms) {
-    const a = stageState.avatars.get(playerId);
-    if (!a) return;
-    const p = players.find((x) => x.playerId === playerId) || {};
-    if (!a.order) {
-      stageState.locked.push(playerId);
-      a.order = stageState.locked.length;
-      a.el.classList.remove('thinking');
-      a.el.classList.add('locked');
-      a.el.querySelector('.sa-rank').textContent = a.order;
-    }
-    a.ms = ms;
-    avatarMeta(a, p);
-    layoutStage();
-  }
-
-  function stageSeat(playerId, desk) {
-    const a = stageState.avatars.get(playerId);
-    if (!a) return;
-    a.desk = desk;
-    a.el.classList.remove('lane', 'thinking');
-    a.el.classList.add('seated');
-    layoutStage();
-  }
-
-  function stageReveal(choices, correctIndex) {
-    refs.stage.classList.add('revealed');
-    refs.stage.querySelectorAll(`.desk[data-i="${correctIndex}"], .desk-top[data-i="${correctIndex}"]`).forEach((d) => d.classList.add('win'));
-    stageState.avatars.forEach((a, id) => {
-      const c = choices[id];
-      if (c === undefined) {
-        a.el.classList.add('sleep');
-        if (currentQuestion && currentQuestion.frozenPlayerId === id) a.el.classList.add('frozen');
-        return;
+  Arena.mount(refs.arenaCanvas, {
+    siren: () => SoundFX.siren(),
+    eliminated: (id, place) => {
+      SoundFX.eliminated();
+      Engine.flash('rgba(255,50,70,0.3)');
+      const p = players.find((x) => x.playerId === id);
+      if (p) pushFeed(`☠ ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} eliminated · #${place}`);
+      if (id === mySession.playerId) {
+        Audience.setMood('gasp', 2200);
+        vibrate([60, 40, 60]);
       }
-      a.desk = c;
-      a.el.classList.remove('lane', 'thinking');
-      a.el.classList.add('seated', 'locked');
-    });
-    layoutStage();
-    setTimeout(() => {
-      stageState.avatars.forEach((a, id) => {
-        if (choices[id] === undefined) return;
-        if (choices[id] === correctIndex) {
-          a.el.classList.add('cheer');
-          Engine.burst(a.el, { kind: 'star', count: 6, power: 0.6 });
-        } else {
-          a.el.classList.add('oops');
-        }
-      });
-    }, Engine.reduceMotion ? 0 : 650);
+      updateAlive();
+    },
+    arrive: () => SoundFX.step(),
+    land: () => SoundFX.step(),
+    arrivedAll: () => {
+      updateAlive();
+      renderLevelMap(false);
+      renderLiveBoard();
+    },
+  });
+
+  function updateAlive() {
+    const n = arenaReady ? Arena.aliveCount() : players.filter((p) => !p.eliminated).length;
+    if (n === lastAlive) return;
+    lastAlive = n;
+    refs.aliveCount.textContent = n;
+    refs.aliveChip.classList.remove('pop');
+    void refs.aliveChip.offsetWidth;
+    refs.aliveChip.classList.add('pop');
   }
+
+  function stageQuestionCount(info, i, total) {
+    return total ? Math.max(1, Math.min(info.per, total - i * info.per)) : info.per;
+  }
+
+  // The level map strip: every level, its sub-levels (questions) and where the match is now.
+  function renderLevelMap(revealed) {
+    const info = stageInfo;
+    if (!info) {
+      refs.levelMap.innerHTML = '';
+      return;
+    }
+    const total = currentQuestion ? currentQuestion.totalQuestions : 0;
+    refs.arenaLevel.textContent = `Level ${info.index + 1}/${info.count} · ${info.names[info.index]}`;
+    let html = '';
+    for (let i = 0; i < info.count; i++) {
+      const state = i < info.index ? 'done' : i === info.index ? 'current' : 'locked';
+      const dotsN = stageQuestionCount(info, i, total);
+      let dots = '';
+      for (let d = 0; d < dotsN; d++) {
+        const on = i < info.index || (i === info.index && (d < info.sub || (revealed && d === info.sub)));
+        const now = i === info.index && !revealed && d === info.sub;
+        dots += `<i class="${on ? 'on' : now ? 'now' : ''}"></i>`;
+      }
+      const sub = state === 'done' ? '✓' : state === 'current' ? `${arenaAlive()} in` : '🔒';
+      html += `<div class="lm-node ${state}"><span class="lm-name">${escapeHtml(info.names[i])}</span><span class="lm-dots">${dots}</span><span class="lm-alive">${sub}</span></div>`;
+      if (i < info.count - 1) html += '<span class="lm-arrow">›</span>';
+    }
+    refs.levelMap.innerHTML = html;
+  }
+
+  function arenaAlive() {
+    return arenaReady ? Arena.aliveCount() : players.filter((p) => !p.eliminated).length;
+  }
+
+  function showStageBanner(text, kind, ms) {
+    refs.stageBanner.textContent = text;
+    refs.stageBanner.className = 'stage-banner' + (kind ? ' ' + kind : '');
+    replayAnimation(refs.stageBanner);
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => refs.stageBanner.classList.add('hidden'), ms || 3000);
+  }
+
+  function startArena(info, total, opts) {
+    Arena.setMe(mySession.playerId);
+    Arena.startMatch(players, { count: info.count, per: info.per, names: info.names, total }, opts || {});
+    arenaReady = true;
+    lastAlive = -1;
+    updateAlive();
+  }
+
+  function resetArenaState() {
+    transitionTimers.forEach(clearTimeout);
+    transitionTimers = [];
+    arenaReady = false;
+    iAmEliminated = false;
+    stageInfo = null;
+    lastAlive = -1;
+    Arena.stop();
+    refs.stageBanner.classList.add('hidden');
+    refs.spectatorMsg.classList.add('hidden');
+  }
+
+  // Blank the question panel while the arena does something else (countdown, level change).
+  function idleQuestionPanel(text) {
+    refs.questionText.textContent = text;
+    refs.choicesGrid.classList.remove('locked', 'suspense');
+    refs.choicesGrid.querySelectorAll('.choice').forEach((btn) => {
+      btn.querySelector('.choice-label').textContent = '';
+      btn.disabled = true;
+      btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated', 'polled');
+    });
+    refs.revealBanner.classList.add('hidden');
+    refs.powerWaitingBanner.classList.add('hidden');
+    refs.powerResultBanner.classList.add('hidden');
+    refs.answerLockedMsg.classList.add('hidden');
+    refs.miniLeaderboard.classList.add('hidden');
+    refs.lifelineBtn.disabled = true;
+    refs.pollBtn.disabled = true;
+    refs.qTimer.textContent = '–';
+    refs.timerFill.style.width = '100%';
+    refs.ringFg.style.strokeDashoffset = '0';
+    refs.qProgress.textContent = '';
+    refs.powerBadge.classList.add('hidden');
+    refs.streakChip.classList.add('hidden');
+  }
+
+  refs.mapBtn.addEventListener('click', () => { SoundFX.click(); Arena.toggleOverview(); });
 
   // On laptops the studio lives in the right-hand column so it sits on-screen next to the question.
   const wideMq = window.matchMedia('(min-width: 1024px)');
@@ -818,18 +828,12 @@
     const target = wideMq.matches ? el('studioSideSlot') : el('studioMainSlot');
     if (studio && target && studio.parentElement !== target) {
       target.appendChild(studio);
-      setTimeout(layoutStage, 60);
+      setTimeout(() => Arena.resize(), 60);
     }
   }
   if (wideMq.addEventListener) wideMq.addEventListener('change', placeStudio);
   else if (wideMq.addListener) wideMq.addListener(placeStudio);
   placeStudio();
-
-  let stageResizeTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(stageResizeTimer);
-    stageResizeTimer = setTimeout(layoutStage, 150);
-  });
 
   function showPoll(poll) {
     refs.choicesGrid.querySelectorAll('.choice').forEach((b, i) => {
@@ -868,7 +872,7 @@
   function updateLifelineButton() {
     refs.lifelineCount.textContent = myLifelines;
     refs.pollCount.textContent = myPolls;
-    const blocked = answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion;
+    const blocked = answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion || iAmEliminated;
     refs.lifelineBtn.disabled = myLifelines <= 0 || blocked;
     refs.pollBtn.disabled = myPolls <= 0 || blocked;
   }
@@ -893,6 +897,9 @@
     iAmFrozenThisQuestion = currentQuestion.frozenPlayerId === mySession.playerId;
     lifelineUsedThisQuestion = false;
     answerLocked = false;
+    const meNow = me();
+    iAmEliminated = !!(meNow && meNow.eliminated);
+    refs.spectatorMsg.classList.toggle('hidden', !iAmEliminated);
     const frozenPlayer = players.find((p) => p.playerId === currentQuestion.frozenPlayerId);
     if (currentQuestion.frozenPlayerId && frozenPlayer) {
       refs.frozenNotice.textContent = iAmFrozenThisQuestion
@@ -906,10 +913,10 @@
     refs.choicesGrid.classList.remove('locked');
     refs.choicesGrid.querySelectorAll('.choice').forEach((btn, i) => {
       btn.querySelector('.choice-label').textContent = currentQuestion.choices[i];
-      btn.disabled = iAmFrozenThisQuestion;
+      btn.disabled = iAmFrozenThisQuestion || iAmEliminated;
       btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated', 'polled');
       btn.querySelector('.poll').innerHTML = '';
-      btn.onclick = iAmFrozenThisQuestion ? null : () => selectChoice(i);
+      btn.onclick = iAmFrozenThisQuestion || iAmEliminated ? null : () => selectChoice(i);
       replayAnimation(btn);
     });
 
@@ -923,13 +930,24 @@
     updateStreakChip();
     updateLifelineButton();
     renderLiveBoard();
-    stageReset();
+
+    if (currentQuestion.stage) {
+      stageInfo = currentQuestion.stage;
+      if (!arenaReady) startArena(stageInfo, currentQuestion.totalQuestions, { stage: stageInfo.index });
+      Arena.startQuestion(stageInfo);
+      lockedIds = [];
+      questionStartLocal = Date.now();
+      transitionTimers.forEach(clearTimeout);
+      transitionTimers = [];
+      renderLevelMap(false);
+      updateAlive();
+    }
   }
 
   // Tapping an answer locks it in instantly on-screen and sends it at the same moment —
   // no waiting on the server round-trip before the UI reacts.
   function selectChoice(i) {
-    if (answerLocked || iAmFrozenThisQuestion || activeView !== 'question') return;
+    if (answerLocked || iAmFrozenThisQuestion || iAmEliminated || activeView !== 'question') return;
     const btn = refs.choicesGrid.querySelectorAll('.choice')[i];
     if (!btn || btn.classList.contains('eliminated')) return;
     answerLocked = true;
@@ -943,8 +961,8 @@
     });
     refs.answerLockedMsg.classList.remove('hidden');
     updateLifelineButton();
-    stageLock(mySession.playerId, Date.now() - questionStartLocal);
-    stageSeat(mySession.playerId, i);
+    lockedIds.push(mySession.playerId);
+    Arena.lock(mySession.playerId, lockedIds.length, Date.now() - questionStartLocal);
     if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
     SoundFX.lock();
     vibrate(18);
@@ -955,7 +973,7 @@
   function useLifeline(type) {
     const kind = type === 'poll' ? 'poll' : 'fifty';
     const left = kind === 'poll' ? myPolls : myLifelines;
-    if (answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion || left <= 0) return;
+    if (answerLocked || iAmFrozenThisQuestion || iAmEliminated || lifelineUsedThisQuestion || left <= 0) return;
     SoundFX.click();
     lifelineUsedThisQuestion = true;
     updateLifelineButton();
@@ -1015,6 +1033,7 @@
     const offset = serverNow - Date.now();
     refs.cdReady.textContent = copy().ready;
     refs.cdSquad.innerHTML = players.map((p, i) => `<span style="animation-delay:${i * 70}ms">${escapeHtml(p.avatar || '🙂')}</span>`).join('');
+    refs.countdownOverlay.classList.toggle('over-arena', activeView === 'question');
     refs.countdownOverlay.classList.remove('hidden');
     acquireWakeLock();
     let shown = null;
@@ -1079,7 +1098,12 @@
     const won = myIndex === 0;
     refs.finalTitle.textContent = won ? copy().final : copy().finalLose;
     replayAnimation(refs.finalTitle);
-    if (myIndex >= 0) {
+    if (myIndex >= 0 && data.leaderboard[myIndex].eliminated) {
+      const mine = data.leaderboard[myIndex];
+      refs.finalSub.textContent = mine.place
+        ? `You were knocked out in ${ordinal(mine.place)} place with ${mine.score} points — ${escapeHtml(data.leaderboard[0].name)} won.`
+        : `You left the match — ${escapeHtml(data.leaderboard[0].name)} won.`;
+    } else if (myIndex >= 0) {
       const myScore = data.leaderboard[myIndex].score;
       refs.finalSub.textContent = won
         ? `You took first place with ${myScore} points!`
@@ -1099,14 +1123,21 @@
     if (roomState.state === 'lobby') {
       showLobby();
     } else if (roomState.state === 'starting') {
-      showLobby();
       enterStage();
+      showView('question');
+      idleQuestionPanel('Get ready…');
+      if (roomState.stagePlan) {
+        stageInfo = { index: 0, sub: 0, count: roomState.stagePlan.count, per: roomState.stagePlan.per, names: roomState.stagePlan.names };
+        startArena(stageInfo, roomState.totalQuestions, { stage: 0 });
+        renderLevelMap(false);
+      }
       runCountdown(roomState.startsAt, roomState.serverNow);
     } else if (roomState.state === 'question' && roomState.question) {
       currentQuestion = {
         ...roomState.question,
         questionIndex: roomState.questionIndex,
         totalQuestions: roomState.totalQuestions,
+        stage: roomState.stage,
         frozenPlayerId: null,
       };
       selectedChoice = null;
@@ -1115,13 +1146,16 @@
       showView('question');
       renderQuestion();
       startQuestionCountdown(roomState.question.questionEndsAt, roomState.question.serverNow);
-    } else if (roomState.state === 'reveal' || roomState.state === 'steal_prompt' || roomState.state === 'freeze_prompt') {
+    } else if (roomState.state === 'reveal' || roomState.state === 'steal_prompt' || roomState.state === 'freeze_prompt' || roomState.state === 'transition') {
+      enterStage();
       showView('question');
-      refs.questionText.textContent = 'Reconnected — syncing with the game…';
-      refs.choicesGrid.querySelectorAll('.choice').forEach((btn) => {
-        btn.querySelector('.choice-label').textContent = '';
-        btn.disabled = true;
-      });
+      idleQuestionPanel('Reconnected — syncing with the game…');
+      if (roomState.stage) {
+        stageInfo = roomState.stage;
+        currentQuestion = { totalQuestions: roomState.totalQuestions };
+        startArena(stageInfo, roomState.totalQuestions, { stage: stageInfo.index });
+        renderLevelMap(false);
+      }
       renderLiveBoard();
     } else if (roomState.state === 'final' && roomState.final) {
       showView('final');
@@ -1203,12 +1237,22 @@
     }
   });
 
-  socket.on(EVENTS.GAME_STARTING, ({ startsAt, serverNow, players: p }) => {
+  socket.on(EVENTS.GAME_STARTING, ({ startsAt, serverNow, players: p, stagePlan, totalQuestions }) => {
     if (p) players = p;
     syncMyStats();
     answered = new Set();
     rankChanges = {};
+    resetArenaState();
     enterStage();
+    showView('question');
+    idleQuestionPanel('Get ready…');
+    if (stagePlan) {
+      stageInfo = { index: 0, sub: 0, count: stagePlan.count, per: stagePlan.per, names: stagePlan.names };
+      currentQuestion = { totalQuestions };
+      startArena(stageInfo, totalQuestions, { stage: 0, drop: true });
+      renderLevelMap(false);
+    }
+    SoundFX.whoosh();
     runCountdown(startsAt, serverNow);
   });
 
@@ -1243,8 +1287,9 @@
   socket.on(EVENTS.ANSWER_PROGRESS, ({ playerId, elapsedMs }) => {
     answered.add(playerId);
     renderLiveBoard();
-    const firstLock = stageState.locked.length === 0;
-    stageLock(playerId, elapsedMs);
+    const firstLock = lockedIds.length === 0;
+    if (!lockedIds.includes(playerId)) lockedIds.push(playerId);
+    Arena.lock(playerId, lockedIds.indexOf(playerId) + 1, elapsedMs);
     if (playerId !== mySession.playerId) {
       SoundFX.buzz();
       const p = players.find((x) => x.playerId === playerId);
@@ -1322,7 +1367,8 @@
     refs.revealBanner.classList.remove('hidden', 'good', 'bad');
     replayAnimation(refs.revealBanner);
 
-    stageReveal(choices || {}, correctIndex);
+    Arena.reveal(choices || {}, correctIndex);
+    renderLevelMap(true);
     const correctCount = Object.values(choices || {}).filter((ch) => ch === correctIndex).length;
 
     if (myDelta > 0) {
@@ -1502,8 +1548,38 @@
     Engine.flash('rgba(255,255,255,0.5)');
   });
 
+  socket.on(EVENTS.STAGE_TRANSITION, (data) => {
+    const outIds = data.eliminated.map((e) => e.playerId);
+    players = data.leaderboard;
+    syncMyStats();
+    refs.powerModal.classList.add('hidden');
+    refs.powerResultBanner.classList.add('hidden');
+    refs.powerWaitingBanner.classList.add('hidden');
+    const names = data.stagePlan.names;
+    const iOut = outIds.includes(mySession.playerId);
+    if (iOut) iAmEliminated = true;
+
+    stageInfo = { index: data.nextStage, sub: 0, count: data.stagePlan.count, per: data.stagePlan.per, names };
+    idleQuestionPanel(`${names[data.completedStage]} complete — survivors move to ${names[data.nextStage]}`);
+    refs.spectatorMsg.classList.toggle('hidden', !iAmEliminated);
+    Audience.setMood('tense', 2000);
+    showStageBanner(outIds.length ? `${names[data.completedStage]} cleared · zone closing` : `${names[data.completedStage]} cleared`, outIds.length ? '' : 'safe', 2800);
+    transitionTimers.push(setTimeout(() => {
+      showStageBanner(iOut ? `☠ You are out · #${data.eliminated.find((e) => e.playerId === mySession.playerId).place}` : `${names[data.nextStage]} — ${outIds.length} eliminated, ${data.advancing.length} advance`, iOut ? '' : 'safe', 3400);
+    }, 2900));
+    transitionTimers.push(setTimeout(() => {
+      updateAlive();
+      renderLevelMap(false);
+      renderLiveBoard();
+    }, data.durationMs - 300));
+
+    Arena.transition(data);
+    renderLiveBoard();
+  });
+
   socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
     players = p;
+    resetArenaState();
     myLifelines = 0;
     showLobby();
   });
@@ -1639,6 +1715,49 @@
   refs.playAgainBtn.addEventListener('click', () => {
     SoundFX.click();
     socket.emit(EVENTS.GAME_PLAY_AGAIN);
+  });
+
+  // ---- Back / leave ----
+  function openLeave() {
+    if (activeView === 'home') return;
+    const inMatch = activeView === 'question' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
+    refs.leaveTitle.textContent = inMatch ? 'Leave the match?' : 'Leave the room?';
+    refs.leaveDesc.textContent = inMatch
+      ? "You'll drop out of this match and can't rejoin it. Your points stay on the board."
+      : amHost() && players.filter((p) => !p.isBot).length > 1
+        ? 'The host crown passes to the next player. You can rejoin later with the room code.'
+        : 'You can rejoin later with the room code (if the room is still open).';
+    refs.leaveConfirmBtn.textContent = inMatch ? 'Leave match' : 'Leave room';
+    refs.leaveModal.classList.remove('hidden');
+  }
+
+  function leaveNow() {
+    refs.leaveModal.classList.add('hidden');
+    socket.emit(EVENTS.ROOM_LEAVE);
+    hideCountdown();
+    resetArenaState();
+    quickPending = false;
+    clearSession();
+    players = [];
+    showView('home');
+    SoundFX.click();
+  }
+
+  refs.backBtn.addEventListener('click', () => { SoundFX.click(); openLeave(); });
+  refs.leaveStayBtn.addEventListener('click', () => refs.leaveModal.classList.add('hidden'));
+  refs.leaveConfirmBtn.addEventListener('click', leaveNow);
+  refs.leaveModal.addEventListener('click', (e) => { if (e.target === refs.leaveModal) refs.leaveModal.classList.add('hidden'); });
+  // The browser/phone Back gesture does the same thing instead of leaving the page by accident.
+  window.addEventListener('popstate', () => {
+    if (activeView !== 'home') {
+      try { history.pushState({ trivia: 1 }, ''); } catch (e) { /* ignore */ }
+      openLeave();
+    } else {
+      historyArmed = false;
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !refs.leaveModal.classList.contains('hidden')) refs.leaveModal.classList.add('hidden');
   });
 
   // Keyboard answers on laptops/desktops: 1-4 or A-D.

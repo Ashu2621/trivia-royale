@@ -18,12 +18,22 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
 9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
+## Levels, the map, and elimination
+
+A match is split into 2–4 **levels** (Qualifier → Quarter-final → Semi-final → Grand Final), each a few questions long. The whole match is one map (`frontend/arena.js`):
+
+- **Every level is a room** with its own colour, a wall screen showing the level name and its sub-level progress dots, and one table per player. Each player is an animated human character sitting at their table — typing, pressing their buzzer (the lamp lights and a rank chip shows who was fastest), cheering on a correct answer and slumping on a wrong one.
+- **The start is a drop-in**: everyone parachutes onto their table.
+- **At the end of a level the storm closes**: the lowest third of the remaining players (at least one, never below two survivors) are eliminated and collapse where they sit (`#N OUT`). The safe zone closes on the next room and the survivors stand up and run down the corridor to new tables. The camera follows the squad.
+- A **level map strip** under the arena shows every level, its sub-levels and how many players are still in; tap the arena (or 🗺 Map) to zoom out over all rooms.
+- Eliminated players keep watching the rest of the tournament; the match only ends early if every human has left. Final ranking puts survivors first, then the eliminated by how long they lasted.
+- The **← Back button** (and the phone's back gesture) leaves the room or match at any time: in the lobby the host crown passes on, mid-match the seat is dropped out.
+
 ## The Hot Seat studio
 
 When a quiz starts, the screen becomes a game-show set (you can turn this off in the 🎨 menu):
 
-- **Four contestant desks (A–D)** — you sit at the desk you lock in; when the answer is revealed everyone takes the desk they chose, the right desk lights up green, and wrong answers slump.
-- **Fastest Finger lane** — every player's avatar is shown thinking, then buzzes in with a rank badge and their reaction time (`1st · 1.8s`). Only *who* has locked in is shared, never *which* answer, so nothing is given away.
+- **Fastest Finger** — each table's lamp lights when its player locks in, with a rank chip and reaction time (`1 · 1.8s`). Only *who* has locked in is shared, never *which* answer, so nothing is given away; at the reveal each table shows the letter chosen and a ✓ or ✗.
 - **A live audience** (`frontend/studio.js`) — three rows of people who lean in as time runs out, gasp or groan on a miss, and clap or cheer (with camera flashes) on a streak, with synthesized crowd sound.
 - **📊 Audience Poll** — a second booster besides 50/50: shows what the studio thinks, at a small points discount. The audience is usually right, and sometimes confidently wrong.
 - A drumroll before each reveal, and a low tension drone in the last five seconds.

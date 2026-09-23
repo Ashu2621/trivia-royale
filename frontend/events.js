@@ -15,6 +15,7 @@ const EVENTS = {
   QUESTION_ADD: 'question:add',
   QUESTION_REMOVE: 'question:remove',
   LIFELINE_USE: 'lifeline:use',
+  ROOM_LEAVE: 'room:leave',
 
   // server -> client
   ROOM_JOINED: 'room:joined',
@@ -36,4 +37,5 @@ const EVENTS = {
   GAME_STARTING: 'game:starting',
   LIFELINE_RESULT: 'lifeline:result',
   ANSWER_PROGRESS: 'answer:progress',
+  STAGE_TRANSITION: 'stage:transition',
 };

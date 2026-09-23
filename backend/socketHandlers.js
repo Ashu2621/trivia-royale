@@ -33,6 +33,8 @@ function buildRoomState(room) {
     customPool: room.category === 'custom' ? poolSummary(room) : null,
     startsAt: room.state === 'starting' ? room.startsAt : null,
     serverNow: Date.now(),
+    stagePlan: room.stagePlan,
+    stage: room.stagePlan && room.activeQuestions.length ? game.stageInfo(room) : null,
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -112,6 +114,15 @@ function register(io, socket) {
     const ctx = getContext(socket);
     if (!ctx) return;
     game.handleAnswerSubmit(io, ctx.room, ctx.player.playerId, choiceIndex);
+  });
+
+  socket.on(EVENTS.ROOM_LEAVE, () => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    socket.leave(room.code);
+    socketMeta.delete(socket.id);
+    game.handleLeave(io, room, player);
   });
 
   socket.on(EVENTS.LIFELINE_USE, ({ type } = {}) => {

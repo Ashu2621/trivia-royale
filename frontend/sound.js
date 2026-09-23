@@ -191,6 +191,25 @@ const SoundFX = (function () {
       tone(1320, 0, 0.07, 'square', 0.06);
       tone(1760, 0.06, 0.09, 'square', 0.05);
     },
+    // Battle-royale style cues for the between-levels walk.
+    siren() {
+      for (let i = 0; i < 3; i++) {
+        sweep(420, 760, i * 0.55, 0.5, 'sawtooth', 0.05);
+        sweep(760, 420, i * 0.55 + 0.27, 0.28, 'sawtooth', 0.04);
+      }
+    },
+    whoosh() {
+      noiseBurst(0, 0.7, 1200, 0.5, 0.1, 1.6);
+      sweep(200, 900, 0, 0.6, 'sine', 0.03);
+    },
+    eliminated() {
+      sweep(320, 60, 0, 0.7, 'sawtooth', 0.16);
+      noiseBurst(0, 0.5, 300, 0.7, 0.12, 0.6);
+      tone(110, 0.05, 0.6, 'square', 0.06);
+    },
+    step() {
+      noiseBurst(0, 0.05, 700, 2, 0.05, 1.2);
+    },
     // Low, slowly pulsing drone for the last seconds of a question.
     tension(on) {
       if (!on) return stopTension();

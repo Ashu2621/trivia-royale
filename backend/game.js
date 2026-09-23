@@ -2,11 +2,18 @@ const EVENTS = require('./events');
 const { getQuestions, getCategoryLabel, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
 const { getLevelLabel } = require('./levels');
 const { calculateScore } = require('./scoring');
-const { serializePlayers, countConnected, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } = require('./rooms');
+const rooms = require('./rooms');
+const { serializePlayers, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } = rooms;
 const bots = require('./bots');
 const db = require('./db');
 
 const START_COUNTDOWN_MS = 3400;
+const TRANSITION_MS = 7800; // the between-levels walk: eliminations, then the survivors run to the next room
+const STAGE_NAMES = {
+  2: ['Qualifier', 'Grand Final'],
+  3: ['Qualifier', 'Semi-final', 'Grand Final'],
+  4: ['Qualifier', 'Quarter-final', 'Semi-final', 'Grand Final'],
+};
 const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
 const POWER_RESULT_TO_NEXT_MS = 4000;
@@ -32,6 +39,57 @@ function shuffled(list) {
   return copy;
 }
 
+// ---- Levels (stages) and elimination ----
+const isAlive = (p) => !p.eliminated && !p.left;
+
+function countAliveConnected(room) {
+  let n = 0;
+  for (const p of room.players.values()) if (isAlive(p) && p.connected) n += 1;
+  return n;
+}
+
+// Anyone still watching or playing. An eliminated human stays to spectate the rest
+// of the tournament; the match only ends early once every human has walked away.
+function humansAlive(room) {
+  for (const p of room.players.values()) if (!p.isBot && !p.left && p.connected) return true;
+  return false;
+}
+
+// Split a match into 2-4 levels; each level ends with a cut.
+function planStages(total) {
+  const wanted = Math.min(4, Math.max(2, Math.floor(total / 3)));
+  const per = Math.ceil(total / wanted);
+  const count = Math.ceil(total / per);
+  return { count, per, total, names: STAGE_NAMES[count] || STAGE_NAMES[2] };
+}
+
+function stageIndexOf(room, questionIndex) {
+  const plan = room.stagePlan;
+  return Math.min(plan.count - 1, Math.floor(questionIndex / plan.per));
+}
+
+function stageInfo(room) {
+  const plan = room.stagePlan;
+  const index = stageIndexOf(room, Math.max(0, room.questionIndex));
+  const start = index * plan.per;
+  const end = Math.min(room.activeQuestions.length, start + plan.per);
+  return {
+    index,
+    count: plan.count,
+    per: plan.per,
+    names: plan.names,
+    name: plan.names[index],
+    sub: Math.max(0, room.questionIndex - start),
+    subCount: end - start,
+    alive: [...room.players.values()].filter(isAlive).length,
+  };
+}
+
+function isStageBoundary(room, questionIndex) {
+  const next = questionIndex + 1;
+  return next < room.activeQuestions.length && stageIndexOf(room, next) > stageIndexOf(room, questionIndex);
+}
+
 function getActiveQuestions(room) {
   return room.activeQuestions;
 }
@@ -47,6 +105,9 @@ function startGame(io, room) {
     p.streak = 0;
     p.lifelines = LIFELINES_PER_GAME;
     p.polls = POLLS_PER_GAME;
+    p.eliminated = false;
+    p.place = null;
+    p.left = false;
   }
   room.questionIndex = -1;
   room.frozenPlayerId = null;
@@ -55,6 +116,7 @@ function startGame(io, room) {
   room.activeQuestions = room.category === 'custom' ? room.customQuestions.slice() : shuffled(getQuestions(room.category));
 
   // A short "get ready" beat so every device is on the question screen together.
+  room.stagePlan = planStages(room.activeQuestions.length);
   room.state = 'starting';
   const startsAt = Date.now() + START_COUNTDOWN_MS;
   room.startsAt = startsAt;
@@ -62,6 +124,7 @@ function startGame(io, room) {
     startsAt,
     serverNow: Date.now(),
     totalQuestions: room.activeQuestions.length,
+    stagePlan: room.stagePlan,
     players: serializePlayers(room),
   });
   room.timers.revealTimeout = setTimeout(() => {
@@ -95,7 +158,7 @@ function beginQuestion(io, room) {
   // out of answering — pre-seed a losing "answer" so they can't submit one.
   const frozenId = room.frozenPlayerId;
   room.frozenPlayerId = null;
-  if (frozenId && room.players.has(frozenId)) {
+  if (frozenId && room.players.has(frozenId) && isAlive(room.players.get(frozenId))) {
     room.answers.set(frozenId, { choiceIndex: -1, answeredAt: questionStartedAt });
   }
 
@@ -114,6 +177,7 @@ function beginQuestion(io, room) {
     powerRoundType,
     frozenPlayerId: frozenId || null,
     serverNow: Date.now(),
+    stage: stageInfo(room),
     players: serializePlayers(room),
   });
 
@@ -124,7 +188,7 @@ function beginQuestion(io, room) {
 function scheduleBotAnswers(io, room) {
   const expectedIndex = room.questionIndex;
   for (const bot of room.players.values()) {
-    if (!bot.isBot || !bot.connected) continue;
+    if (!bot.isBot || !bot.connected || !isAlive(bot)) continue;
     if (room.answers.has(bot.playerId)) continue; // frozen this round
     const plan = bots.planAnswer(bot.botTier, room.currentQuestion, QUESTION_DURATION_MS, bot);
     const timer = setTimeout(() => {
@@ -133,6 +197,53 @@ function scheduleBotAnswers(io, room) {
     }, plan.delay);
     room.timers.botTimeouts.push(timer);
   }
+}
+
+// Called after a question's reveal: either straight on to the next question,
+// or through the between-levels walk when a level has just ended.
+function advance(io, room) {
+  if (!humansAlive(room)) {
+    finalizeGame(io, room);
+    return;
+  }
+  if (isStageBoundary(room, room.questionIndex)) {
+    beginTransition(io, room);
+    return;
+  }
+  goToNextQuestionOrFinish(io, room);
+}
+
+function beginTransition(io, room) {
+  clearRoomTimers(room);
+  const completed = stageIndexOf(room, room.questionIndex);
+  const alive = [...room.players.values()].filter(isAlive).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  // Cut the bottom third (never below two survivors), like a battle-royale zone closing in.
+  const cut = alive.length <= 2 ? 0 : Math.max(1, Math.floor(alive.length / 3));
+  const survivors = alive.slice(0, alive.length - cut);
+  const out = alive.slice(alive.length - cut);
+  out.forEach((p, i) => {
+    p.eliminated = true;
+    p.place = survivors.length + 1 + i;
+    p.streak = 0;
+  });
+  if (room.frozenPlayerId && !isAlive(room.players.get(room.frozenPlayerId) || {})) room.frozenPlayerId = null;
+
+  room.state = 'transition';
+  emitToRoom(io, room, EVENTS.STAGE_TRANSITION, {
+    completedStage: completed,
+    nextStage: completed + 1,
+    stagePlan: room.stagePlan,
+    advancing: survivors.map((p) => p.playerId),
+    eliminated: out.map((p) => ({ playerId: p.playerId, place: p.place })),
+    leaderboard: leaderboard(room),
+    durationMs: TRANSITION_MS,
+    serverNow: Date.now(),
+  });
+  room.timers.revealTimeout = setTimeout(() => {
+    if (room.state !== 'transition') return;
+    if (!humansAlive(room)) finalizeGame(io, room);
+    else goToNextQuestionOrFinish(io, room);
+  }, TRANSITION_MS);
 }
 
 function goToNextQuestionOrFinish(io, room) {
@@ -149,7 +260,7 @@ function goToNextQuestionOrFinish(io, room) {
 function handleAnswerSubmit(io, room, playerId, choiceIndex) {
   if (room.state !== 'question') return;
   const player = room.players.get(playerId);
-  if (!player || !player.connected) return;
+  if (!player || !player.connected || !isAlive(player)) return;
   if (room.answers.has(playerId)) return; // already answered (or frozen this round), ignore
   if (!Number.isInteger(choiceIndex) || choiceIndex < 0 || choiceIndex > 3) return;
 
@@ -159,7 +270,7 @@ function handleAnswerSubmit(io, room, playerId, choiceIndex) {
   emitToRoom(io, room, EVENTS.ANSWER_PROGRESS, {
     playerId,
     answered: room.answers.size,
-    total: countConnected(room),
+    total: countAliveConnected(room),
     elapsedMs: Math.max(0, Date.now() - room.currentQuestion.questionStartedAt),
   });
 
@@ -185,7 +296,7 @@ function useLifeline(io, room, playerId, type) {
   if (room.state !== 'question' || !room.currentQuestion) return;
   const kind = type === 'poll' ? 'poll' : 'fifty';
   const player = room.players.get(playerId);
-  if (!player || !player.connected || player.isBot) return;
+  if (!player || !player.connected || player.isBot || !isAlive(player)) return;
   if (room.answers.has(playerId)) return; // already answered or frozen
   if (room.assisted.has(playerId)) return; // once per question
   if ((kind === 'poll' ? player.polls : player.lifelines) <= 0) return;
@@ -207,7 +318,8 @@ function useLifeline(io, room, playerId, type) {
 
 function maybeEndQuestionEarly(io, room) {
   if (room.state !== 'question') return;
-  if (room.answers.size >= countConnected(room) && countConnected(room) > 0) {
+  const expected = countAliveConnected(room);
+  if (room.answers.size >= expected && expected > 0) {
     endQuestion(io, room);
   }
 }
@@ -221,6 +333,11 @@ function endQuestion(io, room) {
   const assisted = {};
 
   for (const [playerId, player] of room.players.entries()) {
+    if (!isAlive(player)) {
+      deltas[playerId] = 0;
+      bonuses[playerId] = 0;
+      continue;
+    }
     const answer = room.answers.get(playerId);
     const frozen = !!answer && answer.choiceIndex === -1;
     let delta = 0;
@@ -287,7 +404,7 @@ function scheduleAdvance(io, room, delayMs) {
   room.timers.revealTimeout = setTimeout(() => {
     if (room.questionIndex !== expectedIndex) return;
     if (room.state !== 'reveal') return;
-    goToNextQuestionOrFinish(io, room);
+    advance(io, room);
   }, delayMs);
 }
 
@@ -298,7 +415,7 @@ function beginPowerPrompt(io, room, type, chooserId) {
 
   const chooser = room.players.get(chooserId);
   const opponents = [...room.players.values()]
-    .filter((p) => p.playerId !== chooserId)
+    .filter((p) => p.playerId !== chooserId && isAlive(p))
     .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, score: p.score }));
 
   const promptEvent = type === 'steal' ? EVENTS.STEAL_PROMPT : EVENTS.FREEZE_PROMPT;
@@ -337,7 +454,7 @@ function resolvePowerChoice(io, room, targetPlayerId) {
   const { type, chooserId } = room.stealState;
   const chooser = room.players.get(chooserId);
   const target = targetPlayerId ? room.players.get(targetPlayerId) : null;
-  const validTarget = chooser && target && target.playerId !== chooser.playerId;
+  const validTarget = chooser && target && target.playerId !== chooser.playerId && isAlive(target);
 
   room.state = 'reveal';
 
@@ -394,12 +511,19 @@ function finalizeGame(io, room) {
 function resetToLobby(io, room) {
   if (room.state !== 'final') return;
   clearRoomTimers(room);
-  for (const p of room.players.values()) {
+  for (const [id, p] of [...room.players.entries()]) {
+    if (p.left) {
+      room.players.delete(id); // someone who walked out mid-match doesn't come back
+      continue;
+    }
     p.score = 0;
     p.streak = 0;
     p.lifelines = 0;
     p.polls = 0;
+    p.eliminated = false;
+    p.place = null;
   }
+  room.stagePlan = null;
   room.questionIndex = -1;
   room.answers = new Map();
   room.currentQuestion = null;
@@ -409,8 +533,30 @@ function resetToLobby(io, room) {
   emitToRoom(io, room, EVENTS.GAME_RESET_TO_LOBBY, { players: serializePlayers(room) });
 }
 
+// The Back button. In the lobby or on the results screen the player simply leaves;
+// mid-match they drop out (their seat is eliminated) and the game carries on.
+function handleLeave(io, room, player) {
+  if (room.state === 'lobby' || room.state === 'final') {
+    rooms.leaveIdleRoom(room, player.playerId);
+    if (rooms.getRoom(room.code)) emitToRoom(io, room, EVENTS.PLAYER_LIST_UPDATE, { players: serializePlayers(room) });
+    return;
+  }
+  player.left = true;
+  player.eliminated = true;
+  player.place = null;
+  rooms.markDisconnected(room, player.playerId);
+  rooms.promoteNextHostIfNeeded(room, player.playerId);
+  emitToRoom(io, room, EVENTS.PLAYER_LIST_UPDATE, { players: serializePlayers(room) });
+  if (room.state === 'question') maybeEndQuestionEarly(io, room);
+  else if ((room.state === 'steal_prompt' || room.state === 'freeze_prompt') && room.stealState && room.stealState.chooserId === player.playerId) {
+    resolvePowerChoice(io, room, null);
+  }
+}
+
 module.exports = {
   startGame,
+  handleLeave,
+  stageInfo,
   handleAnswerSubmit,
   useLifeline,
   maybeEndQuestionEarly,

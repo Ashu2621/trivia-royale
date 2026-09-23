@@ -55,6 +55,9 @@ function createPlayer(name, avatar, socketId, isCreator) {
     streak: 0,
     lifelines: 0,
     polls: 0,
+    eliminated: false,
+    left: false,
+    place: null,
   };
 }
 
@@ -77,6 +80,9 @@ function createBot(existingNames, tierKey) {
     streak: 0,
     lifelines: 0,
     polls: 0,
+    eliminated: false,
+    left: false,
+    place: null,
   };
 }
 
@@ -96,6 +102,8 @@ function newRoom(code, hostPlayer, categoryKey) {
     timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
     allDisconnectedSince: null,
     customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
+    stagePlan: null, // { count, per, names } — levels of the match, set when a game starts
+    startsAt: null,
     activeQuestions: [], // the actual per-game order — shuffled static bank, or a copy of customQuestions
     levelKey: null, // last level used for AI generation in this room, for display/reuse
     subject: null, // last subject used for AI generation in this room, for display/reuse
@@ -238,9 +246,13 @@ function serializePlayers(room) {
       streak: p.streak || 0,
       lifelines: p.lifelines || 0,
       polls: p.polls || 0,
+      eliminated: !!p.eliminated,
+      left: !!p.left,
+      place: p.place || null,
       score: p.score,
     }))
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    // survivors first (by score), then the eliminated by how long they lasted
+    .sort((a, b) => (a.eliminated ? 1 : 0) - (b.eliminated ? 1 : 0) || (a.eliminated ? (a.place || 99) - (b.place || 99) : 0) || b.score - a.score || a.name.localeCompare(b.name));
 }
 
 function countConnected(room) {
@@ -285,6 +297,18 @@ function promoteNextHostIfNeeded(room, disconnectedPlayerId) {
     }
   }
   return null;
+}
+
+// Someone pressing Back in the lobby or on the results screen: remove them
+// entirely, hand over the host crown, and delete the room if no humans remain.
+function leaveIdleRoom(room, playerId) {
+  const p = room.players.get(playerId);
+  if (!p) return;
+  markDisconnected(room, playerId);
+  promoteNextHostIfNeeded(room, playerId);
+  room.players.delete(playerId);
+  const humansLeft = [...room.players.values()].some((x) => !x.isBot);
+  if (!humansLeft) deleteRoom(room.code);
 }
 
 function findPlayerBySocketId(room, socketId) {
@@ -340,6 +364,7 @@ module.exports = {
   countConnected,
   markDisconnected,
   promoteNextHostIfNeeded,
+  leaveIdleRoom,
   findPlayerBySocketId,
   clearRoomTimers,
   deleteRoom,
