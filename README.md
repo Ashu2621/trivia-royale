@@ -45,16 +45,22 @@ Without `MONGODB_URI` set, the server logs a note and the Hall of Fame button ju
 
 ## Deploying it live (Render — free, no credit card)
 
-1. Push this project to a GitHub repo (public or private both work).
-2. Go to [render.com](https://render.com) and sign up (you can use your GitHub account to sign in).
-3. Click **New +** → **Web Service**, and connect the GitHub repo you just pushed.
-4. Fill in:
-   - **Name**: anything, e.g. `trivia-royale`
-   - **Runtime**: Node
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Instance Type**: Free
-5. Click **Create Web Service**. Render will build and deploy — takes 1-2 minutes.
-6. Once it says "Live", your public URL is shown at the top (something like `https://trivia-royale.onrender.com`). That's the link to share with players.
+This repo includes a `render.yaml` Blueprint, so Render can configure everything itself — you only fill in one field.
 
-**Note:** the free tier spins down after inactivity, so the first request after a while takes ~30-50s to wake up (the next ones are instant). Also, waking up from a cold start clears any rooms from before — fine for a party game played fresh each time.
+1. Push this project to a GitHub repo (public or private both work).
+2. Go to [render.com](https://render.com) and sign up (you can use your GitHub account to sign in — no credit card needed for the free tier).
+3. Click **New +** → **Blueprint**, and connect the GitHub repo you just pushed. Render reads `render.yaml` and pre-fills the service (Node, `npm install`, `npm start`, free plan) automatically.
+4. It'll ask for the one env var the blueprint left blank: `MONGODB_URI`. Paste your MongoDB Atlas connection string (see above) if you set one up, or leave it empty — the game still works, just without the Hall of Fame.
+5. Click **Apply**. Render builds and deploys — takes 1-2 minutes.
+6. Once it says "Live", your public URL is shown at the top (something like `https://trivia-royale.onrender.com`). That's the link to share with players — and the one to put in the contest submission.
+
+*(No blueprint? You can also do it manually: **New +** → **Web Service** → connect the repo → Build Command `npm install`, Start Command `npm start`, Instance Type Free.)*
+
+**Note:** the free tier spins down after inactivity, so the first request after a while takes ~30-50s to wake up (the next ones are instant). Also, waking up from a cold start clears any in-memory rooms from before (the Hall of Fame is unaffected, since it lives in MongoDB) — fine for a party game played fresh each time.
+
+## Submitting to the contest
+
+- **Title**: `Trivia Royale` (or your own spin on it).
+- **Cover image**: a 1200×630 card is included as a design Artifact from this build — open it, and use its export/screenshot to save a PNG.
+- **Description**: *"Trivia Royale is a live multiplayer trivia game — join with a 4-letter room code from any phone, no login, no app install. Every 3rd question is a power round: steal points from a rival or freeze them out of the next question. Play solo against a computer opponent, or with a group anywhere; every win gets saved to an all-time Hall of Fame."*
+- **Link**: your live Render URL from above.
