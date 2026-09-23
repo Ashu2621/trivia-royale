@@ -7,6 +7,7 @@ const rooms = require('./rooms');
 const socketHandlers = require('./socketHandlers');
 const db = require('./db');
 const ai = require('./ai');
+const bots = require('./bots');
 const { getCategoryList } = require('./questions');
 const { getLevelList } = require('./levels');
 
@@ -19,6 +20,7 @@ app.get('/api/meta', (req, res) => {
     avatars: rooms.AVATARS,
     levels: getLevelList(),
     aiEnabled: ai.isEnabled(),
+    botTiers: bots.listTiers(),
   });
 });
 const VALID_PERIODS = new Set(['all', 'week', 'month', 'year']);

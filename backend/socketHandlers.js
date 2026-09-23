@@ -2,6 +2,7 @@ const EVENTS = require('./events');
 const rooms = require('./rooms');
 const game = require('./game');
 const ai = require('./ai');
+const bots = require('./bots');
 const questionHistory = require('./questionHistory');
 const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
@@ -30,6 +31,8 @@ function buildRoomState(room) {
     question: null,
     final: null,
     customPool: room.category === 'custom' ? poolSummary(room) : null,
+    startsAt: room.state === 'starting' ? room.startsAt : null,
+    serverNow: Date.now(),
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -111,6 +114,12 @@ function register(io, socket) {
     game.handleAnswerSubmit(io, ctx.room, ctx.player.playerId, choiceIndex);
   });
 
+  socket.on(EVENTS.LIFELINE_USE, () => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    game.useLifeline(io, ctx.room, ctx.player.playerId);
+  });
+
   socket.on(EVENTS.STEAL_CHOOSE, ({ targetPlayerId } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
@@ -127,12 +136,12 @@ function register(io, socket) {
     game.resolvePowerChoice(io, room, targetPlayerId || null);
   });
 
-  socket.on(EVENTS.BOT_ADD, () => {
+  socket.on(EVENTS.BOT_ADD, ({ difficulty } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
     if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can add a computer player.');
-    const result = rooms.addBot(room);
+    const result = rooms.addBot(room, bots.BOT_TIERS[difficulty] ? difficulty : bots.DEFAULT_TIER);
     if (result.error) return sendError(socket, result.error.code, result.error.message);
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
   });

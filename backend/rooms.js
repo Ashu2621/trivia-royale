@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { resolveCategory } = require('./questions');
+const { getTier, DEFAULT_TIER } = require('./bots');
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O, avoids look-alike confusion
 const CODE_LENGTH = 4;
@@ -9,9 +10,9 @@ const MAX_NAME_LENGTH = 20;
 
 const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
 const DEFAULT_AVATAR = AVATARS[0];
-const BOT_AVATAR = '🤖';
 const BOT_NAMES = ['Ada', 'Turing', 'Byte', 'Nova', 'Cipher', 'Echo', 'Volt', 'Pixel', 'Newton', 'Ranger'];
 const MAX_PLAYERS = 10;
+const LIFELINES_PER_GAME = 2;
 const MAX_CUSTOM_QUESTIONS = 40;
 const MAX_QUESTION_LENGTH = 300;
 const MAX_OPTION_LENGTH = 120;
@@ -49,23 +50,30 @@ function createPlayer(name, avatar, socketId, isCreator) {
     isCreator,
     disconnectedAt: null,
     isBot: false,
+    botTier: null,
+    streak: 0,
+    lifelines: 0,
   };
 }
 
-function createBot(existingNames) {
+function createBot(existingNames, tierKey) {
   const taken = new Set(existingNames);
   const pool = BOT_NAMES.filter((n) => !taken.has(`Bot ${n}`));
   const pick = (pool.length ? pool : BOT_NAMES)[Math.floor(Math.random() * (pool.length ? pool.length : BOT_NAMES.length))];
+  const tier = getTier(tierKey);
   return {
     playerId: crypto.randomUUID(),
     name: `Bot ${pick}`,
-    avatar: BOT_AVATAR,
+    avatar: tier.emoji,
     socketId: null,
     connected: true,
     score: 0,
     isCreator: false,
     disconnectedAt: null,
     isBot: true,
+    botTier: tier.key,
+    streak: 0,
+    lifelines: 0,
   };
 }
 
@@ -156,10 +164,10 @@ function joinRoom({ roomCode, name: rawName, avatar: rawAvatar, socketId, player
   return { room, player, reconnected: false };
 }
 
-function addBot(room) {
+function addBot(room, tierKey) {
   if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only add a computer player in the lobby.' } };
   if (room.players.size >= MAX_PLAYERS) return { error: { code: 'ROOM_FULL', message: `Rooms cap out at ${MAX_PLAYERS} players.` } };
-  const bot = createBot([...room.players.values()].map((p) => p.name));
+  const bot = createBot([...room.players.values()].map((p) => p.name), tierKey || DEFAULT_TIER);
   room.players.set(bot.playerId, bot);
   return { bot };
 }
@@ -216,7 +224,18 @@ function removeCustomQuestion(room, index) {
 
 function serializePlayers(room) {
   return [...room.players.values()]
-    .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, connected: p.connected, isCreator: p.isCreator, isBot: p.isBot, score: p.score }))
+    .map((p) => ({
+      playerId: p.playerId,
+      name: p.name,
+      avatar: p.avatar,
+      connected: p.connected,
+      isCreator: p.isCreator,
+      isBot: p.isBot,
+      botTier: p.botTier ? getTier(p.botTier).label : null,
+      streak: p.streak || 0,
+      lifelines: p.lifelines || 0,
+      score: p.score,
+    }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
@@ -311,6 +330,7 @@ module.exports = {
   addCustomQuestions,
   removeCustomQuestion,
   MAX_CUSTOM_QUESTIONS,
+  LIFELINES_PER_GAME,
   serializePlayers,
   countConnected,
   markDisconnected,

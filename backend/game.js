@@ -2,24 +2,21 @@ const EVENTS = require('./events');
 const { getQuestions, getCategoryLabel, QUESTION_DURATION_MS, getPowerRoundType } = require('./questions');
 const { getLevelLabel } = require('./levels');
 const { calculateScore } = require('./scoring');
-const { serializePlayers, countConnected, clearRoomTimers } = require('./rooms');
+const { serializePlayers, countConnected, clearRoomTimers, LIFELINES_PER_GAME } = require('./rooms');
+const bots = require('./bots');
 const db = require('./db');
 
+const START_COUNTDOWN_MS = 3400;
 const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
 const POWER_RESULT_TO_NEXT_MS = 4000;
 const STEAL_POINTS = 150;
-const BOT_ACCURACY = 0.65; // chance a bot answers correctly
-const BOT_ANSWER_MIN_DELAY_MS = 1500;
-const BOT_POWER_DECISION_DELAY_MS = [1200, 3200]; // [min, max]
-const BOT_POWER_ACT_CHANCE = 0.85; // chance a bot uses its steal/freeze rather than skipping
+const LIFELINE_SCORE_FACTOR = 0.6; // an answer made with a 50/50 booster earns 60% of the normal points
+const STREAK_BONUS_STEP = 50; // each consecutive correct answer beyond the first adds this much...
+const STREAK_BONUS_CAP = 200; // ...up to this cap
 
-function randomWrongIndex(correctIndex) {
-  let i;
-  do {
-    i = Math.floor(Math.random() * 4);
-  } while (i === correctIndex);
-  return i;
+function streakBonus(streak) {
+  return Math.min(STREAK_BONUS_CAP, Math.max(0, streak - 1) * STREAK_BONUS_STEP);
 }
 
 function leaderboard(room) {
@@ -45,13 +42,31 @@ function emitToRoom(io, room, event, payload) {
 
 function startGame(io, room) {
   if (room.state !== 'lobby') return;
-  for (const p of room.players.values()) p.score = 0;
+  for (const p of room.players.values()) {
+    p.score = 0;
+    p.streak = 0;
+    p.lifelines = LIFELINES_PER_GAME;
+  }
   room.questionIndex = -1;
   room.frozenPlayerId = null;
   // Freshly shuffled per room so the same category never plays in the same
   // order twice in a row — a room replayed with Play Again reshuffles again too.
   room.activeQuestions = room.category === 'custom' ? room.customQuestions.slice() : shuffled(getQuestions(room.category));
-  goToNextQuestionOrFinish(io, room);
+
+  // A short "get ready" beat so every device is on the question screen together.
+  room.state = 'starting';
+  const startsAt = Date.now() + START_COUNTDOWN_MS;
+  room.startsAt = startsAt;
+  emitToRoom(io, room, EVENTS.GAME_STARTING, {
+    startsAt,
+    serverNow: Date.now(),
+    totalQuestions: room.activeQuestions.length,
+    players: serializePlayers(room),
+  });
+  room.timers.revealTimeout = setTimeout(() => {
+    if (room.state !== 'starting') return;
+    goToNextQuestionOrFinish(io, room);
+  }, START_COUNTDOWN_MS);
 }
 
 function beginQuestion(io, room) {
@@ -64,6 +79,7 @@ function beginQuestion(io, room) {
 
   room.state = 'question';
   room.answers = new Map();
+  room.assisted = new Set();
   room.stealState = null;
   room.currentQuestion = {
     text: q.text,
@@ -97,6 +113,7 @@ function beginQuestion(io, room) {
     powerRoundType,
     frozenPlayerId: frozenId || null,
     serverNow: Date.now(),
+    players: serializePlayers(room),
   });
 
   scheduleBotAnswers(io, room);
@@ -104,18 +121,15 @@ function beginQuestion(io, room) {
 }
 
 function scheduleBotAnswers(io, room) {
-  const { correctIndex } = room.currentQuestion;
   const expectedIndex = room.questionIndex;
   for (const bot of room.players.values()) {
     if (!bot.isBot || !bot.connected) continue;
     if (room.answers.has(bot.playerId)) continue; // frozen this round
-    const window = Math.max(2000, QUESTION_DURATION_MS - BOT_ANSWER_MIN_DELAY_MS * 2);
-    const delay = BOT_ANSWER_MIN_DELAY_MS + Math.random() * window;
-    const choice = Math.random() < BOT_ACCURACY ? correctIndex : randomWrongIndex(correctIndex);
+    const plan = bots.planAnswer(bot.botTier, room.currentQuestion, QUESTION_DURATION_MS, bot);
     const timer = setTimeout(() => {
       if (room.questionIndex !== expectedIndex || room.state !== 'question') return;
-      handleAnswerSubmit(io, room, bot.playerId, choice);
-    }, delay);
+      handleAnswerSubmit(io, room, bot.playerId, plan.choiceIndex);
+    }, plan.delay);
     room.timers.botTimeouts.push(timer);
   }
 }
@@ -136,12 +150,32 @@ function handleAnswerSubmit(io, room, playerId, choiceIndex) {
   const player = room.players.get(playerId);
   if (!player || !player.connected) return;
   if (room.answers.has(playerId)) return; // already answered (or frozen this round), ignore
-  if (typeof choiceIndex !== 'number' || choiceIndex < 0 || choiceIndex > 3) return;
+  if (!Number.isInteger(choiceIndex) || choiceIndex < 0 || choiceIndex > 3) return;
 
   room.answers.set(playerId, { choiceIndex, answeredAt: Date.now() });
   if (player.socketId) io.to(player.socketId).emit(EVENTS.ANSWER_ACK, { choiceIndex });
+  // Tell everyone who has locked in (never which answer) so the room can feel the race.
+  emitToRoom(io, room, EVENTS.ANSWER_PROGRESS, { playerId, answered: room.answers.size, total: countConnected(room) });
 
   maybeEndQuestionEarly(io, room);
+}
+
+// 50/50 booster: remove two wrong answers for this player, at a points discount.
+function useLifeline(io, room, playerId) {
+  if (room.state !== 'question' || !room.currentQuestion) return;
+  const player = room.players.get(playerId);
+  if (!player || !player.connected || player.isBot) return;
+  if (player.lifelines <= 0) return;
+  if (room.answers.has(playerId)) return; // already answered or frozen
+  if (room.assisted.has(playerId)) return; // once per question
+
+  const wrong = [0, 1, 2, 3].filter((i) => i !== room.currentQuestion.correctIndex);
+  const removed = shuffled(wrong).slice(0, 2);
+  player.lifelines -= 1;
+  room.assisted.add(playerId);
+  if (player.socketId) {
+    io.to(player.socketId).emit(EVENTS.LIFELINE_RESULT, { removed, lifelines: player.lifelines });
+  }
 }
 
 function maybeEndQuestionEarly(io, room) {
@@ -156,16 +190,34 @@ function endQuestion(io, room) {
   clearRoomTimers(room);
   const { correctIndex, questionStartedAt, powerRoundType } = room.currentQuestion;
   const deltas = {};
+  const bonuses = {};
+  const assisted = {};
 
   for (const [playerId, player] of room.players.entries()) {
     const answer = room.answers.get(playerId);
+    const frozen = !!answer && answer.choiceIndex === -1;
     let delta = 0;
-    if (answer) {
+    let bonus = 0;
+    if (answer && !frozen) {
       const isCorrect = answer.choiceIndex === correctIndex;
-      delta = calculateScore(answer.answeredAt, questionStartedAt, QUESTION_DURATION_MS, isCorrect);
+      if (isCorrect) {
+        let base = calculateScore(answer.answeredAt, questionStartedAt, QUESTION_DURATION_MS, true);
+        if (room.assisted && room.assisted.has(playerId)) {
+          base = Math.round(base * LIFELINE_SCORE_FACTOR);
+          assisted[playerId] = true;
+        }
+        player.streak = (player.streak || 0) + 1;
+        bonus = streakBonus(player.streak);
+        delta = base + bonus;
+      } else {
+        player.streak = 0;
+      }
+    } else if (!frozen) {
+      player.streak = 0; // no answer at all breaks the streak; being frozen does not
     }
     if (delta) player.score += delta;
     deltas[playerId] = delta;
+    bonuses[playerId] = bonus;
   }
 
   room.state = 'reveal';
@@ -185,6 +237,9 @@ function endQuestion(io, room) {
   emitToRoom(io, room, EVENTS.QUESTION_REVEAL, {
     correctIndex,
     deltas,
+    bonuses,
+    assisted,
+    streaks: Object.fromEntries([...room.players.entries()].map(([id, p]) => [id, p.streak || 0])),
     leaderboard: leaderboard(room),
     powerRoundType,
     powerEligiblePlayerId,
@@ -220,7 +275,7 @@ function beginPowerPrompt(io, room, type, chooserId) {
   const waitingEvent = type === 'steal' ? EVENTS.STEAL_WAITING : EVENTS.FREEZE_WAITING;
 
   if (chooser && chooser.socketId) {
-    io.to(chooser.socketId).emit(promptEvent, { opponents, decisionEndsAt });
+    io.to(chooser.socketId).emit(promptEvent, { opponents, decisionEndsAt, serverNow: Date.now() });
   }
   for (const p of room.players.values()) {
     if (p.playerId === chooserId || !p.socketId) continue;
@@ -235,15 +290,11 @@ function beginPowerPrompt(io, room, type, chooserId) {
   }, POWER_DECISION_MS);
 
   if (chooser && chooser.isBot) {
-    const [minDelay, maxDelay] = BOT_POWER_DECISION_DELAY_MS;
-    const delay = minDelay + Math.random() * (maxDelay - minDelay);
     const botTimer = setTimeout(() => {
       if (room.questionIndex !== expectedIndex) return;
       if (room.state !== 'steal_prompt' && room.state !== 'freeze_prompt') return;
-      const willAct = Math.random() < BOT_POWER_ACT_CHANCE;
-      const best = willAct ? opponents.slice().sort((a, b) => b.score - a.score)[0] : null;
-      resolvePowerChoice(io, room, best ? best.playerId : null);
-    }, delay);
+      resolvePowerChoice(io, room, bots.chooseTarget(chooser.botTier, type, opponents));
+    }, bots.decisionDelay(chooser.botTier));
     room.timers.botTimeouts.push(botTimer);
   }
 }
@@ -313,7 +364,11 @@ function finalizeGame(io, room) {
 function resetToLobby(io, room) {
   if (room.state !== 'final') return;
   clearRoomTimers(room);
-  for (const p of room.players.values()) p.score = 0;
+  for (const p of room.players.values()) {
+    p.score = 0;
+    p.streak = 0;
+    p.lifelines = 0;
+  }
   room.questionIndex = -1;
   room.answers = new Map();
   room.currentQuestion = null;
@@ -326,6 +381,7 @@ function resetToLobby(io, room) {
 module.exports = {
   startGame,
   handleAnswerSubmit,
+  useLifeline,
   maybeEndQuestionEarly,
   resolvePowerChoice,
   resetToLobby,

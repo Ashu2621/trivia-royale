@@ -14,6 +14,7 @@ const EVENTS = {
   QUESTIONS_GENERATE: 'questions:generate',
   QUESTION_ADD: 'question:add',
   QUESTION_REMOVE: 'question:remove',
+  LIFELINE_USE: 'lifeline:use',
 
   // server -> client
   ROOM_JOINED: 'room:joined',
@@ -32,6 +33,9 @@ const EVENTS = {
   GAME_RESET_TO_LOBBY: 'game:reset_to_lobby',
   QUESTIONS_GENERATING: 'questions:generating',
   QUESTION_POOL_UPDATE: 'question:pool_update',
+  GAME_STARTING: 'game:starting',
+  LIFELINE_RESULT: 'lifeline:result',
+  ANSWER_PROGRESS: 'answer:progress',
 };
 
 module.exports = EVENTS;

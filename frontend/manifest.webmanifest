@@ -1,0 +1,13 @@
+{
+  "name": "Trivia Royale",
+  "short_name": "Trivia Royale",
+  "description": "Live multiplayer trivia — join with a code, no login.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#3d1fb0",
+  "theme_color": "#3d1fb0",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

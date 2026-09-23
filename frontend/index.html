@@ -2,159 +2,232 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Trivia Royale — Live Multiplayer Trivia</title>
-<meta name="description" content="Play live trivia with friends anywhere — join with a room code, no login, no app install. Steal points, freeze opponents, and race to the top of the Hall of Fame." />
-<meta name="theme-color" content="#14162b" />
-<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<meta name="description" content="Play live trivia with friends anywhere — join with a room code, no login, no app install. Combo streaks, steal points, freeze opponents, beat smart bots, and race to the top of the Hall of Fame." />
+<meta name="theme-color" content="#3d1fb0" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Trivia Royale" />
+<meta name="format-detection" content="telephone=no" />
+<link rel="manifest" href="manifest.webmanifest" />
+<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(['candy','battle','vice','midnight','light'].indexOf(t)<0)t='candy';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','candy');}</script>
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Trivia Royale — Live Multiplayer Trivia" />
-<meta property="og:description" content="Play live trivia with friends anywhere — join with a room code, no login. Steal points, freeze opponents, and race to the top of the Hall of Fame." />
+<meta property="og:description" content="Play live trivia with friends anywhere — join with a room code, no login. Combo streaks, steal points, freeze opponents, and beat smart bots." />
 <meta property="og:image" content="/og-image.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Trivia Royale — Live Multiplayer Trivia" />
 <meta name="twitter:description" content="Play live trivia with friends anywhere — join with a room code, no login." />
 <meta name="twitter:image" content="/og-image.png" />
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2314162b'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Sora:wght@700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="bg-orbs" aria-hidden="true">
-    <span class="orb orb-1"></span>
-    <span class="orb orb-2"></span>
-    <span class="orb orb-3"></span>
-  </div>
+  <!-- Engine layers: scene behind the UI, particles in front (never blocks input) -->
+  <canvas id="bgCanvas" class="bg-canvas" aria-hidden="true"></canvas>
+  <div class="bg-scrim" aria-hidden="true"></div>
+  <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
+  <div id="fxLayer" class="fx-layer" aria-hidden="true"></div>
+  <div id="screenFlash" class="screen-flash" aria-hidden="true"></div>
+
   <header class="topbar">
-    <div class="brand"><span class="brand-bolt">⚡</span> Trivia Royale</div>
+    <div class="brand"><span class="brand-bolt">⚡</span><span class="brand-text">Trivia Royale</span></div>
     <div class="topbar-actions">
       <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
       <button id="themeBtn" class="icon-btn" type="button" aria-label="Change theme">🎨</button>
-      <button id="hallOfFameBtn" class="link-btn" type="button">🏆 Hall of Fame</button>
-      <button id="howToPlayBtn" class="link-btn" type="button">How to Play</button>
+      <button id="hallOfFameBtn" class="link-btn" type="button" aria-label="Hall of Fame"><span class="lb-ico">🏆</span><span class="lb-txt"> Hall of Fame</span></button>
+      <button id="howToPlayBtn" class="link-btn" type="button" aria-label="How to play"><span class="lb-ico">❓</span><span class="lb-txt"> How to Play</span></button>
     </div>
   </header>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <div id="feed" class="kill-feed" aria-live="polite"></div>
+  <div id="comboBurst" class="combo-burst hidden" aria-hidden="true"></div>
+
+  <!-- 3-2-1 countdown before the first question -->
+  <div id="countdownOverlay" class="countdown-overlay hidden" aria-live="assertive">
+    <div class="cd-ready" id="cdReady">Get ready</div>
+    <div class="cd-num" id="cdNum">3</div>
+    <div class="cd-squad" id="cdSquad"></div>
+  </div>
 
   <main id="app">
 
     <!-- HOME -->
     <section id="view-home" class="view">
-      <h1>Trivia Royale</h1>
-      <p class="subtitle">Play live with friends anywhere — no login, just a code.</p>
-      <label class="field">
-        <span>Your name</span>
-        <input id="nameInput" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off" />
-      </label>
-
-      <div class="field">
-        <span>Pick an avatar</span>
-        <div id="avatarPicker" class="avatar-picker">
-          <div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div>
+      <div class="hero">
+        <h1 class="hero-logo"><span class="logo-a">Trivia</span><span class="logo-b">Royale</span></h1>
+        <p class="subtitle">Live multiplayer trivia. Join with a code — no login, no install. Chain combos, steal points, freeze rivals, and take on smart bots.</p>
+        <div class="hero-chips">
+          <span class="chip">📱 Any device</span>
+          <span class="chip">🤖 4 bot levels</span>
+          <span class="chip">🎓 Class 1 → PhD</span>
+          <span class="chip">🏆 Hall of Fame</span>
         </div>
       </div>
 
-      <div class="home-actions">
-        <div class="field">
-          <span>Category (for a new room)</span>
-          <select id="categorySelect" class="select"></select>
+      <div class="home-grid">
+        <div class="panel">
+          <label class="field">
+            <span>Your name</span>
+            <input id="nameInput" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off" autocapitalize="words" enterkeyhint="go" />
+          </label>
+          <div class="field">
+            <span>Pick your avatar</span>
+            <div id="avatarPicker" class="avatar-picker">
+              <div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div><div class="skeleton" style="aspect-ratio:1"></div>
+            </div>
+          </div>
         </div>
-        <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
-        <div class="or-divider">or</div>
-        <label class="field">
-          <span>Room code</span>
-          <input id="joinCodeInput" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase" />
-        </label>
-        <button id="joinBtn" class="btn btn-secondary" type="button">Join a Room</button>
+
+        <div class="panel home-actions">
+          <div class="field">
+            <span>Category (for a new room)</span>
+            <select id="categorySelect" class="select"></select>
+          </div>
+          <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
+          <button id="quickBtn" class="btn btn-accent" type="button">⚡ Quick Play vs Bot</button>
+          <div class="or-divider"><span>or join friends</span></div>
+          <label class="field">
+            <span>Room code</span>
+            <input id="joinCodeInput" class="code-input" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" />
+          </label>
+          <button id="joinBtn" class="btn btn-secondary" type="button">Join a Room</button>
+        </div>
       </div>
     </section>
 
     <!-- LOBBY -->
     <section id="view-lobby" class="view hidden">
-      <p class="eyebrow">Room code</p>
-      <div class="room-code-wrap">
-        <div class="room-code" id="lobbyCode">----</div>
-        <button id="copyCodeBtn" class="copy-code-btn" type="button" aria-label="Copy room code">Copy</button>
-      </div>
-      <p class="hint">Share this code, or have others scan the QR — anyone can join from their own phone or laptop, no app needed.</p>
-
-      <div id="lobbyQr" class="qr-wrap"></div>
-      <p class="category-badge" id="lobbyCategory"></p>
-
-      <div class="player-list" id="lobbyPlayers"></div>
-
-      <!-- CUSTOM / STUDY MODE QUESTION SETUP (host-only controls; everyone sees the pool) -->
-      <div id="customPanel" class="custom-panel hidden">
-        <h3>📝 Question Setup</h3>
-
-        <div id="customHostControls" class="hidden">
-          <div class="ai-gen-box">
-            <label class="field"><span>Level</span><select id="levelSelect" class="select"></select></label>
-            <label class="field"><span>Category</span><select id="studyCategorySelect" class="select"></select></label>
-            <label class="field"><span>Sub-category</span><select id="studySubcategorySelect" class="select"></select></label>
-            <button id="generateBtn" class="btn btn-primary" type="button">🤖 Generate 10 Questions with AI</button>
-            <p id="generatingStatus" class="hint hidden"></p>
-            <p id="aiDisabledHint" class="hint hidden">AI generation isn't set up on this server — add questions manually below instead.</p>
-          </div>
-
-          <div class="or-divider">or add your own</div>
-
-          <div class="manual-add-box">
-            <input id="manualQText" type="text" placeholder="Question text" maxlength="300" />
-            <div class="manual-options">
-              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="0" id="manualCorrect0" checked /><input id="manualOpt0" type="text" placeholder="Option A" maxlength="120" /></div>
-              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="1" id="manualCorrect1" /><input id="manualOpt1" type="text" placeholder="Option B" maxlength="120" /></div>
-              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="2" id="manualCorrect2" /><input id="manualOpt2" type="text" placeholder="Option C" maxlength="120" /></div>
-              <div class="manual-option-row"><input type="radio" name="manualCorrect" value="3" id="manualCorrect3" /><input id="manualOpt3" type="text" placeholder="Option D" maxlength="120" /></div>
+      <div class="lobby-grid">
+        <div class="lobby-left">
+          <div class="panel code-panel">
+            <p class="eyebrow">Room code</p>
+            <div class="room-code-wrap">
+              <div class="room-code" id="lobbyCode">----</div>
+              <button id="copyCodeBtn" class="copy-code-btn" type="button" aria-label="Copy room code">Copy</button>
             </div>
-            <p class="hint" style="margin:2px 0 8px">Select the radio next to the correct option.</p>
-            <button id="addQuestionBtn" class="btn btn-secondary" type="button">Add Question</button>
+            <p class="hint">Share this code, or scan the QR — anyone can join from their own phone, tablet or laptop.</p>
+            <div id="lobbyQr" class="qr-wrap"></div>
+            <p class="category-badge" id="lobbyCategory"></p>
           </div>
         </div>
 
-        <p class="eyebrow" id="questionPoolCount">0 questions ready</p>
-        <div id="questionPoolList" class="question-pool-list"></div>
-        <p id="needMoreQuestionsMsg" class="hint hidden">Host needs to add at least 4 questions before starting.</p>
+        <div class="lobby-right">
+          <div class="panel">
+            <div class="panel-title"><span>Squad</span><span id="squadCount" class="count-pill">1/10</span></div>
+            <div class="player-list" id="lobbyPlayers"></div>
+
+            <div id="botControls" class="bot-controls hidden">
+              <p class="eyebrow">Computer opponent</p>
+              <div id="botTierPills" class="tier-pills"></div>
+              <button id="addBotBtn" class="btn btn-secondary" type="button">🤖 Add Computer Player</button>
+              <p id="soloHint" class="hint hidden">Playing solo? Add a computer player — pick how tough it should be.</p>
+            </div>
+          </div>
+
+          <!-- CUSTOM / STUDY MODE QUESTION SETUP (host-only controls; everyone sees the pool) -->
+          <div id="customPanel" class="panel custom-panel hidden">
+            <div class="panel-title"><span>📝 Question Setup</span></div>
+
+            <div id="customHostControls" class="hidden">
+              <div class="ai-gen-box">
+                <label class="field"><span>Level</span><select id="levelSelect" class="select"></select></label>
+                <label class="field"><span>Category</span><select id="studyCategorySelect" class="select"></select></label>
+                <label class="field"><span>Sub-category</span><select id="studySubcategorySelect" class="select"></select></label>
+                <button id="generateBtn" class="btn btn-primary" type="button">🤖 Generate 10 Questions with AI</button>
+                <p id="generatingStatus" class="hint hidden"></p>
+                <p id="aiDisabledHint" class="hint hidden">AI generation isn't set up on this server — add questions manually below instead.</p>
+              </div>
+
+              <div class="or-divider"><span>or add your own</span></div>
+
+              <div class="manual-add-box">
+                <input id="manualQText" type="text" placeholder="Question text" maxlength="300" />
+                <div class="manual-options">
+                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="0" id="manualCorrect0" checked aria-label="Option A is correct" /><input id="manualOpt0" type="text" placeholder="Option A" maxlength="120" /></div>
+                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="1" id="manualCorrect1" aria-label="Option B is correct" /><input id="manualOpt1" type="text" placeholder="Option B" maxlength="120" /></div>
+                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="2" id="manualCorrect2" aria-label="Option C is correct" /><input id="manualOpt2" type="text" placeholder="Option C" maxlength="120" /></div>
+                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="3" id="manualCorrect3" aria-label="Option D is correct" /><input id="manualOpt3" type="text" placeholder="Option D" maxlength="120" /></div>
+                </div>
+                <p class="hint" style="margin:2px 0 8px">Select the radio next to the correct option.</p>
+                <button id="addQuestionBtn" class="btn btn-secondary" type="button">Add Question</button>
+              </div>
+            </div>
+
+            <p class="eyebrow" id="questionPoolCount">0 questions ready</p>
+            <div id="questionPoolList" class="question-pool-list"></div>
+            <p id="needMoreQuestionsMsg" class="hint hidden">Host needs to add at least 4 questions before starting.</p>
+          </div>
+
+          <button id="startBtn" class="btn btn-primary btn-start hidden" type="button">▶ Start Game</button>
+          <p id="lobbyWaitingMsg" class="hint hidden">Waiting for the host to start the game…</p>
+          <p id="lobbyNeedMoreMsg" class="hint hidden">Need at least 2 players to start.</p>
+        </div>
       </div>
-
-      <button id="addBotBtn" class="btn btn-secondary hidden" type="button">🤖 Add Computer Player</button>
-      <p id="soloHint" class="hint hidden">Playing solo? Add a computer player to practice against.</p>
-
-      <button id="startBtn" class="btn btn-primary hidden" type="button">Start Game</button>
-      <p id="lobbyWaitingMsg" class="hint hidden">Waiting for the host to start the game…</p>
-      <p id="lobbyNeedMoreMsg" class="hint hidden">Need at least 2 players to start.</p>
     </section>
 
     <!-- QUESTION -->
     <section id="view-question" class="view hidden">
-      <div class="question-top">
-        <span id="powerBadge" class="power-badge hidden"></span>
-        <span class="q-progress" id="qProgress"></span>
-        <span class="q-timer" id="qTimer">15</span>
+      <div class="q-layout">
+        <div class="q-main">
+          <div class="hud">
+            <div class="hud-left">
+              <span class="chip" id="qProgress"></span>
+              <span id="powerBadge" class="power-badge hidden"></span>
+              <span id="streakChip" class="chip streak-chip hidden"></span>
+            </div>
+            <div class="timer-ring" id="timerRing" aria-live="off">
+              <svg viewBox="0 0 44 44" aria-hidden="true">
+                <circle class="ring-bg" cx="22" cy="22" r="19"></circle>
+                <circle class="ring-fg" id="ringFg" cx="22" cy="22" r="19"></circle>
+              </svg>
+              <span class="q-timer" id="qTimer">15</span>
+            </div>
+          </div>
+          <div class="timer-bar"><div id="timerFill" class="timer-fill"></div></div>
+
+          <p id="frozenNotice" class="frozen-notice hidden"></p>
+
+          <div class="question-card" id="questionCard">
+            <h2 id="questionText" class="question-text"></h2>
+          </div>
+
+          <div class="choices" id="choicesGrid">
+            <button class="choice choice-0" data-i="0" type="button"><span class="choice-key">A</span><span class="choice-label"></span></button>
+            <button class="choice choice-1" data-i="1" type="button"><span class="choice-key">B</span><span class="choice-label"></span></button>
+            <button class="choice choice-2" data-i="2" type="button"><span class="choice-key">C</span><span class="choice-label"></span></button>
+            <button class="choice choice-3" data-i="3" type="button"><span class="choice-key">D</span><span class="choice-label"></span></button>
+          </div>
+
+          <div class="q-actions">
+            <button id="lifelineBtn" class="lifeline-btn" type="button" aria-label="Use 50/50 booster">✂️ 50/50 <b id="lifelineCount">2</b></button>
+            <span class="kbd-hint">Tap an answer to lock it in · keys 1–4 / A–D on a keyboard</span>
+          </div>
+
+          <p id="answerLockedMsg" class="hint locked-msg hidden">🔒 Locked in! Waiting for the others…</p>
+          <p id="frozenLockedMsg" class="hint hidden">🥶 You're frozen this round — no points possible.</p>
+
+          <div id="revealBanner" class="reveal-banner hidden"></div>
+          <div id="powerWaitingBanner" class="reveal-banner hidden"></div>
+          <div id="powerResultBanner" class="reveal-banner hidden"></div>
+          <div id="miniLeaderboard" class="mini-leaderboard hidden"></div>
+        </div>
+
+        <aside class="q-side">
+          <div class="panel">
+            <div class="panel-title"><span>Live Ranking</span></div>
+            <div id="liveBoard" class="live-board"></div>
+          </div>
+        </aside>
       </div>
-      <div class="timer-bar"><div id="timerFill" class="timer-fill"></div></div>
-
-      <p id="frozenNotice" class="frozen-notice hidden"></p>
-
-      <h2 id="questionText" class="question-text"></h2>
-
-      <div class="choices" id="choicesGrid">
-        <button class="choice choice-0" data-i="0" type="button"></button>
-        <button class="choice choice-1" data-i="1" type="button"></button>
-        <button class="choice choice-2" data-i="2" type="button"></button>
-        <button class="choice choice-3" data-i="3" type="button"></button>
-      </div>
-
-      <p id="answerLockedMsg" class="hint hidden">Answer locked in! Waiting for others…</p>
-      <p id="frozenLockedMsg" class="hint hidden">🥶 You're frozen this round — no points possible.</p>
-
-      <div id="revealBanner" class="reveal-banner hidden"></div>
-      <div id="miniLeaderboard" class="mini-leaderboard hidden"></div>
     </section>
 
     <!-- POWER ROUND modal (steal or freeze — shown on top of question/reveal view) -->
@@ -168,16 +241,18 @@
       </div>
     </div>
 
-    <div id="powerWaitingBanner" class="reveal-banner hidden"></div>
-    <div id="powerResultBanner" class="reveal-banner hidden"></div>
-
     <!-- FINAL -->
     <section id="view-final" class="view hidden">
-      <h2>🏆 Final Results</h2>
+      <div class="final-hero">
+        <div class="final-title" id="finalTitle">Final Results</div>
+        <p class="final-sub" id="finalSub"></p>
+      </div>
       <div class="podium" id="podium"></div>
-      <div class="player-list" id="finalPlayers"></div>
-      <button id="playAgainBtn" class="btn btn-primary hidden" type="button">Play Again</button>
-      <p id="finalWaitingMsg" class="hint hidden">Waiting for the host to start a new round…</p>
+      <div class="panel final-panel">
+        <div class="player-list" id="finalPlayers"></div>
+        <button id="playAgainBtn" class="btn btn-primary hidden" type="button">↻ Play Again</button>
+        <p id="finalWaitingMsg" class="hint hidden">Waiting for the host to start a new round…</p>
+      </div>
     </section>
 
   </main>
@@ -187,13 +262,16 @@
     <div class="modal-box">
       <h3>How to Play</h3>
       <ul class="rules-list">
-        <li>Join with a room code (or scan the lobby QR code) — no account needed. Playing alone? The host can add a 🤖 computer player from the lobby instead of waiting for a second human.</li>
-        <li>Each question gives everyone 15 seconds. Answer fast <strong>and</strong> correctly for more points: <code>200–1000</code> points based on speed. Wrong or no answer = 0.</li>
+        <li>Join with a room code (or scan the lobby QR) — no account needed. Playing alone? Hit <strong>Quick Play vs Bot</strong>, or add a 🤖 computer player of any level: 🍬 Rookie, ⚔️ Veteran, 🔥 Elite or 👑 Legend.</li>
+        <li>Each question gives everyone 15 seconds. <strong>Tap an answer and it locks in instantly.</strong> Faster and correct = more points: <code>200–1000</code> per question. Wrong or no answer = 0.</li>
+        <li>🔥 <strong>Combos</strong> — answer correctly in a row and every extra streak step adds bonus points (up to +200).</li>
+        <li>✂️ <strong>50/50 booster</strong> — you get 2 per game. It removes two wrong answers, but that answer earns 60% points.</li>
         <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
         <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
-        <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent, locking them out of the very next question.</li>
-        <li>After the last question, whoever has the most points wins. Hit <strong>Play Again</strong> to replay with the same room and code.</li>
-        <li>📝 <strong>Custom / Study Mode</strong> — pick this category to build your own quiz: type a topic and let AI generate exam-style questions for any grade level or competitive exam, or add your own questions by hand.</li>
+        <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent out of the very next question.</li>
+        <li>After the last question, whoever has the most points wins. <strong>Play Again</strong> reuses the same room and code.</li>
+        <li>📝 <strong>Custom / Study Mode</strong> — build your own quiz: pick a level (Class 1 to PhD or a competitive exam), a category and sub-category, and let AI write the questions — or add your own by hand.</li>
+        <li>🎨 Tap the palette to switch between Candy Blast, Battle Zone, Neon City, Midnight and Daylight.</li>
       </ul>
       <button id="closeHowToPlay" class="btn btn-secondary" type="button">Got it</button>
     </div>
@@ -239,7 +317,7 @@
   <script src="events.js"></script>
   <script src="vendor/qrcode.js"></script>
   <script src="sound.js"></script>
-  <script src="confetti.js"></script>
+  <script src="engine.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>

@@ -6,15 +6,32 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 
 1. One player picks a name, an avatar, and a category, then taps **Create a Room** — they get a 4-letter code and a QR code to share.
 2. Everyone else taps **Join a Room** (or scans the QR code) and enters their name and that code.
-3. Once 2+ players have joined, the host taps **Start Game**.
-4. Each question gives everyone 15 seconds. Answer fast *and* correctly for more points (200–1000, scaled by speed). Wrong or no answer = 0.
+3. Once 2+ players have joined, the host taps **Start Game** — everyone sees a synced 3-2-1 countdown. Playing alone? Tap **⚡ Quick Play vs Bot** on the home screen to jump straight into a game against a computer opponent.
+4. Each question gives everyone 15 seconds. **Tap an answer and it locks in instantly** (on a keyboard: keys 1–4 or A–D). Answer fast *and* correctly for more points (200–1000, scaled by speed). Wrong or no answer = 0.
+   - **🔥 Combo streaks** — consecutive correct answers add bonus points (+50 per streak step, up to +200).
+   - **✂️ 50/50 booster** — two per game; removes two wrong answers, but that answer earns 60% points.
 5. Every 3rd question is a power round, alternating:
    - **⚡ Steal Round** — the fastest correct answer steals 150 points from one opponent.
    - **🥶 Freeze Round** — the fastest correct answer locks one opponent out of the very next question.
 6. If the host disconnects, the next connected player automatically becomes host — the game never gets stuck.
-7. After the last question, highest score wins, with confetti for the win. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
+7. After the last question, highest score wins, with a full-screen celebration. Hit **Play Again** to replay instantly with the same room code — great for a recurring game night.
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
 9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
+
+## Computer opponents
+
+Add a 🤖 computer player from the lobby (or use Quick Play) and pick its level — each has its own accuracy and reaction-time profile, reads longer questions more slowly, and chooses steal/freeze targets tactically:
+
+| Level | Accuracy | Typical answer time |
+|---|---|---|
+| 🍬 Rookie | ~45% | ~5 s |
+| ⚔️ Veteran | ~70% | ~4 s |
+| 🔥 Elite | ~88% | ~2.4 s |
+| 👑 Legend | ~97% | ~1.4 s |
+
+## Themes & engine
+
+Five themes, switchable from the 🎨 button: **Candy Blast** (glossy candies and jelly buttons), **Battle Zone** (a shrinking-zone battle-royale HUD with air drops), **Neon City** (synthwave sunset, skyline and a neon grid), plus **Midnight** and **Daylight**. Each is rendered by a small dependency-free canvas engine (`frontend/engine.js`) — animated scenes, a particle system (sparks, confetti, candies, coins, stars), floating score text, screen shake and flash. It pauses in background tabs, caps the pixel ratio, lowers its own quality if frames run slow, and respects `prefers-reduced-motion`. The layout adapts from phones to tablets to laptops (safe-area aware for iPhone/iPad notches; installable to the home screen).
 
 ## Running locally
 
@@ -53,6 +70,8 @@ Custom / Study Mode's "Generate with AI" button uses Google Gemini to write orig
 3. Set it as an environment variable named `GEMINI_API_KEY`:
    - Locally: `GEMINI_API_KEY="..." npm start`
    - On Render: in your Web Service's **Environment** tab, add `GEMINI_API_KEY` with that value, then redeploy.
+
+Google retires Gemini model names now and then, so the server tries a list of models in order and remembers the one that works. To pin one, set `GEMINI_MODEL` (e.g. `gemini-3.6-flash`).
 
 Without `GEMINI_API_KEY` set, the "Generate with AI" button is hidden and the lobby shows a hint to add questions manually instead — the rest of the game is unaffected. The AI is explicitly instructed to write brand-new questions matching a level's real difficulty and style, never to reproduce specific real past questions from anywhere.
 
