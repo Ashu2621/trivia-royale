@@ -318,7 +318,7 @@
         <div class="city-items" id="cityItems"></div>
         <div class="city-gps hidden" id="cityGps"><span class="gps-arrow" id="gpsArrow">➤</span><span id="gpsDist"></span></div>
         <div class="city-lock hidden" id="cityLock"></div>
-        <p class="city-hint" id="cityHint">WASD / arrows to move · Space to zap · or tap the map to walk</p>
+        <p class="city-hint" id="cityHint">WASD to move · drag to look around · Space to zap · or tap the ground to walk</p>
       </div>
       <div class="joy" id="joy"><div class="joy-knob" id="joyKnob"></div></div>
       <button id="zapBtn" class="zap-btn hidden" type="button" aria-label="Zap a nearby rival with your blaster">⚡<b id="zapCount">3</b></button>
@@ -419,6 +419,10 @@
   <script src="engine.js"></script>
   <script src="studio.js"></script>
   <script src="arena.js"></script>
+  <script src="vendor/three.min.js"></script>
+  <script src="city2d.js"></script>
+  <script src="city3d_world.js"></script>
+  <script src="city3d.js"></script>
   <script src="city.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>

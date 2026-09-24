@@ -25,9 +25,10 @@ A GTA-inspired (cartoon, non-violent) mode: pick **City Mission** on the home sc
 - **Fixed targets on the map** — the current mission is a building marked with a glowing ring and beam, a radar/minimap, and a GPS arrow when it's off-screen (Gun Store, Garage, Bank, Hospital, Arcade, Museum, Radio, Police, Diner … always ending at the ✈️ Airport).
 - **A quiz gate at every door** — reach the door and a question opens; only a correct answer unlocks the reward. A wrong answer locks you out for a few seconds.
 - **Rewards** — 🔫 a blaster (3 zaps that stun a nearby rival for 3 s), 🚗 a turbo car/scooter (1.75x speed for 25 s), 🛡️ a shield (blocks the next stun) or cash. Faster answers score more; the first three to reach the airport get finish bonuses.
-- **Controls** — joystick on phones and tablets, WASD/arrows on laptops (Space to zap), or just tap the map to walk there.
+- **Real 3D graphics** — the city is rendered with Three.js (WebGL): PBR lighting, real-time sun shadows, image-based reflections on glass and car paint, fog and a distant skyline, and a sky that moves from morning to dusk over the 8-minute match (lamps, windows and headlights switch on as it gets dark). Buildings have lit storefronts, signs, rooftop props (police sirens, radar dish, antennas, helipad) and turn see-through when they block your view. Soldiers, pedestrians and traffic are animated 3D models. Falls back to the original 2D renderer when WebGL isn't available (or with `?city2d`).
+- **Controls** — third-person camera: drag to look around, wheel/pinch to zoom, Q/E to rotate. Joystick on phones and tablets, WASD/arrows on laptops (Space to zap, movement is relative to the camera), or tap the ground to walk there.
 - **Computer players** run the same missions with A* pathfinding, answer the quiz gates at their level's accuracy, chat, and zap rivals.
-- Server-authoritative: the server simulates the city at 20 Hz and sends 10 Hz snapshots; your own character is predicted locally so it feels instant. Code: `backend/city.js` (simulation), `frontend/city.js` (renderer and controls).
+- Server-authoritative: the server simulates the city at 20 Hz and sends 10 Hz snapshots; your own character is predicted locally so it feels instant. Code: `backend/city.js` (simulation), `frontend/city3d.js` + `frontend/city3d_world.js` (3D renderer and world), `frontend/city2d.js` (fallback), `frontend/city.js` (picks one). Three.js r147 is vendored in `frontend/vendor/`.
 
 ## More ways to play
 
