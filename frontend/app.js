@@ -239,6 +239,7 @@
     window.scrollTo(0, 0);
     document.body.classList.toggle('in-city', id === 'city' || id === 'maze');
     if (id !== 'city' && City.running) City.stop();
+    if (id === 'home' || id === 'lobby' || id === 'final') SoundFX.rain(false);
     if (id !== 'maze' && mazeMounted && Maze3D.running) Maze3D.stop();
     if (id === 'home' && VoiceChat.active) VoiceChat.disable();
     if (id === 'city' || id === 'maze') acquireWakeLock();
@@ -1184,6 +1185,8 @@
     },
     gps: updateGps,
     onState: updateHud,
+    thunder: () => SoundFX.thunder(),
+    weather: (w) => SoundFX.rain(w === 'rain'),
   });
 
   function holdButton(btn, setter) {

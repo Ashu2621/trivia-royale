@@ -63,6 +63,11 @@ const City = (function () {
   let nowT = 0;
   let q = null;
   let post = null;
+  let weather = 'clear';
+  let rain = null;
+  let muzzleLight = null;
+  let muzzleT = 0;
+  const lightning = { next: 0, until: 0, at: 0 };
   let mode = 'city';
   let airUntil = 0;
   let spectateIdx = -1;
@@ -278,7 +283,112 @@ const City = (function () {
   // a heading in server terms (atan2(dy, dx)) becomes the model's yaw
   const yawOf = (ang) => -ang;
 
-  function buildCar(hex) {
+  // Kenney Car Kit (CC0) models, one per colour code; the blocky car below is the fallback
+  const CAR_MODEL_NAMES = ['sedan', 'suv', 'taxi', 'hatchback-sports', 'van', 'sedan-sports'];
+  let carModels = null;
+  let carsWait = null;
+  function loadCars() {
+    if (carsWait) return carsWait;
+    carsWait = new Promise((resolve) => {
+      if (!T.GLTFLoader) return resolve();
+      const loader = new T.GLTFLoader();
+      const cache = {};
+      let left = CAR_MODEL_NAMES.length;
+      const done = () => {
+        if (--left === 0) {
+          carModels = cache;
+          resolve();
+        }
+      };
+      for (const n of CAR_MODEL_NAMES) {
+        loader.load(
+          `models/cars/${n}.glb`,
+          (g) => {
+            cache[n] = g.scene;
+            done();
+          },
+          undefined,
+          () => done()
+        );
+      }
+    });
+    return carsWait;
+  }
+
+  function buildCarModel(idx) {
+    const src = carModels && carModels[CAR_MODEL_NAMES[idx % CAR_MODEL_NAMES.length]];
+    if (!src) return null;
+    const inner = src.clone(true);
+    const box = new T.Box3().setFromObject(inner);
+    const size = box.getSize(new T.Vector3());
+    let fz = 0;
+    let bz = 0;
+    const wheels = [];
+    const origMats = [];
+    inner.traverse((o) => {
+      if (o.name === 'wheel-front-left') fz = o.position.z;
+      if (o.name === 'wheel-back-left') bz = o.position.z;
+      if (o.name && o.name.indexOf('wheel') === 0) wheels.push(o);
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        if (o.material && o.material.metalness !== undefined) {
+          o.material.metalness = 0.2;
+          o.material.roughness = 0.5;
+        }
+        origMats.push([o, o.material]);
+        if (o.material && world && world.envMats.indexOf(o.material) < 0) world.envMats.push(o.material);
+      }
+    });
+    const front = fz >= bz ? 1 : -1;
+    const k = 62 / Math.max(0.1, size.z);
+    inner.scale.setScalar(k);
+    inner.position.y = -box.min.y * k;
+    const wrap = new T.Group();
+    wrap.add(inner);
+    wrap.rotation.y = front > 0 ? Math.PI / 2 : -Math.PI / 2; // the car's nose points +X like everything else
+    const g = new T.Group();
+    g.add(wrap);
+    const blob = new T.Mesh(G.shadow, new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2;
+    blob.scale.set(78, 42, 1);
+    blob.position.y = 0.9;
+    g.add(blob);
+    const lamps = [];
+    for (const z of [-9.5, 9.5]) {
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0xffeeb0, transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending }));
+      sp.scale.set(30, 30, 1);
+      sp.position.set(33, 10.5, z);
+      g.add(sp);
+      lamps.push(sp);
+    }
+    return {
+      root: g,
+      paint: null,
+      model: true,
+      axis: 'x',
+      spinSign: front,
+      wheels,
+      lamps,
+      head: { emissiveIntensity: 0 },
+      h: 0,
+      spin: 0,
+      px: 0,
+      py: 0,
+      seen: false,
+      driver: null,
+      setWreck(on) {
+        for (const [m, mat] of origMats) m.material = on ? charMat : mat;
+      },
+    };
+  }
+
+  function buildCar(hex, idx) {
+    const m = idx === undefined ? null : buildCarModel(idx);
+    return m || buildCarBlocky(hex);
+  }
+
+  function buildCarBlocky(hex) {
     const g = new T.Group();
     const key = hex;
     let paint = paintMats.get(key);
@@ -497,6 +607,9 @@ const City = (function () {
     makeParticles();
     makeSmoke();
     makeTracers();
+    rain = buildRain();
+    muzzleLight = new T.PointLight(0xffc27a, 0, 260, 2);
+    scene.add(muzzleLight);
     world.setTime(0.05);
     resize();
   }
@@ -700,6 +813,10 @@ const City = (function () {
     switch (e.type) {
       case 'shot': {
         if (P) strike(P.o);
+        if (muzzleLight) {
+          muzzleLight.position.set(e.x, 46, e.y);
+          muzzleT = 0.07;
+        }
         const gh = 30;
         burst(e.x, gh, e.y, '#ffd27a', 4, 40, 16, 0.12, 0);
         for (const end of e.ends || []) {
@@ -818,6 +935,10 @@ const City = (function () {
     offset = payload.serverNow - Date.now();
     startsAt = payload.startsAt;
     mode = payload.mode || 'city';
+    weather = ['clear', 'clear', 'rain', 'fog', 'clear', 'rain'][Math.abs(Math.floor((payload.startsAt || 0) / 1000)) % 6];
+    if (/[?&]weather=(rain|fog|clear)/.test(location.search)) weather = RegExp.$1;
+    lightning.next = 6;
+    hooks.weather && hooks.weather(weather);
     airUntil = payload.airUntil || 0;
     spectateIdx = -1;
     hitDirs.length = 0;
@@ -837,7 +958,7 @@ const City = (function () {
     if (payload.snapshot) applyState(payload.snapshot);
     running = false;
     resize();
-    Promise.race([Soldier.load(), new Promise((r) => setTimeout(r, 7000))]).then(begin);
+    Promise.race([Promise.all([Soldier.load(), loadCars()]), new Promise((r) => setTimeout(r, 9000))]).then(begin);
   }
 
   function buildEntities() {
@@ -1063,27 +1184,31 @@ const City = (function () {
       const c = s.c[i];
       let o = carObjs[i];
       if (!o) {
-        o = carObjs[i] = buildCar(CAR_COLORS[c.color % CAR_COLORS.length]);
+        o = carObjs[i] = buildCar(CAR_COLORS[c.color % CAR_COLORS.length], c.color);
         o.wreck = false;
         entityGroup.add(o.root);
       }
       if (c.mode === 3 && !o.wreck) {
         o.wreck = true;
-        o.root.traverse((m) => {
-          if (m.isMesh && m.material === o.paint) m.material = charMat;
-        });
+        if (o.setWreck) o.setWreck(true);
+        else
+          o.root.traverse((m) => {
+            if (m.isMesh && m.material === o.paint) m.material = charMat;
+          });
       } else if (c.mode !== 3 && o.wreck) {
         o.wreck = false;
-        o.root.traverse((m) => {
-          if (m.isMesh && m.material === charMat) m.material = o.paint;
-        });
+        if (o.setWreck) o.setWreck(false);
+        else
+          o.root.traverse((m) => {
+            if (m.isMesh && m.material === charMat) m.material = o.paint;
+          });
       }
       const f = facing(o, c.x, c.y, dt, yawOf(c.ang));
       o.h = yawOf(c.ang);
       o.root.position.set(c.x, 0, c.y);
       o.root.rotation.y = o.h;
       o.spin += f.moved / 6.4;
-      for (const w of o.wheels) w.rotation.z = -o.spin;
+      for (const w of o.wheels) w.rotation[o.axis || 'z'] = o.axis ? o.spin * o.spinSign : -o.spin;
       const op = c.mode === 3 ? 0 : world.night * 0.9;
       for (const l of o.lamps) l.material.opacity = op;
       o.head.emissiveIntensity = 0.4 + world.night * 3;
@@ -1608,6 +1733,92 @@ const City = (function () {
 
   /* ------------------------------------------------------------- loop */
 
+  /* -------------------------------------------------------- weather */
+
+  const GREY = new T.Color(0x3d4757);
+  const MIST = new T.Color(0xaab4c2);
+  const _skyTmp = new T.Color();
+
+  function buildRain() {
+    const N = mobile ? 900 : 1900;
+    const base = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      base[i * 3] = rand(-560, 560);
+      base[i * 3 + 1] = rand(0, 520);
+      base[i * 3 + 2] = rand(-560, 560);
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.BufferAttribute(new Float32Array(N * 6), 3));
+    const mesh = new T.LineSegments(geo, new T.LineBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0.5, depthWrite: false, fog: false }));
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    scene.add(mesh);
+    return { mesh, base, N };
+  }
+
+  function stepRain(dt) {
+    if (!rain) return;
+    const on = weather === 'rain';
+    rain.mesh.visible = on;
+    if (!on) return;
+    const pos = rain.mesh.geometry.attributes.position.array;
+    const b = rain.base;
+    for (let i = 0; i < rain.N; i++) {
+      let y = b[i * 3 + 1] - dt * 780;
+      if (y < 0) {
+        y += 520;
+        b[i * 3] = rand(-560, 560);
+        b[i * 3 + 2] = rand(-560, 560);
+      }
+      b[i * 3 + 1] = y;
+      const x = focus.x + b[i * 3];
+      const z = focus.z + b[i * 3 + 2];
+      pos[i * 6] = x;
+      pos[i * 6 + 1] = y;
+      pos[i * 6 + 2] = z;
+      pos[i * 6 + 3] = x - 4;
+      pos[i * 6 + 4] = y + 22;
+      pos[i * 6 + 5] = z - 1.5;
+    }
+    rain.mesh.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // called after the sky has set its light for the time of day: dim it down for rain and fog
+  function applyWeather() {
+    let flash = 0;
+    if (weather === 'rain') {
+      world.sun.intensity *= 0.26;
+      world.hemi.intensity *= 0.72;
+      world.fog.color.lerp(GREY, 0.7);
+      world.fog.near = 60;
+      world.fog.far = 1250;
+      const u = world.sky.material.uniforms;
+      u.top.value.lerp(GREY, 0.75);
+      u.mid.value.lerp(GREY, 0.75);
+      if (nowT > lightning.next && !reduceMotion) {
+        lightning.at = nowT;
+        lightning.until = nowT + 0.32;
+        lightning.next = nowT + 14 + Math.random() * 22;
+        hooks.thunder && setTimeout(hooks.thunder, 600 + Math.random() * 900);
+      }
+      if (nowT < lightning.until) flash = Math.max(0, 1 - (nowT - lightning.at) / 0.32) * (Math.sin((nowT - lightning.at) * 55) > -0.3 ? 1 : 0.35);
+      world.hemi.intensity += flash * 3.2;
+      world.sun.intensity += flash * 1.5;
+    } else if (weather === 'fog') {
+      world.sun.intensity *= 0.7;
+      world.fog.color.lerp(MIST, 0.8);
+      world.fog.near = 40;
+      world.fog.far = 1150;
+      const u = world.sky.material.uniforms;
+      u.top.value.lerp(MIST, 0.6);
+      u.mid.value.lerp(MIST, 0.85);
+    } else {
+      world.fog.near = 900;
+      world.fog.far = 4300;
+    }
+    void _skyTmp;
+  }
+
   function updateZone(s) {
     const on = mode === 'royale' && !!s.z;
     zoneMesh.visible = on;
@@ -1727,6 +1938,12 @@ const City = (function () {
     if (!s || !world) return;
     const p = s.endsAt ? clamp(1 - (s.endsAt - nowServer()) / MATCH_MS, 0, 1) : 0;
     world.setTime(p);
+    applyWeather();
+    stepRain(dt);
+    if (muzzleLight) {
+      muzzleT = Math.max(0, muzzleT - dt);
+      muzzleLight.intensity = (muzzleT / 0.07) * 9;
+    }
     syncEntities(s, dt);
     updateCamera(dt);
     const target = mode === 'royale' ? markTarget() : missions[me.mission] || null;
@@ -1744,7 +1961,8 @@ const City = (function () {
       ps.time = nowT;
       const n = world.night;
       ps.tint = me.flags & 65536 ? [0.8, 0.92, 1.25] : [1 - n * 0.06, 1 - n * 0.02, 1 + n * 0.1];
-      ps.exposure = 0.98 + n * 0.12;
+      ps.exposure = (0.98 + n * 0.12) * (weather === 'rain' ? 0.72 : weather === 'fog' ? 1.0 : 1);
+      if (weather === 'rain') ps.tint = [ps.tint[0] * 0.93, ps.tint[1] * 0.98, ps.tint[2] * 1.08];
     }
     if (!(post && post.render(scene, camera))) renderer.render(scene, camera);
     drawOverlay();
@@ -2003,6 +2221,7 @@ const City = (function () {
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.setClearColor(0x0b1022, 1);
     tuneQuality();
+    loadCars();
     if (typeof Post !== 'undefined' && !/[?&]nopost/.test(location.search)) {
       try {
         post = Post.create(renderer, { mobile });
@@ -2046,6 +2265,7 @@ const City = (function () {
     toggleAds() { ads = !ads; return ads; },
     reload() { hooks.reload && hooks.reload(); },
     get mode() { return mode; },
+    get weather() { return weather; },
     get zone() { return cur && cur.z; },
     get alive() { return cur && cur.al; },
     cycleWeapon,

@@ -22,8 +22,68 @@ const Soldier = (function () {
   let gltf = null;
   let wait = null;
 
+  // real gun models (Quaternius, CC0): weapon code -> file. Barrel points along +X, origin near the grip.
+  const GUN_FILES = { 2: 'pistol', 3: 'smg', 4: 'shotgun', 5: 'ar', 6: 'sniper' };
+  const GUN_SCALE = { 2: 3.7, 3: 4.0, 4: 3.6, 5: 3.9, 6: 3.6 };
+  const GUN_LEN = { 2: 9, 3: 16, 4: 21, 5: 20, 6: 26 };
+  let gunsCache = null;
+  let gunsWait = null;
+  function loadGuns() {
+    if (gunsWait) return gunsWait;
+    gunsWait = new Promise((resolve) => {
+      if (!T.GLTFLoader) return resolve();
+      const loader = new T.GLTFLoader();
+      const cache = {};
+      let left = Object.keys(GUN_FILES).length;
+      const done = () => {
+        if (--left === 0) {
+          gunsCache = cache;
+          resolve();
+        }
+      };
+      for (const [code, name] of Object.entries(GUN_FILES)) {
+        loader.load(
+          `models/guns/${name}.glb`,
+          (g) => {
+            cache[code] = g.scene;
+            done();
+          },
+          undefined,
+          () => done()
+        );
+      }
+    });
+    return gunsWait;
+  }
+
+  // once the models are in, swap the blocky stand-in for the real thing
+  function ensureGunModels(obj) {
+    if (obj.gunModels || !gunsCache || !obj.gun) return;
+    obj.gunModels = {};
+    for (const [code, src] of Object.entries(gunsCache)) {
+      const wrap = new T.Group();
+      const m = src.clone(true);
+      m.rotation.z = -Math.PI / 2;
+      m.scale.setScalar(GUN_SCALE[code]);
+      m.position.set(0, 0, 0);
+      m.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          if (o.material && o.material.metalness !== undefined) o.material.metalness = Math.max(o.material.metalness, 0.4);
+        }
+      });
+      wrap.add(m);
+      wrap.visible = false;
+      obj.gun.add(wrap);
+      obj.gunModels[code] = wrap;
+    }
+    for (const p of obj.gunProc || []) p.visible = false;
+    obj.wcode = -1; // re-apply the current weapon
+  }
+
   function load(url) {
     if (wait) return wait;
+    const guns = loadGuns();
     wait = new Promise((resolve) => {
       if (!T.GLTFLoader || !T.SkeletonUtils) return resolve();
       new T.GLTFLoader().load(
@@ -38,7 +98,7 @@ const Soldier = (function () {
           resolve();
         }
       );
-    });
+    }).then(() => guns);
     return wait;
   }
   const ready = () => !!gltf;
@@ -157,11 +217,13 @@ const Soldier = (function () {
       hand.add(gun);
     } else obj.root.add(gun);
     const metal = new T.MeshStandardMaterial({ color: 0x23262c, roughness: 0.45, metalness: 0.7 });
+    obj.gunProc = [];
     const add = (geo, mat, x, y, z) => {
       const m = new T.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.castShadow = true;
       gun.add(m);
+      obj.gunProc.push(m);
       return m;
     };
     add(new T.BoxGeometry(2.6, 15, 3), metal, 0, -3, 0);
@@ -278,7 +340,7 @@ const Soldier = (function () {
     const age = s.atkAge == null ? 99 : s.atkAge;
     const ranged = wc >= 2;
     const dead = !!s.dead;
-    const wantAim = ranged && age < 1.6 && !dead ? 1 : 0;
+    const wantAim = ranged && !dead ? (age < 2.2 ? 1 : 0.62) : 0; // guns are always held up, higher when firing
     p.aim += (wantAim - p.aim) * Math.min(1, dt * 12);
     const punching = wc === 0 && age < 0.26 && !dead;
     const swinging = wc === 1 && age < 0.5 && !dead;
@@ -386,10 +448,15 @@ const Soldier = (function () {
       obj.inner.position.y = 5 * obj.deadK * (obj.scale / 27);
     }
     if (obj.gun) {
+      ensureGunModels(obj);
       const showGun = wc >= 2 && obj.deadK < 0.5 && p.hold < 0.5;
       if (obj.wcode !== wc) {
         obj.wcode = wc;
-        obj.gun.scale.setScalar(obj.gunBase * ([1, 1, 0.75, 0.95, 1.05, 1.2, 1.55][wc] || 1));
+        if (obj.gunModels && obj.gunModels[wc]) {
+          obj.gun.scale.setScalar(obj.gunBase);
+          for (const [code, wrap] of Object.entries(obj.gunModels)) wrap.visible = Number(code) === wc;
+          obj.tip.position.set(0, -(GUN_LEN[wc] || 16), 0);
+        } else obj.gun.scale.setScalar(obj.gunBase * ([1, 1, 0.75, 0.95, 1.05, 1.2, 1.55][wc] || 1));
       }
       obj.gun.visible = showGun;
       obj.tip.visible = false;

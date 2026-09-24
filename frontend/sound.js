@@ -427,6 +427,34 @@ const SoundFX = (function () {
       voiceLine('sigh', v);
       setTimeout(() => playSample('flush', Math.floor(Math.random() * 2), { gain: 0.9 * v }), 500);
     },
+    // a soft, endless rain shower
+    rain(on) {
+      const audioCtx = getCtx();
+      if (!audioCtx) return;
+      if (!on || muted) {
+        if (this._rain) {
+          try { this._rain.src.stop(); } catch (e) { /* already stopped */ }
+          this._rain = null;
+        }
+        return;
+      }
+      if (this._rain) return;
+      const buf = noise();
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 900;
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 7000;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.045;
+      src.connect(hp).connect(lp).connect(gain).connect(audioCtx.destination);
+      src.start();
+      this._rain = { src, gain };
+    },
     // ---- City Chaos: combat ----
     gun(kind, volume, pan) {
       const v = volume == null ? 1 : volume;

@@ -216,9 +216,9 @@ function markDisconnected(room, playerId) {
 function promoteNextHostIfNeeded(room, disconnectedPlayerId) {
   if (room.hostPlayerId !== disconnectedPlayerId) return null;
   const oldHost = room.players.get(disconnectedPlayerId);
-  if (oldHost) oldHost.isCreator = false;
   for (const p of room.players.values()) {
-    if (p.connected && !p.isBot) {
+    if (p.connected && !p.isBot && p.playerId !== disconnectedPlayerId) {
+      if (oldHost) oldHost.isCreator = false; // only hand the crown over when someone can take it
       p.isCreator = true;
       room.hostPlayerId = p.playerId;
       return p;
