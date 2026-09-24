@@ -5,6 +5,7 @@ const { calculateScore } = require('./scoring');
 const rooms = require('./rooms');
 const { serializePlayers, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } = rooms;
 const bots = require('./bots');
+const { pickLine } = require('./botLines');
 const db = require('./db');
 
 const START_COUNTDOWN_MS = 3400;
@@ -14,6 +15,7 @@ const STAGE_NAMES = {
   3: ['Qualifier', 'Semi-final', 'Grand Final'],
   4: ['Qualifier', 'Quarter-final', 'Semi-final', 'Grand Final'],
 };
+const TEAM_NAMES = ['Red', 'Blue', 'Green', 'Gold'];
 const REVEAL_TO_NEXT_MS = 5000;
 const POWER_DECISION_MS = 10000;
 const POWER_RESULT_TO_NEXT_MS = 4000;
@@ -90,6 +92,92 @@ function isStageBoundary(room, questionIndex) {
   return next < room.activeQuestions.length && stageIndexOf(room, next) > stageIndexOf(room, questionIndex);
 }
 
+// ---- Teams ----
+function teamScores(room) {
+  const totals = TEAM_NAMES.slice(0, room.teamMode).map((name, team) => ({ team, name, score: 0, members: [], alive: 0 }));
+  for (const p of room.players.values()) {
+    if (p.team === null || p.team === undefined || !totals[p.team]) continue;
+    totals[p.team].score += p.score;
+    totals[p.team].members.push(p.playerId);
+    if (isAlive(p)) totals[p.team].alive += 1;
+  }
+  return totals;
+}
+
+// Survivors first (by team score), then eliminated teams by how long they lasted.
+function teamStandings(room) {
+  if (!room.teamMode) return null;
+  const place = room.teamPlace || {};
+  return teamScores(room)
+    .map((t) => ({ ...t, eliminated: t.alive === 0, place: place[t.team] || null }))
+    .sort((a, b) => (a.eliminated ? 1 : 0) - (b.eliminated ? 1 : 0) || (a.eliminated ? (a.place || 99) - (b.place || 99) : 0) || b.score - a.score || a.team - b.team);
+}
+
+function assignTeams(room) {
+  const list = [...room.players.values()].sort((a, b) => (a.isBot ? 1 : 0) - (b.isBot ? 1 : 0));
+  const count = Math.max(2, Math.min(room.teamMode, list.length));
+  room.teamMode = count;
+  list.forEach((p, i) => { p.team = i % count; });
+}
+
+function setTeamMode(room, count) {
+  if (room.state !== 'lobby') return { error: 'GAME_IN_PROGRESS' };
+  const n = Number(count);
+  room.teamMode = n >= 2 && n <= 4 ? n : 0;
+  return { ok: true };
+}
+
+// ---- Match stats and awards ----
+function statsOf(room, id) {
+  let st = room.stats.get(id);
+  if (!st) {
+    st = { answers: 0, correct: 0, correctMs: 0, bestStreak: 0, stolen: 0, worstRank: 1 };
+    room.stats.set(id, st);
+  }
+  return st;
+}
+
+function computeAwards(room, board) {
+  const awards = [];
+  const name = (id) => (room.players.get(id) ? room.players.get(id).name : '?');
+  const entries = [...room.stats.entries()].filter(([id]) => room.players.has(id));
+
+  const fast = entries.filter(([, st]) => st.correct >= 3).map(([id, st]) => ({ id, avg: st.correctMs / st.correct })).sort((a, b) => a.avg - b.avg)[0];
+  if (fast) awards.push({ key: 'fastest', icon: '⚡', title: 'Fastest Finger', playerId: fast.id, detail: `${(fast.avg / 1000).toFixed(1)}s average` });
+
+  const streak = entries.filter(([, st]) => st.bestStreak >= 3).sort((a, b) => b[1].bestStreak - a[1].bestStreak)[0];
+  if (streak) awards.push({ key: 'streak', icon: '🔥', title: 'Streak King', playerId: streak[0], detail: `${streak[1].bestStreak} in a row` });
+
+  const sharp = entries
+    .filter(([, st]) => st.answers >= 5 && st.correct >= 4)
+    .map(([id, st]) => ({ id, acc: st.correct / st.answers, correct: st.correct, answers: st.answers }))
+    .sort((a, b) => b.acc - a.acc || b.correct - a.correct)[0];
+  if (sharp) awards.push({ key: 'sharp', icon: '🎯', title: 'Sharpshooter', playerId: sharp.id, detail: `${Math.round(sharp.acc * 100)}% correct` });
+
+  const thief = entries.filter(([, st]) => st.stolen > 0).sort((a, b) => b[1].stolen - a[1].stolen)[0];
+  if (thief) awards.push({ key: 'thief', icon: '🕵️', title: 'Point Thief', playerId: thief[0], detail: `+${thief[1].stolen} stolen` });
+
+  const rankOf = new Map(board.map((p, i) => [p.playerId, i + 1]));
+  const climb = entries
+    .map(([id, st]) => ({ id, climb: st.worstRank - (rankOf.get(id) || st.worstRank) }))
+    .filter((c) => c.climb >= 2 && room.players.get(c.id) && !room.players.get(c.id).eliminated)
+    .sort((a, b) => b.climb - a.climb)[0];
+  if (climb) awards.push({ key: 'comeback', icon: '🧗', title: 'Comeback Kid', playerId: climb.id, detail: `climbed ${climb.climb} places` });
+
+  return awards.map((a) => ({ ...a, name: name(a.playerId) }));
+}
+
+// ---- Bot banter ----
+function botSay(io, room, bot, kind, chance) {
+  if (!bot || !bot.isBot || Math.random() > chance) return;
+  const now = Date.now();
+  if (now - (bot.lastSayAt || 0) < 5000) return;
+  const text = pickLine(bot.botTier, kind);
+  if (!text) return;
+  bot.lastSayAt = now;
+  io.to(room.code).emit(EVENTS.BOT_SAY, { playerId: bot.playerId, text });
+}
+
 function getActiveQuestions(room) {
   return room.activeQuestions;
 }
@@ -108,12 +196,21 @@ function startGame(io, room) {
     p.eliminated = false;
     p.place = null;
     p.left = false;
+    p.team = null;
   }
+  room.stats = new Map();
+  room.fans = new Map();
+  room.teamPlace = {};
+  if (room.teamMode) assignTeams(room);
   room.questionIndex = -1;
   room.frozenPlayerId = null;
   // Freshly shuffled per room so the same category never plays in the same
   // order twice in a row — a room replayed with Play Again reshuffles again too.
-  room.activeQuestions = room.category === 'custom' ? room.customQuestions.slice() : shuffled(getQuestions(room.category));
+  room.activeQuestions = room.category === 'custom'
+    ? room.customQuestions.slice()
+    : room.category === 'daily'
+      ? getQuestions('daily').slice() // the same questions, in the same order, for everyone today
+      : shuffled(getQuestions(room.category));
 
   // A short "get ready" beat so every device is on the question screen together.
   room.stagePlan = planStages(room.activeQuestions.length);
@@ -125,6 +222,7 @@ function startGame(io, room) {
     serverNow: Date.now(),
     totalQuestions: room.activeQuestions.length,
     stagePlan: room.stagePlan,
+    teamMode: room.teamMode,
     players: serializePlayers(room),
   });
   room.timers.revealTimeout = setTimeout(() => {
@@ -194,6 +292,7 @@ function scheduleBotAnswers(io, room) {
     const timer = setTimeout(() => {
       if (room.questionIndex !== expectedIndex || room.state !== 'question') return;
       handleAnswerSubmit(io, room, bot.playerId, plan.choiceIndex);
+      botSay(io, room, bot, 'lock', 0.1);
     }, plan.delay);
     room.timers.botTimeouts.push(timer);
   }
@@ -216,16 +315,38 @@ function advance(io, room) {
 function beginTransition(io, room) {
   clearRoomTimers(room);
   const completed = stageIndexOf(room, room.questionIndex);
-  const alive = [...room.players.values()].filter(isAlive).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  // Cut the bottom third (never below two survivors), like a battle-royale zone closing in.
-  const cut = alive.length <= 2 ? 0 : Math.max(1, Math.floor(alive.length / 3));
-  const survivors = alive.slice(0, alive.length - cut);
-  const out = alive.slice(alive.length - cut);
-  out.forEach((p, i) => {
-    p.eliminated = true;
-    p.place = survivors.length + 1 + i;
-    p.streak = 0;
-  });
+  let survivors;
+  let out;
+  if (room.teamMode) {
+    // Team mode: whole teams are cut. With only two teams left nobody is cut.
+    const alive = teamScores(room).filter((t) => t.alive > 0).sort((a, b) => b.score - a.score || a.team - b.team);
+    const cut = alive.length <= 2 ? 0 : Math.max(1, Math.floor(alive.length / 3));
+    const keep = alive.slice(0, alive.length - cut);
+    const gone = alive.slice(alive.length - cut);
+    gone.forEach((t, i) => { room.teamPlace[t.team] = keep.length + 1 + i; });
+    const goneTeams = new Set(gone.map((t) => t.team));
+    const players = [...room.players.values()].filter(isAlive);
+    survivors = players.filter((p) => !goneTeams.has(p.team));
+    out = players.filter((p) => goneTeams.has(p.team)).sort((a, b) => a.team - b.team || b.score - a.score);
+    out.forEach((p) => {
+      p.eliminated = true;
+      p.place = room.teamPlace[p.team];
+      p.streak = 0;
+    });
+  } else {
+    const alive = [...room.players.values()].filter(isAlive).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    // Cut the bottom third (never below two survivors), like a battle-royale zone closing in.
+    const cut = alive.length <= 2 ? 0 : Math.max(1, Math.floor(alive.length / 3));
+    survivors = alive.slice(0, alive.length - cut);
+    out = alive.slice(alive.length - cut);
+    out.forEach((p, i) => {
+      p.eliminated = true;
+      p.place = survivors.length + 1 + i;
+      p.streak = 0;
+    });
+  }
+  out.forEach((p) => { if (p.isBot) botSay(io, room, p, 'out', 1); });
+  room.fans = new Map(); // supporters of anyone who just fell need a new favourite
   if (room.frozenPlayerId && !isAlive(room.players.get(room.frozenPlayerId) || {})) room.frozenPlayerId = null;
 
   room.state = 'transition';
@@ -236,6 +357,7 @@ function beginTransition(io, room) {
     advancing: survivors.map((p) => p.playerId),
     eliminated: out.map((p) => ({ playerId: p.playerId, place: p.place })),
     leaderboard: leaderboard(room),
+    teams: teamStandings(room),
     durationMs: TRANSITION_MS,
     serverNow: Date.now(),
   });
@@ -354,8 +476,16 @@ function endQuestion(io, room) {
         player.streak = (player.streak || 0) + 1;
         bonus = streakBonus(player.streak);
         delta = base + bonus;
+        const st = statsOf(room, playerId);
+        st.answers += 1;
+        st.correct += 1;
+        st.correctMs += Math.max(0, answer.answeredAt - questionStartedAt);
+        st.bestStreak = Math.max(st.bestStreak, player.streak);
+        if (player.isBot && Math.random() < 0.6) botSay(io, room, player, player.streak >= 2 ? 'right' : 'lock', 0.3);
       } else {
         player.streak = 0;
+        statsOf(room, playerId).answers += 1;
+        if (player.isBot) botSay(io, room, player, 'wrong', 0.3);
       }
     } else if (!frozen) {
       player.streak = 0; // no answer at all breaks the streak; being frozen does not
@@ -366,6 +496,12 @@ function endQuestion(io, room) {
   }
 
   room.state = 'reveal';
+
+  // Track how far each contender has fallen, for the "comeback" award.
+  [...room.players.values()].filter(isAlive).sort((a, b) => b.score - a.score).forEach((p, i) => {
+    const st = statsOf(room, p.playerId);
+    st.worstRank = Math.max(st.worstRank, i + 1);
+  });
 
   // Fastest correct answer = first matching entry in the answers Map (insertion order = arrival order)
   let powerEligiblePlayerId = null;
@@ -415,7 +551,7 @@ function beginPowerPrompt(io, room, type, chooserId) {
 
   const chooser = room.players.get(chooserId);
   const opponents = [...room.players.values()]
-    .filter((p) => p.playerId !== chooserId && isAlive(p))
+    .filter((p) => p.playerId !== chooserId && isAlive(p) && !(room.teamMode && chooser && p.team === chooser.team))
     .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, score: p.score }));
 
   const promptEvent = type === 'steal' ? EVENTS.STEAL_PROMPT : EVENTS.FREEZE_PROMPT;
@@ -454,7 +590,7 @@ function resolvePowerChoice(io, room, targetPlayerId) {
   const { type, chooserId } = room.stealState;
   const chooser = room.players.get(chooserId);
   const target = targetPlayerId ? room.players.get(targetPlayerId) : null;
-  const validTarget = chooser && target && target.playerId !== chooser.playerId && isAlive(target);
+  const validTarget = chooser && target && target.playerId !== chooser.playerId && isAlive(target) && !(room.teamMode && target.team === chooser.team);
 
   room.state = 'reveal';
 
@@ -464,6 +600,10 @@ function resolvePowerChoice(io, room, targetPlayerId) {
       pointsMoved = Math.min(STEAL_POINTS, target.score);
       target.score -= pointsMoved;
       chooser.score += pointsMoved;
+      if (pointsMoved > 0) {
+        statsOf(room, chooser.playerId).stolen += pointsMoved;
+        botSay(io, room, chooser, 'steal', 0.8);
+      }
     }
     emitToRoom(io, room, EVENTS.STEAL_RESULT, {
       stealerId: chooser ? chooser.playerId : null,
@@ -494,10 +634,27 @@ function finalizeGame(io, room) {
   room.currentQuestion = null;
   room.stealState = null;
   room.frozenPlayerId = null;
-  const board = leaderboard(room);
-  emitToRoom(io, room, EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3) });
+  const teams = teamStandings(room);
+  let board = leaderboard(room);
+  if (teams) {
+    // team mode: order players by their team's result, then by their own score
+    const rank = new Map(teams.map((t, i) => [t.team, i]));
+    board = board.slice().sort((a, b) => rank.get(a.team) - rank.get(b.team) || b.score - a.score);
+  }
+  const awards = computeAwards(room, board);
+  room.awards = awards;
+  const winner = board[0];
+  if (winner && winner.isBot) botSay(io, room, room.players.get(winner.playerId), 'win', 1);
+  emitToRoom(io, room, EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3), awards, teams, teamMode: room.teamMode });
 
   db.saveGameResult({
+    top: teams && teams[0]
+      ? {
+          name: `Team ${teams[0].name}`,
+          avatar: (board.find((p) => p.team === teams[0].team) || {}).avatar,
+          score: teams[0].score,
+        }
+      : null,
     roomCode: room.code,
     category: room.category,
     categoryLabel: getCategoryLabel(room.category),
@@ -522,7 +679,11 @@ function resetToLobby(io, room) {
     p.polls = 0;
     p.eliminated = false;
     p.place = null;
+    p.team = null;
   }
+  room.fans = new Map();
+  room.teamPlace = {};
+  room.awards = null;
   room.stagePlan = null;
   room.questionIndex = -1;
   room.answers = new Map();
@@ -555,6 +716,8 @@ function handleLeave(io, room, player) {
 
 module.exports = {
   startGame,
+  setTeamMode,
+  teamStandings,
   handleLeave,
   stageInfo,
   handleAnswerSubmit,

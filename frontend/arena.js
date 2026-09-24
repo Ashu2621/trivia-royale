@@ -35,6 +35,7 @@ const Arena = (function () {
     { floorA: '#b8902a', floorB: '#6d5210', wall: '#4a3608', accent: '#ffe08a' },
   ];
 
+  const TEAM_COLORS = ['#e63946', '#3a7bd5', '#2ecc71', '#f5c542'];
   const SKIN = ['#f5d0b0', '#e6b48a', '#c98f62', '#a86b42', '#7c4a2d', '#f9dcc4'];
   const HAIR = ['#141013', '#2b1d14', '#4a2f1c', '#7a5230', '#9a9a9a', '#0e0e12', '#8a3b1c', '#d8b25a'];
   const SHIRT = ['#e63946', '#f4a261', '#2a9d8f', '#4361ee', '#9b5de5', '#f15bb5', '#00bbf9', '#8ac926', '#ff7b00', '#7209b7'];
@@ -64,6 +65,7 @@ const Arena = (function () {
   const cam = { x: 0, y: RH / 2, s: 1, tx: 0, ty: RH / 2, ts: 1 };
   let nowT = 0;
   let curSub = 0;
+  let fans = {};
 
   const dotsFor = (i) => (plan.total ? Math.max(1, Math.min(plan.per, plan.total - i * plan.per)) : plan.per);
   const worldW = () => PAD * 2 + plan.count * RW + (plan.count - 1) * CORR;
@@ -174,9 +176,13 @@ const Arena = (function () {
 
   /* ----------------------------------------------------------- characters */
 
-  function makeChar(p) {
+  function makeChar(p, teamMode) {
     const look = lookFor(p.playerId);
+    const team = teamMode && p.team !== null && p.team !== undefined ? p.team : null;
+    if (team !== null) look.shirt = TEAM_COLORS[team % TEAM_COLORS.length];
     return {
+      team,
+      say: null,
       id: p.playerId,
       name: p.name || '?',
       emoji: p.avatar || '🙂',
@@ -276,7 +282,8 @@ const Arena = (function () {
     const stage = o.stage || 0;
     activeStage = stage;
     reachedStage = stage;
-    players.forEach((pl) => chars.set(pl.playerId, makeChar(pl)));
+    fans = {};
+    players.forEach((pl) => chars.set(pl.playerId, makeChar(pl, o.teamMode)));
     const alive = players.filter((pl) => !pl.eliminated);
     buildRoom(stage, alive.map((pl) => pl.playerId), true, -1);
     for (let i = 0; i < stage; i++) stageProgress[i] = dotsFor(i);
@@ -450,8 +457,41 @@ const Arena = (function () {
     ch.verdict = null;
   }
 
+  // Which contender's table is under this screen point (or null)?
+  function tableAt(clientX, clientY) {
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const wx = (clientX - rect.left - W / 2) / cam.s + cam.x;
+    const wy = (clientY - rect.top - H / 2) / cam.s + cam.y;
+    for (const room of rooms) {
+      for (const tb of room.tables) {
+        const owner = tb.owner ? chars.get(tb.owner) : null;
+        if (owner && !owner.dead && Math.abs(wx - tb.x) < 48 && wy > tb.y - 76 && wy < tb.y + 38) return owner.id;
+      }
+    }
+    return null;
+  }
+
   function setMe(id) {
     meId = id;
+  }
+
+  // An emoji pops up over someone's table (or over them, if they are on the move).
+  function react(id, emoji) {
+    const ch = chars.get(id);
+    if (!ch || reduceMotion) return;
+    floaters.push({ x: ch.x + rand(-14, 14), y: ch.y - (ch.state === 'run' ? 96 : 104), text: emoji, born: nowT, life: 1.9, emoji: true });
+  }
+
+  // A speech bubble, used for the computer players' banter.
+  function say(id, text) {
+    const ch = chars.get(id);
+    if (!ch) return;
+    ch.say = { text: String(text).slice(0, 34), until: nowT + 3.4 };
+  }
+
+  function setFans(counts) {
+    fans = counts || {};
   }
 
   function aliveCount() {
@@ -697,6 +737,23 @@ const Arena = (function () {
       rr(-12, -16, 24, 13, 2);
       ctx.fill();
       ctx.globalAlpha = rise;
+    }
+
+    // team colour stripe + supporters
+    if (ch && ch.team !== null && ch.team !== undefined) {
+      ctx.fillStyle = TEAM_COLORS[ch.team % TEAM_COLORS.length];
+      rr(-44, 10, 7, 25, 3);
+      ctx.fill();
+    }
+    if (ch && fans[ch.id] > 0 && !dead) {
+      ctx.fillStyle = '#ff5c8a';
+      rr(20, -30, 30, 15, 7);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = `800 ${fontSize(10)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`❤ ${fans[ch.id]}`, 35, -22);
     }
 
     // lock lamp
@@ -1091,6 +1148,35 @@ const Arena = (function () {
 
     for (let i = 0; i < plan.count; i++) drawRoomOverlay(i, t);
 
+    // speech bubbles (bot banter)
+    chars.forEach((ch) => {
+      if (!ch.say || ch.say.until < nowT || ch.state === 'drop') return;
+      const bx = ch.x;
+      const by = ch.y - (ch.state === 'run' ? 112 : 122);
+      const fs = fontSize(11);
+      ctx.font = `700 ${fs}px system-ui, "Apple Color Emoji", sans-serif`;
+      const w = Math.min(190, ctx.measureText(ch.say.text).width + 18);
+      const pop = clamp((nowT - (ch.say.until - 3.4)) / 0.2, 0, 1);
+      const a = ch.say.until - nowT < 0.4 ? (ch.say.until - nowT) / 0.4 : 1;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(bx, by);
+      ctx.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
+      ctx.fillStyle = '#ffffff';
+      rr(-w / 2, -fs - 8, w, fs + 14, 9);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-5, 5);
+      ctx.lineTo(0, 12);
+      ctx.lineTo(5, 5);
+      ctx.fill();
+      ctx.fillStyle = '#12163a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ch.say.text, 0, -fs / 2 - 1);
+      ctx.restore();
+    });
+
     // effects
     for (let i = dust.length - 1; i >= 0; i--) {
       const p = dust[i];
@@ -1117,9 +1203,14 @@ const Arena = (function () {
         continue;
       }
       ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      ctx.textAlign = 'center';
+      if (f.emoji) {
+        ctx.font = `${fontSize(26) * (1 + 0.25 * Math.sin(k * 9))}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+        ctx.fillText(f.text, f.x + Math.sin(k * 8) * 6, f.y - k * 46);
+        continue;
+      }
       ctx.fillStyle = f.color;
       ctx.font = `800 ${fontSize(f.big ? 20 : 18)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
       ctx.lineWidth = 3;
       ctx.strokeText(f.text, f.x, f.y - k * 34);
@@ -1280,12 +1371,17 @@ const Arena = (function () {
     setPlan(plan);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     else window.addEventListener('resize', resize);
-    canvas.addEventListener('click', () => toggleOverview());
+    canvas.addEventListener('click', (e) => {
+      // tapping a contender's table (for a spectator) cheers for them; anything else toggles the full-map view
+      const id = tableAt(e.clientX, e.clientY);
+      if (id && hooks.tableTap && hooks.tableTap(id)) return;
+      toggleOverview();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) running = false;
       else if (canvas.offsetParent !== null) start();
     });
   }
 
-  return { mount, start, stop, resize, startMatch, startQuestion, lock, reveal, transition, setMe, aliveCount, toggleOverview };
+  return { mount, start, stop, resize, startMatch, startQuestion, lock, reveal, transition, setMe, react, say, setFans, tableAt, aliveCount, toggleOverview };
 })();

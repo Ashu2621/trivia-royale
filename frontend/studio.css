@@ -183,3 +183,46 @@ html[data-theme="hotseat"] .choices.locked .choice:not(.selected):not(.correct) 
   .audience { display: none; }
   .studio { margin-top: 0; margin-bottom: 12px; }
 }
+
+/* ============================================ v4: daily, teams, reactions, awards, notes */
+
+.btn-daily { background: linear-gradient(180deg, #43e58c, #1fa652); color: #04260f; box-shadow: 0 6px 0 #12803c, 0 14px 28px rgba(62, 224, 143, 0.3); }
+.btn-daily:active:not(:disabled) { box-shadow: 0 2px 0 #12803c; }
+.daily-chip { display: inline-block; margin-left: 6px; padding: 1px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.25); font-size: 0.72rem; font-weight: 800; vertical-align: middle; }
+
+#voiceBtn.on { background: rgba(62, 224, 143, 0.28); border-color: #3ee08f; box-shadow: 0 0 12px rgba(62, 224, 143, 0.5); }
+
+.notes-box { margin: 10px 0; border: 1px dashed var(--panel-border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--input-bg); }
+.notes-box summary { cursor: pointer; font-weight: 700; font-size: 0.92rem; }
+.notes-box textarea { width: 100%; margin-top: 8px; padding: 10px 12px; border-radius: var(--radius-sm); border: 2px solid var(--panel-border); background: rgba(0, 0, 0, 0.25); color: var(--text); font: 500 0.95rem var(--font-body); resize: vertical; min-height: 84px; }
+.file-btn { display: flex; align-items: center; justify-content: center; margin-top: 8px; cursor: pointer; min-height: 46px; font-size: 0.95rem; }
+.notes-box a { color: var(--accent); }
+
+.team-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin: 0 6px 0 2px; flex: none; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); vertical-align: middle; }
+.team-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background: #050c34; border-bottom: 1px solid var(--panel-border); }
+.team-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--tc); font: 700 0.75rem var(--font-display); }
+.team-chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--tc); }
+.team-chip b { color: #ffe08a; }
+.team-chip.out { opacity: 0.45; text-decoration: line-through; }
+
+.reaction-bar { display: flex; justify-content: center; gap: 4px; padding: 6px 6px 8px; background: #050c34; flex-wrap: wrap; }
+.reaction-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06); font-size: 1.2rem; cursor: pointer; padding: 0; transition: transform 0.12s ease, background-color 0.15s ease; }
+.reaction-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.reaction-btn:active, .reaction-btn.sent { animation: reactPop 0.35s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes reactPop { 0% { transform: scale(1); } 45% { transform: scale(1.35); } 100% { transform: scale(1); } }
+
+.awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 4px 0 16px; }
+.award { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow); animation: rowIn 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.award.mine { border-color: #ffe08a; box-shadow: 0 0 20px rgba(255, 224, 138, 0.45); }
+.award-ico { font-size: 1.7rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4)); }
+.award-txt { display: flex; flex-direction: column; min-width: 0; }
+.award-txt b { font: 800 0.92rem var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+.award-txt small { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 430px) {
+  .brand-text { display: none; }
+  .topbar-actions { gap: 5px; }
+  .icon-btn { width: 36px; height: 36px; }
+  .link-btn { padding: 0 10px; min-height: 36px; }
+  .reaction-btn { width: 36px; height: 36px; font-size: 1.05rem; }
+}

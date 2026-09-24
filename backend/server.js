@@ -8,7 +8,7 @@ const socketHandlers = require('./socketHandlers');
 const db = require('./db');
 const ai = require('./ai');
 const bots = require('./bots');
-const { getCategoryList } = require('./questions');
+const { getCategoryList, dailyKey } = require('./questions');
 const { getLevelList } = require('./levels');
 
 const PORT = process.env.PORT || 3000;
@@ -21,9 +21,10 @@ app.get('/api/meta', (req, res) => {
     levels: getLevelList(),
     aiEnabled: ai.isEnabled(),
     botTiers: bots.listTiers(),
+    daily: dailyKey(),
   });
 });
-const VALID_PERIODS = new Set(['all', 'week', 'month', 'year']);
+const VALID_PERIODS = new Set(['all', 'today', 'week', 'month', 'year']);
 
 app.get('/api/leaderboard', async (req, res) => {
   const period = VALID_PERIODS.has(req.query.period) ? req.query.period : 'all';
@@ -37,10 +38,11 @@ app.get('/api/leaderboard/subjects', async (req, res) => {
   const subjects = await db.getSubjectsForCategory(category);
   res.json({ subjects });
 });
+app.get('/healthz', (req, res) => res.type('text').send('ok'));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 8e6 }); // room for a small PDF of study notes
 
 io.on('connection', (socket) => socketHandlers.register(io, socket));
 

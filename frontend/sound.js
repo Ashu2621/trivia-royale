@@ -236,3 +236,50 @@ const SoundFX = (function () {
     },
   };
 })();
+
+// A spoken "host" using the browser's built-in speech synthesis — no audio files, no network.
+// Reads questions, the correct answer, eliminations and the winner. Off by default.
+const VoiceHost = (function () {
+  const KEY = 'triviaRoyaleVoice';
+  const synth = window.speechSynthesis || null;
+  let on = false;
+  try { on = localStorage.getItem(KEY) === '1'; } catch (e) { /* storage blocked */ }
+  let voices = [];
+  function refresh() {
+    if (synth) voices = synth.getVoices();
+  }
+  if (synth) {
+    refresh();
+    synth.onvoiceschanged = refresh;
+  }
+
+  function pick(text) {
+    const devanagari = /[\u0900-\u097F]/.test(text);
+    const wanted = devanagari ? ['hi-in', 'hi'] : ['en-in', 'en-gb', 'en-us', 'en'];
+    for (const l of wanted) {
+      const v = voices.find((x) => x.lang && x.lang.replace('_', '-').toLowerCase().startsWith(l));
+      if (v) return { voice: v, lang: v.lang };
+    }
+    return { voice: null, lang: devanagari ? 'hi-IN' : 'en-IN' };
+  }
+
+  return {
+    supported: !!synth,
+    isOn: () => on,
+    set(value) {
+      on = !!value;
+      try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) { /* ignore */ }
+      if (!on && synth) synth.cancel();
+    },
+    speak(text, opts) {
+      if (!on || !synth || !text || SoundFX.isMuted()) return;
+      const u = new SpeechSynthesisUtterance(String(text).slice(0, 220));
+      const { voice, lang } = pick(u.text);
+      if (voice) u.voice = voice;
+      u.lang = lang;
+      u.rate = 1.03;
+      if (!(opts && opts.queue)) synth.cancel();
+      synth.speak(u);
+    },
+  };
+})();

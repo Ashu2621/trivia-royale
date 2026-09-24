@@ -37,9 +37,9 @@ function isEnabled() {
   return enabled;
 }
 
-async function saveGameResult({ roomCode, category, categoryLabel, levelKey, levelLabel, subject, players }) {
+async function saveGameResult({ roomCode, category, categoryLabel, levelKey, levelLabel, subject, players, top: topOverride }) {
   if (!enabled) return;
-  const top = players[0]; // callers pass the final ranking, survivors first
+  const top = topOverride || players[0]; // callers pass the final ranking, survivors first
   if (!top || top.score <= 0) return;
   try {
     await GameResult.create({
@@ -61,6 +61,11 @@ async function saveGameResult({ roomCode, category, categoryLabel, levelKey, lev
 
 function periodSince(period) {
   const now = new Date();
+  if (period === 'today') {
+    // start of the current day in India time (UTC+5:30)
+    const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
+    return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - 5.5 * 3600 * 1000);
+  }
   if (period === 'week') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
   if (period === 'year') return new Date(now.getFullYear(), 0, 1);

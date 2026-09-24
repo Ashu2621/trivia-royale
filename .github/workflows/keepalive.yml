@@ -1,0 +1,15 @@
+# Render's free tier puts the app to sleep after ~15 minutes without traffic, and the
+# first visit afterwards takes ~50 seconds. This pings the site every 10 minutes so
+# players and judges don't hit a cold start. (Scheduled runs can drift by a few minutes.)
+name: keepalive
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the game server
+        run: |
+          curl -fsS --max-time 90 --retry 3 --retry-delay 10 https://trivia-royale-lxw0.onrender.com/healthz

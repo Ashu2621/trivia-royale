@@ -8,6 +8,17 @@ const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
 
 const MIN_QUESTIONS_TO_START = 4;
+const REACTIONS = ['👏', '😮', '🔥', '😂', '💀', '❤️', '🎉', '😎'];
+const REACTION_GAP_MS = 600;
+const MAX_NOTES_CHARS = 20000;
+const MAX_PDF_BASE64 = 4_500_000; // ~3.3 MB of PDF
+const LANGUAGES = new Set(['English', 'Hindi', 'Hinglish']);
+
+function fanCounts(room) {
+  const counts = {};
+  for (const target of room.fans.values()) counts[target] = (counts[target] || 0) + 1;
+  return counts;
+}
 
 // socket.id -> { roomCode, playerId }, so a disconnect knows which room/player it belonged to
 const socketMeta = new Map();
@@ -35,6 +46,8 @@ function buildRoomState(room) {
     serverNow: Date.now(),
     stagePlan: room.stagePlan,
     stage: room.stagePlan && room.activeQuestions.length ? game.stageInfo(room) : null,
+    teamMode: room.teamMode,
+    fans: fanCounts(room),
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -48,7 +61,7 @@ function buildRoomState(room) {
   }
   if (room.state === 'final') {
     const board = rooms.serializePlayers(room);
-    state.final = { leaderboard: board, podium: board.slice(0, 3) };
+    state.final = { leaderboard: board, podium: board.slice(0, 3), awards: room.awards || [], teams: game.teamStandings(room), teamMode: room.teamMode };
   }
   return state;
 }
@@ -125,6 +138,40 @@ function register(io, socket) {
     game.handleLeave(io, room, player);
   });
 
+  socket.on(EVENTS.TEAM_SET, ({ teams } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can change team mode.');
+    const result = game.setTeamMode(room, teams);
+    if (result.error) return sendError(socket, 'GAME_IN_PROGRESS', 'Team mode can only be changed in the lobby.');
+    io.to(room.code).emit(EVENTS.TEAM_UPDATE, { teamMode: room.teamMode });
+  });
+
+  // Quick emoji reactions, shown above the sender's table for everyone. Rate limited per player.
+  socket.on(EVENTS.REACTION_SEND, ({ emoji } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!REACTIONS.includes(emoji) || room.state === 'lobby') return;
+    const now = Date.now();
+    if (now - (player.lastReactionAt || 0) < REACTION_GAP_MS) return;
+    player.lastReactionAt = now;
+    io.to(room.code).emit(EVENTS.REACTION_SHOW, { playerId: player.playerId, emoji });
+  });
+
+  // Eliminated spectators pick a contender to cheer for; it changes nothing about scoring.
+  socket.on(EVENTS.FAN_SET, ({ targetId } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    if (!player.eliminated || player.isBot) return;
+    const target = room.players.get(targetId);
+    if (!target || target.eliminated || target.left) return;
+    room.fans.set(player.playerId, target.playerId);
+    io.to(room.code).emit(EVENTS.FANS_UPDATE, { fans: fanCounts(room) });
+  });
+
   socket.on(EVENTS.LIFELINE_USE, ({ type } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
@@ -167,7 +214,7 @@ function register(io, socket) {
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
   });
 
-  socket.on(EVENTS.QUESTIONS_GENERATE, async ({ levelKey, subject, count } = {}) => {
+  socket.on(EVENTS.QUESTIONS_GENERATE, async ({ levelKey, subject, count, language, notes } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
@@ -175,21 +222,35 @@ function register(io, socket) {
     if (room.state !== 'lobby') return;
     if (room.category !== 'custom') return sendError(socket, 'WRONG_MODE', 'Switch the room category to Custom / Study Mode first.');
     if (!ai.isEnabled()) return sendError(socket, 'AI_DISABLED', 'AI question generation is not set up on this server.');
-    const cleanSubject = String(subject || '').trim().slice(0, 80);
+    // Optional study notes: pasted/plain text, or a small PDF the model reads directly.
+    const cleanNotes = {};
+    if (notes && typeof notes === 'object') {
+      if (typeof notes.text === 'string' && notes.text.trim()) cleanNotes.text = notes.text.trim().slice(0, MAX_NOTES_CHARS);
+      if (typeof notes.pdf === 'string' && notes.pdf) {
+        if (notes.pdf.length > MAX_PDF_BASE64) return sendError(socket, 'NOTES_TOO_BIG', 'That PDF is too large — use one under about 3 MB.');
+        if (!/^[A-Za-z0-9+/=]+$/.test(notes.pdf)) return sendError(socket, 'NOTES_INVALID', 'That PDF could not be read.');
+        cleanNotes.pdf = notes.pdf;
+      }
+      if (typeof notes.name === 'string') cleanNotes.name = notes.name.slice(0, 80);
+    }
+    const hasNotes = !!(cleanNotes.text || cleanNotes.pdf);
+    let cleanSubject = String(subject || '').trim().slice(0, 80);
+    if (!cleanSubject && hasNotes) cleanSubject = cleanNotes.name || 'My notes';
     if (!cleanSubject) return sendError(socket, 'INVALID_SUBJECT', 'Enter a subject or topic first.');
+    const cleanLanguage = LANGUAGES.has(language) ? language : 'English';
     const levelLabel = getLevelLabel(levelKey);
 
     io.to(room.code).emit(EVENTS.QUESTIONS_GENERATING, { level: levelLabel, subject: cleanSubject });
     try {
-      const avoid = questionHistory.getRecent(levelKey, cleanSubject);
-      const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count, avoid });
+      const avoid = hasNotes ? [] : questionHistory.getRecent(levelKey, cleanSubject);
+      const generated = await ai.generateQuestions({ levelLabel, subject: cleanSubject, count, avoid, language: cleanLanguage, notes: hasNotes ? cleanNotes : null });
       // Only commit the room's level/subject once generation actually succeeds —
       // otherwise a failed regenerate attempt would mislabel the existing pool
       // (from an earlier, successful subject) with the new, unused one.
       room.levelKey = levelKey;
       room.subject = cleanSubject;
       const added = rooms.addCustomQuestions(room, generated);
-      questionHistory.recordUsed(levelKey, cleanSubject, generated.map((q) => q.text));
+      if (!hasNotes) questionHistory.recordUsed(levelKey, cleanSubject, generated.map((q) => q.text));
       io.to(room.code).emit(EVENTS.QUESTION_POOL_UPDATE, poolSummary(room));
       if (added < generated.length) {
         sendError(socket, 'POOL_FULL', `Only added ${added} — the room hit its ${rooms.MAX_CUSTOM_QUESTIONS}-question cap.`);

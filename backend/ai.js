@@ -72,7 +72,7 @@ const QUESTION_SCHEMA = {
   required: ['questions'],
 };
 
-function buildPrompt(levelLabel, subject, count, avoid) {
+function buildPrompt(levelLabel, subject, count, avoid, language, notes) {
   let prompt =
     `You are an expert exam-question setter. Write ${count} brand-new multiple-choice questions ` +
     `for the "${levelLabel}" level, on the subject/topic: "${subject}".\n\n` +
@@ -85,6 +85,23 @@ function buildPrompt(levelLabel, subject, count, avoid) {
     `- Spread the correct answer across all four positions; do not always put it first.\n` +
     `- correctIndex is the 0-based index (0, 1, 2, or 3) of the correct option in the choices array.`;
 
+  if (language === 'Hindi') {
+    prompt += `\n- Write every question and every option in Hindi (Devanagari script).`;
+  } else if (language === 'Hinglish') {
+    prompt += `\n- Write every question and every option in Hinglish: Hindi written in the Roman (English) alphabet, the way Indian students text, e.g. "Bharat ki rajdhani kaun si hai?".`;
+  }
+  if (notes) {
+    prompt +=
+      `\n- The questions must be based ONLY on the study material provided by the user (attached below or as a document). ` +
+      `Test understanding of that material; do not ask about things it does not cover.`;
+    if (notes.text) prompt += `
+
+STUDY MATERIAL (between the dashed lines):
+-----
+${notes.text}
+-----`;
+  }
+
   if (avoid && avoid.length) {
     prompt +=
       `\n\nThis exact level/subject combination was quizzed before in another room. To keep it fresh, ` +
@@ -94,7 +111,7 @@ function buildPrompt(levelLabel, subject, count, avoid) {
   return prompt;
 }
 
-async function callModel(model, prompt, useSchema) {
+async function callModel(model, prompt, useSchema, pdf) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const generationConfig = { responseMimeType: 'application/json', temperature: 0.9 };
   if (useSchema) generationConfig.responseSchema = QUESTION_SCHEMA;
@@ -106,7 +123,10 @@ async function callModel(model, prompt, useSchema) {
       method: 'POST',
       // Key goes in a header, not the URL, so it can't leak into logs or error text.
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+      body: JSON.stringify({
+        contents: [{ parts: pdf ? [{ inlineData: { mimeType: 'application/pdf', data: pdf } }, { text: prompt }] : [{ text: prompt }] }],
+        generationConfig,
+      }),
       signal: controller.signal,
     });
   } finally {
@@ -132,12 +152,13 @@ function friendlyHttpError(status, body) {
   return `AI request failed (${status}).`;
 }
 
-async function generateQuestions({ levelLabel, subject, count, avoid }) {
+async function generateQuestions({ levelLabel, subject, count, avoid, language, notes }) {
   if (!isEnabled()) {
     throw new Error('AI question generation is not configured on this server.');
   }
   const safeCount = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Number(count) || 10));
-  const prompt = buildPrompt(levelLabel, subject, safeCount, avoid);
+  const prompt = buildPrompt(levelLabel, subject, safeCount, avoid, language, notes);
+  const pdf = notes && notes.pdf ? notes.pdf : null;
 
   let lastError = null;
   const tried = new Set();
@@ -149,7 +170,7 @@ async function generateQuestions({ levelLabel, subject, count, avoid }) {
     for (let attempt = 0; attempt < 2; attempt++) {
       let res;
       try {
-        res = await callModel(model, prompt, attempt === 0);
+        res = await callModel(model, prompt, attempt === 0, pdf);
       } catch (err) {
         lastError = new Error(err.name === 'AbortError' ? 'The AI took too long to respond — try again.' : `AI request failed: ${err.message}`);
         continue;

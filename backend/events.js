@@ -16,6 +16,9 @@ const EVENTS = {
   QUESTION_REMOVE: 'question:remove',
   LIFELINE_USE: 'lifeline:use',
   ROOM_LEAVE: 'room:leave',
+  TEAM_SET: 'team:set',
+  REACTION_SEND: 'reaction:send',
+  FAN_SET: 'fan:set',
 
   // server -> client
   ROOM_JOINED: 'room:joined',
@@ -38,6 +41,10 @@ const EVENTS = {
   LIFELINE_RESULT: 'lifeline:result',
   ANSWER_PROGRESS: 'answer:progress',
   STAGE_TRANSITION: 'stage:transition',
+  TEAM_UPDATE: 'team:update',
+  REACTION_SHOW: 'reaction:show',
+  FANS_UPDATE: 'fans:update',
+  BOT_SAY: 'bot:say',
 };
 
 module.exports = EVENTS;

@@ -58,6 +58,7 @@ function createPlayer(name, avatar, socketId, isCreator) {
     eliminated: false,
     left: false,
     place: null,
+    team: null,
   };
 }
 
@@ -83,6 +84,8 @@ function createBot(existingNames, tierKey) {
     eliminated: false,
     left: false,
     place: null,
+    team: null,
+    lastSayAt: 0,
   };
 }
 
@@ -102,6 +105,9 @@ function newRoom(code, hostPlayer, categoryKey) {
     timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
     allDisconnectedSince: null,
     customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
+    teamMode: 0, // 0 = everyone for themselves, 2-4 = that many teams
+    fans: new Map(), // spectator playerId -> the contender they are cheering for
+    stats: new Map(), // playerId -> per-match numbers used for the end-of-match awards
     stagePlan: null, // { count, per, names } — levels of the match, set when a game starts
     startsAt: null,
     activeQuestions: [], // the actual per-game order — shuffled static bank, or a copy of customQuestions
@@ -249,6 +255,7 @@ function serializePlayers(room) {
       eliminated: !!p.eliminated,
       left: !!p.left,
       place: p.place || null,
+      team: p.team === null || p.team === undefined ? null : p.team,
       score: p.score,
     }))
     // survivors first (by score), then the eliminated by how long they lasted

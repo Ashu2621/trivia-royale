@@ -74,6 +74,29 @@ const CATEGORIES = {
       { text: 'How many rings are on the Olympic flag?', choices: ['4', '5', '6', '7'], correctIndex: 1 },
     ],
   },
+  hinglish: {
+    label: 'Hinglish GK (India)',
+    emoji: '🇮🇳',
+    questions: [
+      { text: 'Bharat ki rajdhani kaun si hai?', choices: ['Mumbai', 'Kolkata', 'New Delhi', 'Chennai'], correctIndex: 2 },
+      { text: 'Taj Mahal kis shehar mein hai?', choices: ['Jaipur', 'Agra', 'Lucknow', 'Delhi'], correctIndex: 1 },
+      { text: 'Bharat ke rashtrapita kise kaha jata hai?', choices: ['Jawaharlal Nehru', 'Subhash Chandra Bose', 'Mahatma Gandhi', 'Sardar Patel'], correctIndex: 2 },
+      { text: 'Bharat ka rashtriya pashu kaun sa hai?', choices: ['Sher', 'Baagh (Tiger)', 'Haathi', 'Hiran'], correctIndex: 1 },
+      { text: 'Bharat ka rashtriya pakshi kaun sa hai?', choices: ['Mor', 'Tota', 'Kabootar', 'Koyal'], correctIndex: 0 },
+      { text: 'Bharat mein kul kitne rajya hain?', choices: ['26', '28', '29', '30'], correctIndex: 1 },
+      { text: 'Holi kis cheez ka tyohaar hai?', choices: ['Deepon ka', 'Rangon ka', 'Patangon ka', 'Fasal ka'], correctIndex: 1 },
+      { text: 'Ganga nadi ka udgam kahan se hota hai?', choices: ['Gangotri', 'Yamunotri', 'Amarnath', 'Kedarnath'], correctIndex: 0 },
+      { text: 'Cricket World Cup 2011 ke final mein Bharat ne kis team ko haraya?', choices: ['Pakistan', 'Australia', 'Sri Lanka', 'England'], correctIndex: 2 },
+      { text: 'Bharat ki sabse lambi nadi kaun si hai?', choices: ['Yamuna', 'Godavari', 'Ganga', 'Brahmaputra'], correctIndex: 2 },
+      { text: 'Kshetrafal ke hisaab se Bharat ka sabse bada rajya kaun sa hai?', choices: ['Madhya Pradesh', 'Maharashtra', 'Rajasthan', 'Uttar Pradesh'], correctIndex: 2 },
+      { text: '"Jai Hind" ka naara kisne diya?', choices: ['Bhagat Singh', 'Subhash Chandra Bose', 'Lala Lajpat Rai', 'Bal Gangadhar Tilak'], correctIndex: 1 },
+    ],
+  },
+  daily: {
+    label: 'Daily Challenge',
+    emoji: '📅',
+    questions: [], // built fresh each day by getDailyQuestions()
+  },
   custom: {
     label: 'Custom / Study Mode',
     emoji: '📝',
@@ -91,8 +114,51 @@ function resolveCategory(key) {
   return CATEGORIES[key] ? key : DEFAULT_CATEGORY;
 }
 
+// Today's Daily Challenge: 12 questions drawn (seeded by the date, India time) from every
+// ready-made bank, so all players worldwide get the same set in the same order.
+let dailyCache = { key: null, questions: [] };
+
+function dailyKey(now) {
+  return new Date((now || Date.now()) + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function seededRandom(seedStr) {
+  let h = 1779033703 ^ seedStr.length;
+  for (let i = 0; i < seedStr.length; i++) {
+    h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = h >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getDailyQuestions() {
+  const key = dailyKey();
+  if (dailyCache.key === key) return dailyCache.questions;
+  const pool = [];
+  for (const [catKey, c] of Object.entries(CATEGORIES)) {
+    if (catKey === 'custom' || catKey === 'daily') continue;
+    pool.push(...c.questions);
+  }
+  const rnd = seededRandom(`trivia-royale-${key}`);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  dailyCache = { key, questions: pool.slice(0, 12) };
+  return dailyCache.questions;
+}
+
 function getQuestions(categoryKey) {
-  return CATEGORIES[resolveCategory(categoryKey)].questions;
+  const key = resolveCategory(categoryKey);
+  if (key === 'daily') return getDailyQuestions();
+  return CATEGORIES[key].questions;
 }
 
 function getCategoryLabel(categoryKey) {
@@ -113,6 +179,7 @@ function getPowerRoundType(questionIndex) {
 }
 
 module.exports = {
+  dailyKey,
   CATEGORIES,
   DEFAULT_CATEGORY,
   getCategoryList,

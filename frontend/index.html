@@ -44,6 +44,7 @@
     <div class="topbar-actions">
       <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
       <button id="themeBtn" class="icon-btn" type="button" aria-label="Change theme">🎨</button>
+      <button id="voiceBtn" class="icon-btn" type="button" aria-label="Voice host on or off" title="Voice host">🎙️</button>
       <button id="hallOfFameBtn" class="link-btn" type="button" aria-label="Hall of Fame"><span class="lb-ico">🏆</span><span class="lb-txt"> Hall of Fame</span></button>
       <button id="howToPlayBtn" class="link-btn" type="button" aria-label="How to play"><span class="lb-ico">❓</span><span class="lb-txt"> How to Play</span></button>
     </div>
@@ -96,6 +97,7 @@
           </div>
           <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
           <button id="quickBtn" class="btn btn-accent" type="button">⚡ Quick Play vs Bot</button>
+          <button id="dailyBtn" class="btn btn-daily" type="button">📅 Daily Challenge <span class="daily-chip" id="dailyChip"></span></button>
           <div class="or-divider"><span>or join friends</span></div>
           <label class="field">
             <span>Room code</span>
@@ -127,6 +129,13 @@
             <div class="panel-title"><span>Squad</span><span id="squadCount" class="count-pill">1/10</span></div>
             <div class="player-list" id="lobbyPlayers"></div>
 
+            <div id="teamControls" class="bot-controls hidden">
+              <p class="eyebrow">Game mode</p>
+              <div id="teamPills" class="tier-pills"></div>
+              <p id="teamHint" class="hint"></p>
+            </div>
+            <p id="lobbyModeMsg" class="hint hidden"></p>
+
             <div id="botControls" class="bot-controls hidden">
               <p class="eyebrow">Computer opponent</p>
               <div id="botTierPills" class="tier-pills"></div>
@@ -144,6 +153,15 @@
                 <label class="field"><span>Level</span><select id="levelSelect" class="select"></select></label>
                 <label class="field"><span>Category</span><select id="studyCategorySelect" class="select"></select></label>
                 <label class="field"><span>Sub-category</span><select id="studySubcategorySelect" class="select"></select></label>
+                <label class="field"><span>Language</span>
+                  <select id="aiLangSelect" class="select"><option value="English">English</option><option value="Hinglish">Hinglish (Hindi in English letters)</option><option value="Hindi">हिन्दी (Hindi)</option></select>
+                </label>
+                <details class="notes-box" id="notesBox">
+                  <summary>📎 Make questions from my own notes (optional)</summary>
+                  <textarea id="notesText" rows="4" maxlength="20000" placeholder="Paste your notes or a chapter here…"></textarea>
+                  <label class="btn btn-secondary file-btn">📄 Upload PDF / text file<input id="notesFile" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden /></label>
+                  <p id="notesChip" class="hint hidden"></p>
+                </details>
                 <button id="generateBtn" class="btn btn-primary" type="button">🤖 Generate 10 Questions with AI</button>
                 <p id="generatingStatus" class="hint hidden"></p>
                 <p id="aiDisabledHint" class="hint hidden">AI generation isn't set up on this server — add questions manually below instead.</p>
@@ -203,11 +221,13 @@
               <span class="alive-chip" id="aliveChip">👤 <b id="aliveCount">0</b> alive</span>
               <button class="map-btn" id="mapBtn" type="button" aria-label="Toggle full map">🗺 Map</button>
             </div>
+            <div id="teamStrip" class="team-strip hidden"></div>
             <div class="arena-wrap">
               <canvas id="arenaCanvas" class="arena-canvas" aria-label="Match map: every level is a room, every player sits at a table"></canvas>
               <div id="stageBanner" class="stage-banner hidden"></div>
             </div>
             <div class="level-map" id="levelMap" aria-label="Level map"></div>
+            <div class="reaction-bar" id="reactionBar" aria-label="Send a reaction"></div>
             <canvas id="audienceCanvas" class="audience" aria-hidden="true"></canvas>
           </div>
           </div>
@@ -271,6 +291,7 @@
         <p class="final-sub" id="finalSub"></p>
       </div>
       <div class="podium" id="podium"></div>
+      <div id="awards" class="awards hidden"></div>
       <div class="panel final-panel">
         <div class="player-list" id="finalPlayers"></div>
         <button id="playAgainBtn" class="btn btn-primary hidden" type="button">↻ Play Again</button>
@@ -302,6 +323,11 @@
         <li>🗺️ <strong>Levels &amp; the map</strong> — a match is 2–4 levels (Qualifier → … → Grand Final). Each level is a room, and every player sits at their own table as an animated character. Lamps and numbers show who locked in first and how fast. Tap the map to zoom out and see every room.</li>
         <li>☠️ <strong>Elimination</strong> — at the end of each level the storm closes on the room: the lowest scorers are knocked out (with 2 players left, nobody is cut). The survivors stand up, run down the corridor and sit at new tables in the next room. Out? Stay and watch the rest of the tournament from the stands.</li>
         <li>← The back arrow (or your phone's back gesture) lets you leave a room or match at any time.</li>
+        <li>🤝 <strong>Team mode</strong> — the host can split the room into 2–4 colour teams. Scores are shared; with 3+ teams the lowest team is knocked out together at the end of each level.</li>
+        <li>📅 <strong>Daily Challenge</strong> — the same 12 questions for everyone each day (India time). Your best score of the day is shown on the button, and the Hall of Fame has a “Today” filter.</li>
+        <li>😎 <strong>Reactions</strong> pop up over your table for everyone. If you're eliminated, tap a contender's table to cheer for them. The computer players talk back, too. 🎙️ turns on a spoken voice host.</li>
+        <li>🏅 At the end you get awards — Fastest Finger, Streak King, Sharpshooter, Point Thief, Comeback Kid.</li>
+        <li>🇮🇳 Try the <strong>Hinglish GK</strong> category, or in Study Mode pick English / Hinglish / Hindi and even paste your own notes or upload a PDF to turn them into a quiz.</li>
         <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
         <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
         <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent out of the very next question.</li>
@@ -322,6 +348,7 @@
       <div class="leaderboard-filters">
         <div class="filter-pills" id="periodPills">
           <button type="button" class="filter-pill active" data-period="all">All Time</button>
+          <button type="button" class="filter-pill" data-period="today">Today</button>
           <button type="button" class="filter-pill" data-period="year">This Year</button>
           <button type="button" class="filter-pill" data-period="month">This Month</button>
           <button type="button" class="filter-pill" data-period="week">This Week</button>

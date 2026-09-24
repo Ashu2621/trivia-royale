@@ -84,6 +84,21 @@
     levelMap: el('levelMap'),
     spectatorMsg: el('spectatorMsg'),
     backBtn: el('backBtn'),
+    voiceBtn: el('voiceBtn'),
+    dailyBtn: el('dailyBtn'),
+    dailyChip: el('dailyChip'),
+    teamControls: el('teamControls'),
+    teamPills: el('teamPills'),
+    teamHint: el('teamHint'),
+    lobbyModeMsg: el('lobbyModeMsg'),
+    teamStrip: el('teamStrip'),
+    reactionBar: el('reactionBar'),
+    awards: el('awards'),
+    aiLangSelect: el('aiLangSelect'),
+    notesBox: el('notesBox'),
+    notesText: el('notesText'),
+    notesFile: el('notesFile'),
+    notesChip: el('notesChip'),
     leaveModal: el('leaveModal'),
     leaveTitle: el('leaveTitle'),
     leaveDesc: el('leaveDesc'),
@@ -158,6 +173,13 @@
   let userTheme = 'candy';
   let stageActive = false;
   let historyArmed = false;
+  let teamMode = 0;
+  let notesPayload = null;
+  let dailyDate = null;
+  const DAILY_KEY = 'triviaRoyaleDaily';
+  const TEAM_COLORS = ['#e63946', '#3a7bd5', '#2ecc71', '#f5c542'];
+  const TEAM_NAMES = ['Red', 'Blue', 'Green', 'Gold'];
+  const REACTIONS = ['👏', '😮', '🔥', '😂', '💀', '❤️', '🎉', '😎'];
   let currentPool = [];
   let answered = new Set();
   let lastTickSecond = null;
@@ -504,6 +526,8 @@
       if (Array.isArray(meta.levels) && meta.levels.length) LEVELS = meta.levels;
       if (Array.isArray(meta.botTiers) && meta.botTiers.length) BOT_TIERS = meta.botTiers;
       AI_ENABLED = !!meta.aiEnabled;
+      dailyDate = meta.daily || null;
+      renderDailyChip();
       const saved = loadSession();
       selectedAvatar = (saved && saved.avatar) || AVATARS[Math.floor(Math.random() * AVATARS.length)];
       renderAvatarPicker();
@@ -537,6 +561,13 @@
       avatar.className = 'pavatar';
       avatar.textContent = p.avatar || '🙂';
       identity.appendChild(avatar);
+      if (teamMode && p.team !== null && p.team !== undefined) {
+        const dot = document.createElement('span');
+        dot.className = 'team-dot';
+        dot.style.background = TEAM_COLORS[p.team % TEAM_COLORS.length];
+        dot.title = `Team ${TEAM_NAMES[p.team]}`;
+        identity.appendChild(dot);
+      }
 
       const left = document.createElement('div');
       left.className = 'pname';
@@ -593,6 +624,7 @@
   let rankChanges = {}; // playerId -> +n (climbed) / -n (dropped), shown once after a reveal
 
   function renderLiveBoard() {
+    renderTeamStrip();
     refs.liveBoard.innerHTML = '';
     players.forEach((p, i) => {
       const row = document.createElement('div');
@@ -602,16 +634,57 @@
       row.innerHTML =
         `<span class="lb-rank">${i + 1}</span>` +
         `<span class="lb-avatar">${escapeHtml(p.avatar || '')}</span>` +
-        `<span class="lb-name">${p.eliminated ? '☠ ' : ''}${escapeHtml(p.name)}${arrow}</span>` +
+        `<span class="lb-name">${p.eliminated ? '☠ ' : ''}${teamMode && p.team !== null && p.team !== undefined ? `<i class="team-dot" style="background:${TEAM_COLORS[p.team % TEAM_COLORS.length]}"></i>` : ''}${escapeHtml(p.name)}${arrow}</span>` +
         `<span class="lb-check">✓</span>` +
         `<span class="lb-score">${p.score}</span>`;
       refs.liveBoard.appendChild(row);
     });
   }
 
+  function renderTeamStrip() {
+    if (!teamMode || !players.some((p) => p.team !== null && p.team !== undefined)) {
+      refs.teamStrip.classList.add('hidden');
+      return;
+    }
+    const totals = {};
+    players.forEach((p) => {
+      if (p.team === null || p.team === undefined) return;
+      const t = totals[p.team] || (totals[p.team] = { score: 0, alive: 0 });
+      t.score += p.score;
+      if (!p.eliminated) t.alive += 1;
+    });
+    refs.teamStrip.innerHTML = Object.entries(totals)
+      .sort((a, b) => b[1].score - a[1].score)
+      .map(([team, t]) => `<span class="team-chip${t.alive ? '' : ' out'}" style="--tc:${TEAM_COLORS[team % TEAM_COLORS.length]}"><i></i>Team ${TEAM_NAMES[team]} <b>${t.score}</b></span>`)
+      .join('');
+    refs.teamStrip.classList.remove('hidden');
+  }
+
+  function renderTeamControls() {
+    const host = amHost();
+    refs.teamControls.classList.toggle('hidden', !host);
+    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode);
+    refs.lobbyModeMsg.textContent = teamMode ? `🤝 Team mode — ${teamMode} teams` : '';
+    if (!host) return;
+    refs.teamPills.innerHTML = '';
+    [[0, '🧍', 'Solo'], [2, '🟥🟦', '2 Teams'], [3, '🟥🟦🟩', '3 Teams'], [4, '🟥🟦🟩🟨', '4 Teams']].forEach(([n, emoji, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tier-pill' + (n === teamMode ? ' active' : '');
+      btn.innerHTML = `<span class="tier-emoji" style="font-size:${n ? '0.85rem' : '1.4rem'}">${emoji}</span><span>${label}</span>`;
+      btn.onclick = () => { SoundFX.click(); socket.emit(EVENTS.TEAM_SET, { teams: n }); };
+      refs.teamPills.appendChild(btn);
+    });
+    refs.teamHint.textContent =
+      teamMode === 0 ? 'Everyone plays for themselves.'
+        : teamMode === 2 ? '2 teams: combined score wins. Nobody is cut.'
+          : `${teamMode} teams: after each level the lowest-scoring team is knocked out together.`;
+  }
+
   function renderLobbyControls() {
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     refs.squadCount.textContent = `${players.length}/${MAX_PLAYERS}`;
+    renderTeamControls();
     const connectedCount = players.filter((p) => p.connected).length;
     const needsMoreQuestions = currentCategory === 'custom' && currentPool.length < MIN_QUESTIONS_TO_START;
     if (amHost()) {
@@ -635,6 +708,8 @@
     if (!isCustom) return;
     refs.customHostControls.classList.toggle('hidden', !amHost());
     refs.generateBtn.classList.toggle('hidden', !AI_ENABLED);
+    refs.notesBox.classList.toggle('hidden', !AI_ENABLED);
+    refs.aiLangSelect.closest('.field').classList.toggle('hidden', !AI_ENABLED);
     refs.aiDisabledHint.classList.toggle('hidden', AI_ENABLED);
     refs.questionPoolCount.textContent = `${currentPool.length} question${currentPool.length === 1 ? '' : 's'} ready`;
     refs.needMoreQuestionsMsg.classList.toggle('hidden', currentPool.length >= MIN_QUESTIONS_TO_START);
@@ -707,12 +782,23 @@
       SoundFX.eliminated();
       Engine.flash('rgba(255,50,70,0.3)');
       const p = players.find((x) => x.playerId === id);
+      if (p) VoiceHost.speak(`${p.name} is out`, { queue: true });
       if (p) pushFeed(`☠ ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} eliminated · #${place}`);
       if (id === mySession.playerId) {
         Audience.setMood('gasp', 2200);
         vibrate([60, 40, 60]);
       }
       updateAlive();
+    },
+    tableTap: (id) => {
+      // a spectator taps a contender's table to cheer for them
+      if (!iAmEliminated || id === mySession.playerId) return false;
+      const target = players.find((x) => x.playerId === id);
+      if (!target) return false;
+      socket.emit(EVENTS.FAN_SET, { targetId: id });
+      pushFeed(`❤️ You're cheering for ${escapeHtml(target.avatar || '')} ${escapeHtml(target.name)}`);
+      SoundFX.click();
+      return true;
     },
     arrive: () => SoundFX.step(),
     land: () => SoundFX.step(),
@@ -777,7 +863,7 @@
 
   function startArena(info, total, opts) {
     Arena.setMe(mySession.playerId);
-    Arena.startMatch(players, { count: info.count, per: info.per, names: info.names, total }, opts || {});
+    Arena.startMatch(players, { count: info.count, per: info.per, names: info.names, total }, { ...(opts || {}), teamMode });
     arenaReady = true;
     lastAlive = -1;
     updateAlive();
@@ -818,6 +904,21 @@
     refs.powerBadge.classList.add('hidden');
     refs.streakChip.classList.add('hidden');
   }
+
+  REACTIONS.forEach((emoji) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'reaction-btn';
+    b.textContent = emoji;
+    b.setAttribute('aria-label', `React ${emoji}`);
+    b.onclick = () => {
+      socket.emit(EVENTS.REACTION_SEND, { emoji });
+      b.classList.remove('sent');
+      void b.offsetWidth;
+      b.classList.add('sent');
+    };
+    refs.reactionBar.appendChild(b);
+  });
 
   refs.mapBtn.addEventListener('click', () => { SoundFX.click(); Arena.toggleOverview(); });
 
@@ -1079,9 +1180,40 @@
     }
   }
 
+  function renderAwards(awards) {
+    refs.awards.innerHTML = '';
+    if (!awards || !awards.length) {
+      refs.awards.classList.add('hidden');
+      return;
+    }
+    awards.forEach((a, i) => {
+      const card = document.createElement('div');
+      card.className = 'award' + (a.playerId === mySession.playerId ? ' mine' : '');
+      card.style.animationDelay = `${1.2 + i * 0.18}s`;
+      card.innerHTML = `<span class="award-ico">${a.icon}</span><span class="award-txt"><b>${escapeHtml(a.title)}</b><small>${escapeHtml(a.name)} · ${escapeHtml(a.detail)}</small></span>`;
+      refs.awards.appendChild(card);
+    });
+    refs.awards.classList.remove('hidden');
+  }
+
   function renderFinal(data) {
     refs.podium.innerHTML = '';
-    data.podium.forEach((p, i) => {
+    renderAwards(data.awards);
+    if (data.teams && data.teams.length) {
+      data.teams.slice(0, 3).forEach((t, i) => {
+        const slot = document.createElement('div');
+        slot.className = `podium-slot rank-${i + 1}`;
+        slot.style.borderColor = TEAM_COLORS[t.team % TEAM_COLORS.length];
+        const faces = t.members.map((id) => (data.leaderboard.find((p) => p.playerId === id) || {}).avatar || '').slice(0, 4).join(' ');
+        slot.innerHTML =
+          `<div class="medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>` +
+          `<div class="pavatar" style="font-size:1.2rem">${escapeHtml(faces)}</div>` +
+          `<div class="pname" style="color:${TEAM_COLORS[t.team % TEAM_COLORS.length]}">Team ${escapeHtml(t.name)}</div>` +
+          `<div class="pscore">${t.score} pts</div>`;
+        refs.podium.appendChild(slot);
+      });
+    }
+    (data.teams && data.teams.length ? [] : data.podium).forEach((p, i) => {
       const slot = document.createElement('div');
       slot.className = `podium-slot rank-${i + 1}`;
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
@@ -1095,10 +1227,16 @@
     renderPlayerRows(refs.finalPlayers, data.leaderboard, true);
 
     const myIndex = data.leaderboard.findIndex((p) => p.playerId === mySession.playerId);
-    const won = myIndex === 0;
+    const myTeam = myIndex >= 0 ? data.leaderboard[myIndex].team : null;
+    const won = data.teams && data.teams.length && myTeam !== null && myTeam !== undefined ? data.teams[0].team === myTeam : myIndex === 0;
     refs.finalTitle.textContent = won ? copy().final : copy().finalLose;
     replayAnimation(refs.finalTitle);
-    if (myIndex >= 0 && data.leaderboard[myIndex].eliminated) {
+    if (data.teams && data.teams.length && myIndex >= 0) {
+      const mine = data.teams.findIndex((t) => t.team === myTeam);
+      refs.finalSub.textContent = won
+        ? `Team ${data.teams[0].name} wins with ${data.teams[0].score} points — great teamwork!`
+        : `Your team finished ${ordinal(mine + 1)}. Team ${data.teams[0].name} won with ${data.teams[0].score} points.`;
+    } else if (myIndex >= 0 && data.leaderboard[myIndex].eliminated) {
       const mine = data.leaderboard[myIndex];
       refs.finalSub.textContent = mine.place
         ? `You were knocked out in ${ordinal(mine.place)} place with ${mine.score} points — ${escapeHtml(data.leaderboard[0].name)} won.`
@@ -1116,6 +1254,7 @@
 
   function applyRoomState(roomState) {
     players = roomState.players;
+    teamMode = roomState.teamMode || 0;
     currentCategory = roomState.category;
     currentPool = roomState.customPool ? roomState.customPool.questions : [];
     syncMyStats();
@@ -1154,6 +1293,7 @@
         stageInfo = roomState.stage;
         currentQuestion = { totalQuestions: roomState.totalQuestions };
         startArena(stageInfo, roomState.totalQuestions, { stage: stageInfo.index });
+        Arena.setFans(roomState.fans);
         renderLevelMap(false);
       }
       renderLiveBoard();
@@ -1237,8 +1377,9 @@
     }
   });
 
-  socket.on(EVENTS.GAME_STARTING, ({ startsAt, serverNow, players: p, stagePlan, totalQuestions }) => {
+  socket.on(EVENTS.GAME_STARTING, ({ startsAt, serverNow, players: p, stagePlan, totalQuestions, teamMode: tm }) => {
     if (p) players = p;
+    teamMode = tm || 0;
     syncMyStats();
     answered = new Set();
     rankChanges = {};
@@ -1267,6 +1408,7 @@
     showView('question');
     renderQuestion();
     startQuestionCountdown(payload.questionEndsAt, payload.serverNow);
+    VoiceHost.speak(`Question ${payload.questionIndex + 1}. ${payload.text}`);
   });
 
   socket.on(EVENTS.ANSWER_ACK, ({ choiceIndex }) => {
@@ -1369,6 +1511,7 @@
 
     Arena.reveal(choices || {}, correctIndex);
     renderLevelMap(true);
+    if (currentQuestion && currentQuestion.choices) VoiceHost.speak(`Correct answer: ${currentQuestion.choices[correctIndex]}`, { queue: true });
     const correctCount = Object.values(choices || {}).filter((ch) => ch === correctIndex).length;
 
     if (myDelta > 0) {
@@ -1537,11 +1680,15 @@
     afterPowerResult(leaderboard);
   });
 
-  socket.on(EVENTS.GAME_FINAL, ({ leaderboard, podium }) => {
+  socket.on(EVENTS.GAME_FINAL, (data) => {
+    const { leaderboard, podium } = data;
     if (questionRAF) cancelAnimationFrame(questionRAF);
     players = leaderboard;
+    teamMode = data.teamMode || 0;
     showView('final');
-    renderFinal({ leaderboard, podium });
+    renderFinal(data);
+    recordDailyBest(leaderboard);
+    VoiceHost.speak(data.teams && data.teams[0] ? `Team ${data.teams[0].name} wins!` : `${leaderboard[0].name} wins!`, { queue: true });
     SoundFX.win();
     vibrate([40, 60, 40, 60, 80]);
     Engine.celebrate();
@@ -1563,9 +1710,12 @@
     idleQuestionPanel(`${names[data.completedStage]} complete — survivors move to ${names[data.nextStage]}`);
     refs.spectatorMsg.classList.toggle('hidden', !iAmEliminated);
     Audience.setMood('tense', 2000);
+    VoiceHost.speak(`${names[data.completedStage]} complete.`, { queue: true });
     showStageBanner(outIds.length ? `${names[data.completedStage]} cleared · zone closing` : `${names[data.completedStage]} cleared`, outIds.length ? '' : 'safe', 2800);
     transitionTimers.push(setTimeout(() => {
-      showStageBanner(iOut ? `☠ You are out · #${data.eliminated.find((e) => e.playerId === mySession.playerId).place}` : `${names[data.nextStage]} — ${outIds.length} eliminated, ${data.advancing.length} advance`, iOut ? '' : 'safe', 3400);
+      const outTeams = teamMode ? [...new Set(players.filter((pl) => outIds.includes(pl.playerId)).map((pl) => pl.team))].map((tm) => `Team ${TEAM_NAMES[tm]}`) : [];
+      const tail = teamMode && outTeams.length ? `${outTeams.join(' & ')} eliminated` : `${outIds.length} eliminated, ${data.advancing.length} advance`;
+      showStageBanner(iOut ? `☠ You are out · #${data.eliminated.find((e) => e.playerId === mySession.playerId).place}` : `${names[data.nextStage]} — ${tail}`, iOut ? '' : 'safe', 3400);
     }, 2900));
     transitionTimers.push(setTimeout(() => {
       updateAlive();
@@ -1575,6 +1725,26 @@
 
     Arena.transition(data);
     renderLiveBoard();
+  });
+
+  socket.on(EVENTS.TEAM_UPDATE, ({ teamMode: tm }) => {
+    teamMode = tm || 0;
+    if (activeView === 'lobby') {
+      renderPlayerRows(refs.lobbyPlayers, players, false, true);
+      renderTeamControls();
+    }
+  });
+
+  socket.on(EVENTS.REACTION_SHOW, ({ playerId, emoji }) => {
+    if (activeView !== 'question') return;
+    Arena.react(playerId, emoji);
+    if (playerId !== mySession.playerId) SoundFX.buzz();
+  });
+
+  socket.on(EVENTS.FANS_UPDATE, ({ fans }) => Arena.setFans(fans));
+
+  socket.on(EVENTS.BOT_SAY, ({ playerId, text }) => {
+    if (activeView === 'question') Arena.say(playerId, text);
   });
 
   socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
@@ -1626,6 +1796,44 @@
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: refs.categorySelect.value });
   });
 
+  function readDaily() {
+    try { return JSON.parse(localStorage.getItem(DAILY_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function renderDailyChip() {
+    const d = readDaily();
+    refs.dailyChip.textContent = d && d.date === dailyDate ? `Best ${d.best}` : 'New today';
+  }
+  function recordDailyBest(board) {
+    if (currentCategory !== 'daily' || !dailyDate) return;
+    const mine = board.find((p) => p.playerId === mySession.playerId);
+    if (!mine) return;
+    const prev = readDaily();
+    const best = prev && prev.date === dailyDate ? Math.max(prev.best, mine.score) : mine.score;
+    safeSet(DAILY_KEY, JSON.stringify({ date: dailyDate, best }));
+    renderDailyChip();
+  }
+
+  refs.dailyBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    quickPending = true;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'daily' });
+  });
+
+  refs.voiceBtn.classList.toggle('on', VoiceHost.isOn());
+  refs.voiceBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    const next = !VoiceHost.isOn();
+    VoiceHost.set(next);
+    refs.voiceBtn.classList.toggle('on', next);
+    showToast(next ? '🎙️ Voice host on' : 'Voice host off');
+    if (next) VoiceHost.speak('Voice host is on. Good luck!');
+  });
+
   refs.joinBtn.addEventListener('click', () => {
     SoundFX.unlock();
     SoundFX.click();
@@ -1663,7 +1871,46 @@
     const subcategory = refs.studySubcategorySelect.value;
     if (!category) return showToast('Pick a category first.');
     const subject = !subcategory || subcategory === 'General (mixed topics)' ? category : `${category}: ${subcategory}`;
-    socket.emit(EVENTS.QUESTIONS_GENERATE, { levelKey: refs.levelSelect.value, subject, count: 10 });
+    const typed = refs.notesText.value.trim();
+    let notes = null;
+    if (notesPayload) notes = { ...notesPayload, text: typed || undefined };
+    else if (typed) notes = { text: typed, name: 'My notes' };
+    socket.emit(EVENTS.QUESTIONS_GENERATE, { levelKey: refs.levelSelect.value, subject, count: 10, language: refs.aiLangSelect.value, notes });
+  });
+
+  function updateNotesChip() {
+    if (notesPayload) {
+      refs.notesChip.innerHTML = `📎 ${escapeHtml(notesPayload.name)} attached · <a href="#" id="notesClear">remove</a>`;
+      refs.notesChip.classList.remove('hidden');
+      const clear = document.getElementById('notesClear');
+      if (clear) clear.onclick = (e) => { e.preventDefault(); notesPayload = null; refs.notesFile.value = ''; updateNotesChip(); };
+    } else {
+      refs.notesChip.classList.add('hidden');
+    }
+  }
+
+  refs.notesFile.addEventListener('change', async () => {
+    const f = refs.notesFile.files[0];
+    if (!f) return;
+    if (f.size > 3 * 1024 * 1024) {
+      refs.notesFile.value = '';
+      return showToast('That file is over 3 MB — use a smaller one.');
+    }
+    try {
+      if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        notesPayload = { pdf: btoa(bin), name: f.name };
+      } else {
+        refs.notesText.value = (await f.text()).slice(0, 20000);
+        notesPayload = null;
+      }
+      updateNotesChip();
+      refs.notesBox.open = true;
+    } catch (e) {
+      showToast('Could not read that file.');
+    }
   });
 
   refs.addQuestionBtn.addEventListener('click', () => {

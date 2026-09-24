@@ -18,6 +18,18 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
 9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
+## More ways to play
+
+- **🤝 Team mode** — the host picks Solo / 2 / 3 / 4 teams in the lobby. Players are dealt onto colour teams (humans first); shirts and table stripes show the team, a live team-score strip sits above the map, and steal/freeze can only target other teams. With 3+ teams the lowest-scoring team is knocked out together at the end of each level; with 2 teams the match is a straight team-vs-team score race.
+- **📅 Daily Challenge** — 12 questions drawn from every ready-made bank, seeded by today's date (India time), so everybody gets the same set in the same order. Quick-plays against a bot; your best is remembered on the button, and the Hall of Fame has a "Today" filter.
+- **😎 Reactions & spectator fans** — eight emoji reactions float over your table for the whole room (rate-limited). Eliminated players can tap a contender's table to cheer for them (a ❤ count appears on the table; it never affects scoring).
+- **🤖 Computer players talk** — each level has a personality (shy rookie … cocky legend) and says short in-character lines, with some Hinglish, in speech bubbles.
+- **🏅 Match awards** — Fastest Finger, Streak King, Sharpshooter, Point Thief and Comeback Kid, computed from per-match stats.
+- **🇮🇳 Hinglish GK** category, and **language choice for AI questions** (English / Hinglish / Hindi).
+- **🎙️ Voice host** — browser speech synthesis reads questions, the correct answer, eliminations and the winner. Off by default.
+- **📎 Questions from your own notes** — in Study Mode, paste text or upload a PDF (≤ 3 MB) and the AI writes questions based only on it.
+- **Keep-alive** — `.github/workflows/keepalive.yml` pings `/healthz` every 10 minutes so Render's free tier doesn't fall asleep.
+
 ## Levels, the map, and elimination
 
 A match is split into 2–4 **levels** (Qualifier → Quarter-final → Semi-final → Grand Final), each a few questions long. The whole match is one map (`frontend/arena.js`):
