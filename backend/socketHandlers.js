@@ -4,6 +4,7 @@ const game = require('./game');
 const ai = require('./ai');
 const bots = require('./bots');
 const city = require('./city');
+const maze = require('./maze');
 const questionHistory = require('./questionHistory');
 const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
@@ -50,6 +51,7 @@ function buildRoomState(room) {
     teamMode: room.teamMode,
     fans: fanCounts(room),
     city: room.state === 'city' && room.city ? city.initPayload(room) : null,
+    maze: room.state === 'maze' && room.maze ? maze.initPayload(room) : null,
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -151,6 +153,19 @@ function register(io, socket) {
   socket.on(EVENTS.CITY_ZAP, () => {
     const ctx = getContext(socket);
     if (ctx) city.zap(io, ctx.room, ctx.player.playerId);
+  });
+
+  socket.on(EVENTS.MAZE_INPUT, ({ dx, dy } = {}) => {
+    const ctx = getContext(socket);
+    if (ctx) maze.setInput(ctx.room, ctx.player.playerId, dx, dy);
+  });
+  socket.on(EVENTS.MAZE_ANSWER, ({ choiceIndex } = {}) => {
+    const ctx = getContext(socket);
+    if (ctx) maze.answer(io, ctx.room, ctx.player.playerId, choiceIndex);
+  });
+  socket.on(EVENTS.MAZE_FLASH, () => {
+    const ctx = getContext(socket);
+    if (ctx) maze.flash(io, ctx.room, ctx.player.playerId);
   });
 
   socket.on(EVENTS.TEAM_SET, ({ teams } = {}) => {

@@ -230,6 +230,41 @@ const SoundFX = (function () {
       lfo.start();
       tensionNodes = { osc, lfo, gain, audioCtx };
     },
+    // ---- We Gotta Go (haunted maze) ----
+    ghost() {
+      sweep(760, 180, 0, 0.9, 'sine', 0.07);
+      sweep(520, 130, 0.08, 1.0, 'triangle', 0.05);
+      noiseBurst(0, 0.6, 900, 1.4, 0.03, 1);
+    },
+    boo() {
+      sweep(240, 60, 0, 0.5, 'sawtooth', 0.14);
+      noiseBurst(0, 0.35, 500, 0.8, 0.12, 0.8);
+    },
+    // a short, cheeky squeak of relief
+    toot() {
+      sweep(190, 95, 0, 0.16, 'sawtooth', 0.09);
+      sweep(150, 80, 0.16, 0.22, 'square', 0.06);
+    },
+    flush() {
+      noiseBurst(0, 1.4, 700, 0.6, 0.11, 0.7);
+      sweep(600, 120, 0.1, 1.2, 'sine', 0.04);
+      [523.25, 659.25, 783.99].forEach((f, i) => tone(f, 1.1 + i * 0.09, 0.3, 'triangle', 0.1));
+    },
+    door() {
+      noiseBurst(0, 0.7, 260, 0.7, 0.1, 0.5);
+      sweep(90, 45, 0, 0.6, 'square', 0.09);
+    },
+    key() {
+      [880, 1174.7, 1568].forEach((f, i) => tone(f, i * 0.07, 0.35, 'triangle', 0.13));
+    },
+    thunder() {
+      noiseBurst(0, 1.6, 180, 0.5, 0.16, 0.5);
+      sweep(70, 35, 0, 1.4, 'sawtooth', 0.07);
+    },
+    flashlight() {
+      sweep(1400, 500, 0, 0.25, 'sine', 0.08);
+      noiseBurst(0, 0.15, 2600, 2, 0.05, 1.4);
+    },
     win() {
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.11, 0.3, 'triangle', 0.16));
       [783.99, 1046.5, 1318.5].forEach((f, i) => tone(f, 0.55 + i * 0.1, 0.5, 'triangle', 0.12));

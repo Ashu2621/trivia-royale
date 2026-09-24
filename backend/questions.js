@@ -97,6 +97,11 @@ const CATEGORIES = {
     emoji: '🌆',
     questions: [], // the quiz gates draw from every ready-made bank
   },
+  haunted: {
+    label: 'We Gotta Go',
+    emoji: '🚽',
+    questions: [], // the key quizzes draw from every ready-made bank
+  },
   daily: {
     label: 'Daily Challenge',
     emoji: '📅',
@@ -148,7 +153,7 @@ function getDailyQuestions() {
   if (dailyCache.key === key) return dailyCache.questions;
   const pool = [];
   for (const [catKey, c] of Object.entries(CATEGORIES)) {
-    if (catKey === 'custom' || catKey === 'daily' || catKey === 'city') continue;
+    if (catKey === 'custom' || catKey === 'daily' || catKey === 'city' || catKey === 'haunted') continue;
     pool.push(...c.questions);
   }
   const rnd = seededRandom(`trivia-royale-${key}`);
@@ -163,9 +168,9 @@ function getDailyQuestions() {
 function getQuestions(categoryKey) {
   const key = resolveCategory(categoryKey);
   if (key === 'daily') return getDailyQuestions();
-  if (key === 'city') {
+  if (key === 'city' || key === 'haunted') {
     return Object.entries(CATEGORIES)
-      .filter(([k]) => !['custom', 'daily', 'city'].includes(k))
+      .filter(([k]) => !['custom', 'daily', 'city', 'haunted'].includes(k))
       .flatMap(([, c]) => c.questions);
   }
   return CATEGORIES[key].questions;

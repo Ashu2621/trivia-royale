@@ -100,6 +100,7 @@
           <button id="quickBtn" class="btn btn-accent" type="button">⚡ Quick Play vs Bot</button>
           <button id="dailyBtn" class="btn btn-daily" type="button">📅 Daily Challenge <span class="daily-chip" id="dailyChip"></span></button>
           <button id="cityBtn" class="btn btn-city" type="button">🌆 City Mission <span class="daily-chip">NEW</span></button>
+          <button id="mazeBtn" class="btn btn-maze" type="button">🚽 We Gotta Go <span class="daily-chip">NEW</span></button>
           <div class="or-divider"><span>or join friends</span></div>
           <label class="field">
             <span>Room code</span>
@@ -333,6 +334,40 @@
       </div>
     </section>
 
+    <!-- WE GOTTA GO: haunted co-op maze, quiz keys, ghosts and a very full bladder -->
+    <section id="view-maze" class="view hidden">
+      <canvas id="mazeCanvas" class="city-canvas" aria-label="Haunted maze"></canvas>
+      <div class="city-hud">
+        <div class="city-top">
+          <div class="city-leftcol">
+            <div class="city-mission" id="mazeObj"></div>
+            <div class="city-board" id="mazeBoard"></div>
+          </div>
+          <div class="city-rightcol">
+            <div class="bladder" id="bladder" title="Team bladder — reach the toilet before it hits 100%">
+              <span class="bl-face" id="blFace">😌</span>
+              <div class="bl-track"><i id="blFill"></i></div>
+              <b class="bl-pct" id="blPct">0%</b>
+            </div>
+            <canvas id="mazeMini" class="mini-map maze-mini" width="210" height="150" aria-label="Maze map"></canvas>
+          </div>
+        </div>
+        <div class="city-lock hidden" id="mazeLock"></div>
+        <p class="city-hint" id="mazeHint">Find the keys 🔑 (each one is a quiz), open the doors and reach the 🚽 — WASD to move · drag to look · Space = flashlight</p>
+      </div>
+      <div class="joy" id="mazeJoy"><div class="joy-knob" id="mazeKnob"></div></div>
+      <button id="flashBtn" class="zap-btn flash-btn" type="button" aria-label="Flashlight — scare nearby ghosts">🔦</button>
+      <div class="city-quiz hidden" id="mazeQuiz">
+        <div class="cq-box">
+          <div class="cq-head" id="mqHead"></div>
+          <div class="cq-bar"><i id="mqBar"></i></div>
+          <h3 class="cq-q" id="mqQ"></h3>
+          <div class="cq-choices" id="mqChoices"></div>
+          <div class="cq-result hidden" id="mqResult"></div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- LEAVE / BACK -->
@@ -426,6 +461,7 @@
   <script src="city3d_world.js"></script>
   <script src="city3d.js"></script>
   <script src="city.js"></script>
+  <script src="maze3d.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>

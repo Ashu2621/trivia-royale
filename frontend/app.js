@@ -86,6 +86,27 @@
     backBtn: el('backBtn'),
     voiceBtn: el('voiceBtn'),
     cityBtn: el('cityBtn'),
+    mazeBtn: el('mazeBtn'),
+    mazeCanvas: el('mazeCanvas'),
+    mazeMini: el('mazeMini'),
+    mazeJoy: el('mazeJoy'),
+    mazeKnob: el('mazeKnob'),
+    flashBtn: el('flashBtn'),
+    mazeObj: el('mazeObj'),
+    mazeBoard: el('mazeBoard'),
+    bladder: el('bladder'),
+    blFace: el('blFace'),
+    blFill: el('blFill'),
+    blPct: el('blPct'),
+    mazeLock: el('mazeLock'),
+    mazeHint: el('mazeHint'),
+    mazeQuiz: el('mazeQuiz'),
+    mqHead: el('mqHead'),
+    mqBar: el('mqBar'),
+    mqQ: el('mqQ'),
+    mqChoices: el('mqChoices'),
+    mqResult: el('mqResult'),
+    viewMaze: el('view-maze'),
     cityCanvas: el('cityCanvas'),
     miniMap: el('miniMap'),
     joy: el('joy'),
@@ -196,6 +217,12 @@
   let stageActive = false;
   let historyArmed = false;
   let quickBotsWanted = 1;
+  let mazeInfo = null;
+  let mazeMeIdx = -1;
+  let mazeMounted = false;
+  let mazeLockTimer = null;
+  let mazeQuizRAF = 0;
+  let flashCooling = false;
   let cityInfo = null;
   let cityMeIdx = -1;
   let cityOffset = 0;
@@ -387,8 +414,9 @@
       tensionOn = false;
     }
     if (id === 'lobby' || id === 'home') leaveStage();
-    document.body.classList.toggle('in-city', id === 'city');
+    document.body.classList.toggle('in-city', id === 'city' || id === 'maze');
     if (id !== 'city' && City.running) City.stop();
+    if (id !== 'maze' && mazeMounted && Maze3D.running) Maze3D.stop();
     refs.backBtn.classList.toggle('hidden', id === 'home');
     if (id !== 'home' && !historyArmed) {
       historyArmed = true;
@@ -691,9 +719,10 @@
   }
 
   function renderTeamControls() {
-    const host = amHost() && currentCategory !== 'city';
+    const openWorld = currentCategory === 'city' || currentCategory === 'haunted';
+    const host = amHost() && !openWorld;
     refs.teamControls.classList.toggle('hidden', !host);
-    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode || currentCategory === 'city');
+    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode || openWorld);
     refs.lobbyModeMsg.textContent = teamMode ? `🤝 Team mode — ${teamMode} teams` : '';
     if (!host) return;
     refs.teamPills.innerHTML = '';
@@ -1279,6 +1308,17 @@
     } else {
       refs.finalSub.textContent = '';
     }
+    if (data.maze) {
+      const mz = data.maze;
+      refs.finalTitle.textContent = mz.won ? '🚽 We Made It!' : mz.outcome === 'bladder' ? '💦 Too Late…' : 'Game Over';
+      refs.finalSub.textContent = mz.won
+        ? `The whole team reached the toilet with ${100 - mz.bladder}% of the bladder to spare. Sweet relief!`
+        : mz.outcome === 'bladder'
+          ? `The bladder hit 100% — ${mz.finished} made it in time, ${mz.keys}/${mz.totalKeys} keys were won. Better luck next time!`
+          : 'The match ended.';
+      if (mz.won) SoundFX.flush();
+      else SoundFX.toot();
+    }
     updateFinalControls();
   }
 
@@ -1293,6 +1333,8 @@
       showLobby();
     } else if (roomState.state === 'city' && roomState.city) {
       startCityView(roomState.city);
+    } else if (roomState.state === 'maze' && roomState.maze) {
+      startMazeView(roomState.maze);
     } else if (roomState.state === 'starting') {
       enterStage();
       showView('question');
@@ -1824,6 +1866,83 @@
     if (activeView === 'city') pushFeed(escapeHtml(text));
   });
 
+  // ---- We Gotta Go (haunted maze) ----
+  socket.on(EVENTS.MAZE_START, (payload) => startMazeView(payload));
+
+  socket.on(EVENTS.MAZE_STATE, (snap) => {
+    if (activeView !== 'maze' || !mazeMounted) return;
+    Maze3D.applyState(snap);
+    updateMazeHud(snap);
+  });
+
+  socket.on(EVENTS.MAZE_QUIZ, (q) => {
+    if (activeView === 'maze') openMazeQuiz(q);
+  });
+
+  socket.on(EVENTS.MAZE_RESULT, (r) => {
+    const buttons = [...refs.mqChoices.querySelectorAll('.cq-choice')];
+    buttons.forEach((b, i) => {
+      b.disabled = true;
+      if (i === r.correctIndex) b.classList.add('right');
+      else if (b.classList.contains('selected')) b.classList.add('wrong');
+    });
+    refs.mqResult.classList.remove('hidden', 'good', 'bad');
+    if (r.correct) {
+      refs.mqResult.classList.add('good');
+      refs.mqResult.textContent = r.already
+        ? `🤝 A teammate grabbed key ${r.key.toUpperCase()} first — +${r.gained}`
+        : `🔑 Key ${r.key.toUpperCase()} is yours — door ${r.key.toUpperCase()} opens for the team! +${r.gained}`;
+      SoundFX.key();
+      vibrate([30, 40, 30]);
+      Engine.flash('rgba(62,224,143,0.3)');
+      if (mazeMounted) Maze3D.floatText(`+${r.gained}`, '#3ee08f');
+    } else {
+      refs.mqResult.classList.add('bad');
+      refs.mqResult.textContent = `❌ Wrong — the bladder fills faster! Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
+      SoundFX.wrong();
+      SoundFX.toot();
+      vibrate([40, 60, 40]);
+      Engine.flash('rgba(255,60,90,0.3)');
+      clearTimeout(mazeLockTimer);
+      const until = Date.now() + r.lockoutMs;
+      refs.mazeLock.classList.remove('hidden');
+      const tickLock = () => {
+        const left = until - Date.now();
+        if (left <= 0) return refs.mazeLock.classList.add('hidden');
+        refs.mazeLock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
+        mazeLockTimer = setTimeout(tickLock, 200);
+      };
+      tickLock();
+    }
+    setTimeout(closeMazeQuiz, r.correct ? 1500 : 2200);
+  });
+
+  socket.on(EVENTS.MAZE_FX, (e) => {
+    if (activeView !== 'maze' || !mazeMounted) return;
+    Maze3D.fx(e);
+    const mine = e.playerId === mySession.playerId;
+    if (e.type === 'caught') {
+      SoundFX.boo();
+      SoundFX.ghost();
+      if (mine) {
+        vibrate([80, 40, 80]);
+        Engine.flash('rgba(120,190,255,0.35)');
+      }
+    } else if (e.type === 'flash') {
+      if (!mine) SoundFX.flashlight();
+    } else if (e.type === 'toilet') {
+      SoundFX.flush();
+      if (mine) {
+        vibrate([40, 40, 40, 40, 80]);
+        Engine.flash('rgba(255,224,77,0.35)');
+      }
+    } else if (e.type === 'key' && !mine) SoundFX.key();
+  });
+
+  socket.on(EVENTS.MAZE_FEED, ({ text }) => {
+    if (activeView === 'maze') pushFeed(escapeHtml(text));
+  });
+
   socket.on(EVENTS.TEAM_UPDATE, ({ teamMode: tm }) => {
     teamMode = tm || 0;
     if (activeView === 'lobby') {
@@ -1843,6 +1962,7 @@
   socket.on(EVENTS.BOT_SAY, ({ playerId, text }) => {
     if (activeView === 'question') Arena.say(playerId, text);
     else if (activeView === 'city') City.say(playerId, text);
+    else if (activeView === 'maze' && mazeMounted) Maze3D.say(playerId, text);
   });
 
   socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
@@ -1922,6 +2042,18 @@
     mySession.name = name;
     mySession.avatar = selectedAvatar;
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'city' });
+  });
+
+  refs.mazeBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    quickPending = true;
+    quickBotsWanted = 3;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'haunted' });
   });
 
   refs.dailyBtn.addEventListener('click', () => {
@@ -2210,10 +2342,134 @@
     VoiceHost.speak(q.text);
   }
 
+  // ---- We Gotta Go: HUD, quiz and view ----
+  function ensureMaze() {
+    if (mazeMounted) return true;
+    try {
+      Maze3D.mount(refs.mazeCanvas, refs.mazeMini, refs.mazeJoy, refs.mazeKnob, {
+        sendInput: (dx, dy) => socket.emit(EVENTS.MAZE_INPUT, { dx, dy }),
+        flash: doFlash,
+        danger: (k) => refs.viewMaze.style.setProperty('--danger', k.toFixed(2)),
+        thunder: () => SoundFX.thunder(),
+        doorOpen: () => SoundFX.door(),
+      });
+      mazeMounted = true;
+    } catch (err) {
+      console.warn('3D maze unavailable', err);
+      return false;
+    }
+    return true;
+  }
+
+  function doFlash() {
+    if (flashCooling) return;
+    flashCooling = true;
+    refs.flashBtn.classList.add('cooling');
+    setTimeout(() => {
+      flashCooling = false;
+      refs.flashBtn.classList.remove('cooling');
+    }, 7000);
+    SoundFX.flashlight();
+    socket.emit(EVENTS.MAZE_FLASH);
+  }
+  refs.flashBtn.addEventListener('click', doFlash);
+
+  function bladderFace(p) {
+    return p < 25 ? '😌' : p < 50 ? '🙂' : p < 70 ? '😬' : p < 85 ? '😖' : p < 95 ? '😱' : '💦';
+  }
+
+  function updateMazeHud(snap) {
+    if (!mazeInfo || !snap) return;
+    const pct = Math.max(0, Math.min(100, snap.b));
+    refs.blFill.style.width = `${pct}%`;
+    refs.blPct.textContent = `${Math.round(pct)}%`;
+    refs.blFace.textContent = bladderFace(pct);
+    refs.bladder.classList.toggle('warn', pct >= 55 && pct < 80);
+    refs.bladder.classList.toggle('panic', pct >= 80);
+    if (pct >= 80 && !updateMazeHud.warned) {
+      updateMazeHud.warned = true;
+      SoundFX.siren();
+    }
+    if (pct < 80) updateMazeHud.warned = false;
+    const chips = mazeInfo.keys.map((k) => {
+      const got = snap.open.includes(k.letter.toUpperCase());
+      return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + k.letter.toUpperCase() + ' ✓' : '🔑 ' + k.letter}</span>`;
+    });
+    refs.mazeObj.innerHTML = `<div>🚽 Reach the toilet — <b>${snap.done}/${mazeInfo.players.length}</b> made it</div><small>Win each key with a quiz · ghosts add to the bladder</small><div class="maze-keys">${chips.join('')}</div>`;
+    refs.mazeBoard.innerHTML = snap.p
+      .slice()
+      .sort((a, b) => b[6] - a[6])
+      .map((e) => {
+        const info = mazeInfo.players[e[0]];
+        const done = e[4] & 32;
+        return `<div class="cb-row${e[0] === mazeMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))} <b>${done ? '🚽' : '🔑' + e[5]}</b> ${e[6]}</div>`;
+      })
+      .join('');
+  }
+
+  function startMazeView(payload) {
+    if (!ensureMaze()) {
+      showToast("This device can't show 3D graphics, so We Gotta Go isn't available here.");
+      return;
+    }
+    mazeInfo = payload;
+    mazeMeIdx = payload.players.findIndex((pl) => pl.playerId === mySession.playerId);
+    resetArenaState();
+    hideCountdown();
+    leaveStage();
+    refs.mazeQuiz.classList.add('hidden');
+    refs.mazeLock.classList.add('hidden');
+    refs.mazeHint.classList.remove('gone');
+    setTimeout(() => refs.mazeHint.classList.add('gone'), 11000);
+    flashCooling = false;
+    refs.flashBtn.classList.remove('cooling');
+    showView('maze');
+    updateTopbarHeight();
+    Maze3D.start(payload, mySession.playerId);
+    updateMazeHud(payload.snapshot);
+    SoundFX.ghost();
+  }
+
+  function closeMazeQuiz() {
+    cancelAnimationFrame(mazeQuizRAF);
+    refs.mazeQuiz.classList.add('hidden');
+  }
+
+  function openMazeQuiz(q) {
+    const offsetNow = q.serverNow - Date.now();
+    refs.mqHead.textContent = `🔑 Key ${q.key.toUpperCase()} is locked — answer to win it for the team`;
+    refs.mqQ.textContent = q.text;
+    refs.mqResult.classList.add('hidden');
+    refs.mqChoices.innerHTML = '';
+    q.choices.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cq-choice';
+      b.textContent = `${'ABCD'[i]}: ${c}`;
+      b.onclick = () => {
+        refs.mqChoices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
+        b.classList.add('selected');
+        SoundFX.lock();
+        socket.emit(EVENTS.MAZE_ANSWER, { choiceIndex: i });
+      };
+      refs.mqChoices.appendChild(b);
+    });
+    refs.mazeQuiz.classList.remove('hidden');
+    cancelAnimationFrame(mazeQuizRAF);
+    const tick = () => {
+      const left = q.endsAt - (Date.now() + offsetNow);
+      refs.mqBar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
+      if (left > 0 && !refs.mazeQuiz.classList.contains('hidden')) mazeQuizRAF = requestAnimationFrame(tick);
+    };
+    tick();
+    SoundFX.count();
+    VoiceHost.speak(q.text);
+  }
+
   // ---- Back / leave ----
   function openLeave() {
     if (activeView === 'home') return;
-    const inMatch = activeView === 'question' || activeView === 'city' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
+    const inMatch = activeView === 'question' || activeView === 'city' || activeView === 'maze' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
     refs.leaveTitle.textContent = inMatch ? 'Leave the match?' : 'Leave the room?';
     refs.leaveDesc.textContent = inMatch
       ? "You'll drop out of this match and can't rejoin it. Your points stay on the board."

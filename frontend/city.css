@@ -4,7 +4,7 @@
 .btn-city:active:not(:disabled) { box-shadow: 0 2px 0 #b3520a; }
 
 /* the city fills the screen under the top bar */
-#view-city {
+#view-city, #view-maze {
   position: fixed;
   left: 0;
   right: 0;
@@ -17,7 +17,7 @@
   overflow: hidden;
   touch-action: none;
 }
-#view-city:not(.hidden) { animation: none; }
+#view-city:not(.hidden), #view-maze:not(.hidden) { animation: none; }
 .city-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .city-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--font-display); }
 
@@ -92,3 +92,30 @@ body.in-city #app { padding: 0; max-width: none; }
 .city-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .city-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 55%, rgba(4, 6, 20, 0.55) 100%); }
 .city-hud { z-index: 1; }
+
+/* ============ We Gotta Go (haunted maze) ============ */
+.btn-maze { background: linear-gradient(180deg, #8f7bff, #5b3fd6); color: #fff; box-shadow: 0 6px 0 #34237f, 0 14px 28px rgba(91, 63, 214, 0.4); }
+.btn-maze:active:not(:disabled) { box-shadow: 0 2px 0 #34237f; }
+#view-maze { background: #0a0d1e; }
+#view-maze::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1; box-shadow: inset 0 0 170px rgba(255, 30, 70, calc(var(--danger, 0) * 0.75)); transition: box-shadow 0.15s linear; }
+.maze-vignette { background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 40%, rgba(2, 3, 14, 0.75) 100%) !important; }
+.maze-mini { width: 150px; height: 107px; }
+@media (hover: hover) and (pointer: fine) { .maze-mini { width: 220px; height: 157px; } }
+.flash-btn { background: radial-gradient(circle at 35% 30%, #f5fbff, #9fd4ff 60%, #4b8fd6); box-shadow: 0 6px 0 #2a5c94, 0 12px 24px rgba(0, 0, 0, 0.45); }
+.flash-btn:active { box-shadow: 0 2px 0 #2a5c94; }
+.flash-btn.cooling { filter: grayscale(0.8) brightness(0.6); }
+.bladder { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 14px; background: rgba(8, 12, 32, 0.86); border: 2px solid var(--panel-border); color: #fff; min-width: 190px; }
+.bladder .bl-face { font-size: 1.6rem; line-height: 1; }
+.bladder .bl-track { flex: 1; height: 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.25); }
+.bladder .bl-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #ffe066, #ffb703 55%, #ff5470); transition: width 0.25s linear; }
+.bladder .bl-pct { font: 800 1rem var(--font-display); font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; }
+.bladder.warn { border-color: #ffb703; }
+.bladder.panic { border-color: #ff5470; animation: blShake 0.35s linear infinite; }
+.bladder.panic .bl-face { animation: blHop 0.3s ease-in-out infinite; }
+@keyframes blShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px) rotate(-0.6deg); } 75% { transform: translateX(2px) rotate(0.6deg); } }
+@keyframes blHop { 50% { transform: translateY(-4px) scale(1.15); } }
+.maze-keys { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.maze-keys span { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-weight: 800; font-size: 0.78rem; border: 1px solid rgba(255, 255, 255, 0.25); }
+.maze-keys span.got { background: rgba(62, 224, 143, 0.25); border-color: #3ee08f; color: #b6ffd9; }
+@media (max-width: 430px) { .bladder { min-width: 150px; } .maze-mini { width: 118px; height: 84px; } }
+@media (max-width: 900px) { #view-maze .city-hint { bottom: calc(168px + env(safe-area-inset-bottom)); padding: 0 12px; } }

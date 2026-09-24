@@ -30,6 +30,15 @@ A GTA-inspired (cartoon, non-violent) mode: pick **City Mission** on the home sc
 - **Computer players** run the same missions with A* pathfinding, answer the quiz gates at their level's accuracy, chat, and zap rivals.
 - Server-authoritative: the server simulates the city at 20 Hz and sends 10 Hz snapshots; your own character is predicted locally so it feels instant. Code: `backend/city.js` (simulation), `frontend/city3d.js` + `frontend/city3d_world.js` (3D renderer and world), `frontend/city2d.js` (fallback), `frontend/city.js` (picks one). Three.js r147 (MIT) with its GLTFLoader/SkeletonUtils is vendored in `frontend/vendor/`. The soldier model is a free Mixamo character shipped with the three.js examples.
 
+## 🚽 We Gotta Go (haunted co-op maze, 3D)
+
+A co-op mode for the whole team: you are stuck in **haunted halls** and the shared **bladder meter** keeps filling. Reach the **toilet** before it hits 100%!
+
+- **Quiz = key** — locked doors **A / B / C** block the way, and the matching keys **a / b / c** are hidden around the maze. Stand on a key and a quiz opens; a correct answer wins the key **for the whole team** and the door sinks open for everyone (and relieves the bladder a bit). A wrong answer locks you out and fills the bladder faster.
+- **Ghosts chase you** — a ghost that catches you freezes you and adds to the bladder. Swing your **flashlight** (Space / 🔦) to scare nearby ghosts away.
+- **Real 3D** (Three.js): a moonlit haunted maze with mossy stone walls, flickering torches, gates, glowing keys, floating ghosts, thunder and lightning, and a golden toilet. As the bladder fills everyone hops and the screen sways.
+- A fresh maze every match, generated on the server and checked so every door is a real chokepoint and every key is reachable before its own door. Computer players play as teammates. Code: `backend/maze.js` (simulation), `frontend/maze3d.js` (renderer).
+
 ## More ways to play
 
 - **🤝 Team mode** — the host picks Solo / 2 / 3 / 4 teams in the lobby. Players are dealt onto colour teams (humans first); shirts and table stripes show the team, a live team-score strip sits above the map, and steal/freeze can only target other teams. With 3+ teams the lowest-scoring team is knocked out together at the end of each level; with 2 teams the match is a straight team-vs-team score race.
