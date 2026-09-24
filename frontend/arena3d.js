@@ -937,6 +937,7 @@ const Arena3D = (function () {
     if (soldierGLTF) {
       inner = T.SkeletonUtils.clone(soldierGLTF.scene);
       inner.scale.setScalar(SOLDIER_SCALE);
+      inner.rotation.y = Math.PI; // the model's front faces -Z; turn it toward the camera (+Z)
       root.add(inner);
       inner.traverse((m) => {
         if (!m.isMesh) return;

@@ -86,7 +86,13 @@
     backBtn: el('backBtn'),
     voiceBtn: el('voiceBtn'),
     cityBtn: el('cityBtn'),
-    mazeBtn: el('mazeBtn'),
+    micBtnCity: el('micBtnCity'),
+    micBtnMaze: el('micBtnMaze'),
+    mazeTimer: el('mazeTimer'),
+    cityBladder: el('cityBladder'),
+    cbFace: el('cbFace'),
+    cbFill: el('cbFill'),
+    cbPct: el('cbPct'),
     mazeCanvas: el('mazeCanvas'),
     mazeMini: el('mazeMini'),
     mazeJoy: el('mazeJoy'),
@@ -217,6 +223,10 @@
   let stageActive = false;
   let historyArmed = false;
   let quickBotsWanted = 1;
+  let myWorld = 0;
+  let lastSnap = null;
+  let lastBladder = 0;
+  let speakingIds = new Set();
   let mazeInfo = null;
   let mazeMeIdx = -1;
   let mazeMounted = false;
@@ -417,6 +427,7 @@
     document.body.classList.toggle('in-city', id === 'city' || id === 'maze');
     if (id !== 'city' && City.running) City.stop();
     if (id !== 'maze' && mazeMounted && Maze3D.running) Maze3D.stop();
+    if (id === 'home' && VoiceChat.active) VoiceChat.disable();
     refs.backBtn.classList.toggle('hidden', id === 'home');
     if (id !== 'home' && !historyArmed) {
       historyArmed = true;
@@ -1333,8 +1344,6 @@
       showLobby();
     } else if (roomState.state === 'city' && roomState.city) {
       startCityView(roomState.city);
-    } else if (roomState.state === 'maze' && roomState.maze) {
-      startMazeView(roomState.maze);
     } else if (roomState.state === 'starting') {
       enterStage();
       showView('question');
@@ -1804,143 +1813,41 @@
     renderLiveBoard();
   });
 
+  // ---- City Mission: We Gotta Go — the city, the haunted mansion and the bladder ----
   socket.on(EVENTS.CITY_START, (payload) => startCityView(payload));
 
   socket.on(EVENTS.CITY_STATE, (snap) => {
-    if (activeView !== 'city') return;
-    City.applyState(snap);
+    if (activeView !== 'city' && activeView !== 'maze') return;
+    lastSnap = snap;
+    const w = worldOf(snap);
+    if (w !== myWorld) switchWorld(w);
+    City.applyState(toCitySnap(snap));
+    if (mazeMounted) Maze3D.applyState(toMazeSnap(snap));
     updateCityHud(snap);
   });
 
   socket.on(EVENTS.CITY_QUIZ, (q) => {
-    if (activeView === 'city') openQuiz(q);
+    if (activeView === 'city' || activeView === 'maze') openQuiz(q);
   });
 
-  socket.on(EVENTS.CITY_RESULT, (r) => {
-    const buttons = [...refs.cqChoices.querySelectorAll('.cq-choice')];
-    buttons.forEach((b, i) => {
-      b.disabled = true;
-      if (i === r.correctIndex) b.classList.add('right');
-      else if (b.classList.contains('selected')) b.classList.add('wrong');
-    });
-    refs.cqResult.classList.remove('hidden', 'good', 'bad');
-    if (r.correct) {
-      refs.cqResult.classList.add('good');
-      refs.cqResult.textContent = r.finished ? `🏁 MISSION COMPLETE — you made it! +${r.gained}` : `✅ Unlocked ${r.reward ? r.reward.label : ''}! +${r.gained}`;
-      SoundFX.combo(4);
-      vibrate([30, 40, 30]);
-      Engine.flash('rgba(62,224,143,0.3)');
-      City.floatText(`+${r.gained}`, '#3ee08f');
-      if (r.finished) SoundFX.win();
-    } else {
-      refs.cqResult.classList.add('bad');
-      refs.cqResult.textContent = `❌ Wrong — access denied. Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
-      SoundFX.wrong();
-      vibrate([40, 60, 40]);
-      Engine.flash('rgba(255,60,90,0.3)');
-      clearTimeout(lockTimer);
-      const until = Date.now() + r.lockoutMs;
-      refs.cityLock.classList.remove('hidden');
-      const tickLock = () => {
-        const left = until - Date.now();
-        if (left <= 0) return refs.cityLock.classList.add('hidden');
-        refs.cityLock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
-        lockTimer = setTimeout(tickLock, 200);
-      };
-      tickLock();
+  socket.on(EVENTS.CITY_RESULT, (r) => handleQuizResult(r));
+
+  socket.on(EVENTS.CITY_FX, (e) => {
+    if (activeView !== 'city' && activeView !== 'maze') return;
+    if (e.type === 'zap') {
+      City.zapFx(e.from, e.to, e.blocked);
+      if (e.to === mySession.playerId && !e.blocked) {
+        SoundFX.freeze();
+        vibrate([60, 40, 60]);
+        Engine.flash('rgba(255,224,77,0.3)');
+      } else SoundFX.steal();
+      return;
     }
-    setTimeout(closeQuiz, r.correct ? 1500 : 2200);
-  });
-
-  socket.on(EVENTS.CITY_FX, ({ type, from, to, blocked }) => {
-    if (type !== 'zap' || activeView !== 'city') return;
-    City.zapFx(from, to, blocked);
-    if (to === mySession.playerId && !blocked) {
-      SoundFX.freeze();
-      vibrate([60, 40, 60]);
-      Engine.flash('rgba(255,224,77,0.3)');
-    } else SoundFX.steal();
+    bodyFx(e);
   });
 
   socket.on(EVENTS.CITY_FEED, ({ text }) => {
-    if (activeView === 'city') pushFeed(escapeHtml(text));
-  });
-
-  // ---- We Gotta Go (haunted maze) ----
-  socket.on(EVENTS.MAZE_START, (payload) => startMazeView(payload));
-
-  socket.on(EVENTS.MAZE_STATE, (snap) => {
-    if (activeView !== 'maze' || !mazeMounted) return;
-    Maze3D.applyState(snap);
-    updateMazeHud(snap);
-  });
-
-  socket.on(EVENTS.MAZE_QUIZ, (q) => {
-    if (activeView === 'maze') openMazeQuiz(q);
-  });
-
-  socket.on(EVENTS.MAZE_RESULT, (r) => {
-    const buttons = [...refs.mqChoices.querySelectorAll('.cq-choice')];
-    buttons.forEach((b, i) => {
-      b.disabled = true;
-      if (i === r.correctIndex) b.classList.add('right');
-      else if (b.classList.contains('selected')) b.classList.add('wrong');
-    });
-    refs.mqResult.classList.remove('hidden', 'good', 'bad');
-    if (r.correct) {
-      refs.mqResult.classList.add('good');
-      refs.mqResult.textContent = r.already
-        ? `🤝 A teammate grabbed key ${r.key.toUpperCase()} first — +${r.gained}`
-        : `🔑 Key ${r.key.toUpperCase()} is yours — door ${r.key.toUpperCase()} opens for the team! +${r.gained}`;
-      SoundFX.key();
-      vibrate([30, 40, 30]);
-      Engine.flash('rgba(62,224,143,0.3)');
-      if (mazeMounted) Maze3D.floatText(`+${r.gained}`, '#3ee08f');
-    } else {
-      refs.mqResult.classList.add('bad');
-      refs.mqResult.textContent = `❌ Wrong — the bladder fills faster! Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
-      SoundFX.wrong();
-      SoundFX.toot();
-      vibrate([40, 60, 40]);
-      Engine.flash('rgba(255,60,90,0.3)');
-      clearTimeout(mazeLockTimer);
-      const until = Date.now() + r.lockoutMs;
-      refs.mazeLock.classList.remove('hidden');
-      const tickLock = () => {
-        const left = until - Date.now();
-        if (left <= 0) return refs.mazeLock.classList.add('hidden');
-        refs.mazeLock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
-        mazeLockTimer = setTimeout(tickLock, 200);
-      };
-      tickLock();
-    }
-    setTimeout(closeMazeQuiz, r.correct ? 1500 : 2200);
-  });
-
-  socket.on(EVENTS.MAZE_FX, (e) => {
-    if (activeView !== 'maze' || !mazeMounted) return;
-    Maze3D.fx(e);
-    const mine = e.playerId === mySession.playerId;
-    if (e.type === 'caught') {
-      SoundFX.boo();
-      SoundFX.ghost();
-      if (mine) {
-        vibrate([80, 40, 80]);
-        Engine.flash('rgba(120,190,255,0.35)');
-      }
-    } else if (e.type === 'flash') {
-      if (!mine) SoundFX.flashlight();
-    } else if (e.type === 'toilet') {
-      SoundFX.flush();
-      if (mine) {
-        vibrate([40, 40, 40, 40, 80]);
-        Engine.flash('rgba(255,224,77,0.35)');
-      }
-    } else if (e.type === 'key' && !mine) SoundFX.key();
-  });
-
-  socket.on(EVENTS.MAZE_FEED, ({ text }) => {
-    if (activeView === 'maze') pushFeed(escapeHtml(text));
+    if (activeView === 'city' || activeView === 'maze') pushFeed(escapeHtml(text));
   });
 
   socket.on(EVENTS.TEAM_UPDATE, ({ teamMode: tm }) => {
@@ -2042,18 +1949,6 @@
     mySession.name = name;
     mySession.avatar = selectedAvatar;
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'city' });
-  });
-
-  refs.mazeBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    quickPending = true;
-    quickBotsWanted = 3;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'haunted' });
   });
 
   refs.dailyBtn.addEventListener('click', () => {
@@ -2254,39 +2149,123 @@
     return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
   }
 
+  /* ---- one game, two worlds: the open city and the haunted mansion ---- */
+
+  const worldOf = (snap) => {
+    const m = snap.p.find((e) => e[0] === cityMeIdx);
+    return m ? m[9] || 0 : 0;
+  };
+  // players inside the mansion are hidden from the city renderer, and the other way round
+  function toCitySnap(snap) {
+    return { ...snap, p: snap.p.map((e) => (e[9] === 1 ? [e[0], e[1], e[2], e[3], e[4] | 64, ...e.slice(5)] : e)) };
+  }
+  function toMazeSnap(snap) {
+    const mine = snap.p.find((e) => e[0] === cityMeIdx) || [];
+    const mask = mine[10] || 0;
+    const open = [];
+    if (mask & 1) open.push('A');
+    if (mask & 2) open.push('B');
+    if (mask & 4) open.push('C');
+    return {
+      t: snap.t,
+      p: snap.p.map((e) => (e[9] === 0 ? [e[0], e[1], e[2], e[3], e[4] | 64, ...e.slice(5)] : e)),
+      g: snap.g || [],
+      b: mine[8] || 0,
+      open,
+      done: snap.p.filter((e) => e[4] & 32).length,
+    };
+  }
+
+  function boardHtml(snap) {
+    const total = cityInfo.missions.length;
+    return snap.p
+      .filter((e) => !(e[4] & 64))
+      .slice()
+      .sort((a, b) => b[6] - a[6])
+      .slice(0, 5)
+      .map((e) => {
+        const info = cityInfo.players[e[0]];
+        const done = e[4] & 32;
+        const talk = speakingIds.has(info.playerId) || (e[0] === cityMeIdx && speakingIds.has('__me')) ? ' 🎙️' : '';
+        const where = e[9] === 1 ? '🏚️' : '';
+        return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))}${talk} <b>${done ? '🏁' : `${where}${e[5]}/${total}`}</b> ${e[6]}</div>`;
+      })
+      .join('');
+  }
+
+  function bladderFace(p) {
+    return p < 25 ? '😌' : p < 50 ? '🙂' : p < 70 ? '😬' : p < 85 ? '😖' : p < 95 ? '😱' : '💦';
+  }
+
+  // the player's own noises as the pressure rises
+  const CUES = [[52, 'strain'], [68, 'panic'], [82, 'strain'], [92, 'panic']];
+  function bladderCues(pct) {
+    if (pct < lastBladder - 25) lastBladder = pct; // relief: start over
+    for (const [level, kind] of CUES) {
+      if (lastBladder < level && pct >= level) {
+        SoundFX.voice(kind, 0.95);
+        if (level >= 82) SoundFX.tummy(0.8);
+      }
+    }
+    lastBladder = pct;
+  }
+
+  function setBladder(pct) {
+    const p = Math.max(0, Math.min(100, pct));
+    for (const [face, fill, num, box] of [
+      [refs.cbFace, refs.cbFill, refs.cbPct, refs.cityBladder],
+      [refs.blFace, refs.blFill, refs.blPct, refs.bladder],
+    ]) {
+      fill.style.width = `${p}%`;
+      num.textContent = `${Math.round(p)}%`;
+      face.textContent = bladderFace(p);
+      box.classList.toggle('warn', p >= 55 && p < 80);
+      box.classList.toggle('panic', p >= 80);
+    }
+    if (p >= 80 && !setBladder.warned) {
+      setBladder.warned = true;
+      SoundFX.siren();
+    }
+    if (p < 70) setBladder.warned = false;
+    bladderCues(p);
+  }
+
   function updateCityHud(snap) {
     if (!cityInfo || !snap) return;
     const mine = snap.p.find((e) => e[0] === cityMeIdx);
     const total = cityInfo.missions.length;
     if (mine) {
-      const [, , , , flags, mission, , blaster] = mine;
+      const [, , , , flags, mission, , blaster, bladder] = mine;
       const m = cityInfo.missions[mission];
+      const wcHint = bladder >= 55 && (mine[9] || 0) === 0 ? '<small class="wc-hint">🚽 Desperate? Find a blue public toilet stall — it opens with a quiz!</small>' : '';
       refs.cityMission.innerHTML = m
-        ? `MISSION ${mission + 1}/${total} · ${m.icon} ${escapeHtml(m.name)}<small>${escapeHtml(m.line)} — a quiz gate guards the door</small>`
+        ? `MISSION ${mission + 1}/${total} · ${m.icon} ${escapeHtml(m.name)}<small>${escapeHtml(m.line)} — a quiz gate guards the door</small>${wcHint}`
         : '🏁 All missions done! Waiting for the others…';
       const chips = [];
       if (blaster > 0) chips.push(`<span class="ci">🔫 ×${blaster}</span>`);
       if (flags & 4) chips.push('<span class="ci">🚗 Turbo</span>');
       if (flags & 2) chips.push('<span class="ci">🛡️ Shield</span>');
       if (flags & 1) chips.push('<span class="ci warn">⭐ Stunned</span>');
+      if (flags & 128) chips.push('<span class="ci warn">💩 Oops…</span>');
       refs.cityItems.innerHTML = chips.join('');
-      refs.zapBtn.classList.toggle('hidden', blaster <= 0);
+      refs.zapBtn.classList.toggle('hidden', blaster <= 0 || (mine[9] || 0) === 1);
       refs.zapCount.textContent = blaster;
+      setBladder(bladder || 0);
+      // the mansion panel: which keys are won
+      const mask = mine[10] || 0;
+      const keyChips = ['A', 'B', 'C'].map((L, i) => {
+        const got = mask & (1 << i);
+        return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + L + ' ✓' : '🔑 ' + L.toLowerCase()}</span>`;
+      });
+      refs.mazeObj.innerHTML = `<div>🏚️ Haunted Mansion — find the 🚽 exit!</div><small>Win each key with a quiz · ghosts add to your bladder · Space or 📢 shout scares them</small><div class="maze-keys">${keyChips.join('')}</div>`;
     }
     const left = snap.endsAt - (Date.now() + cityOffset);
     refs.cityTimer.textContent = fmtClock(left);
+    refs.mazeTimer.textContent = fmtClock(left);
     refs.cityTimer.classList.toggle('urgent', left < 30000);
-    const rows = snap.p
-      .filter((e) => !(e[4] & 64))
-      .slice()
-      .sort((a, b) => b[6] - a[6])
-      .slice(0, 4)
-      .map((e) => {
-        const info = cityInfo.players[e[0]];
-        const done = e[4] & 32;
-        return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))} <b>${done ? '🏁' : `${e[5]}/${total}`}</b> ${e[6]}</div>`;
-      });
-    refs.cityBoard.innerHTML = rows.join('');
+    const rows = boardHtml(snap);
+    refs.cityBoard.innerHTML = rows;
+    refs.mazeBoard.innerHTML = rows;
   }
 
   function startCityView(payload) {
@@ -2296,58 +2275,38 @@
     resetArenaState();
     hideCountdown();
     leaveStage();
-    refs.cityQuiz.classList.add('hidden');
+    closeQuiz();
     refs.cityLock.classList.add('hidden');
+    refs.mazeLock.classList.add('hidden');
     refs.cityHint.classList.remove('gone');
     setTimeout(() => refs.cityHint.classList.add('gone'), 9000);
+    myWorld = 0;
+    lastBladder = 0;
+    lastSnap = payload.snapshot;
+    flashCooling = false;
+    refs.flashBtn.classList.remove('cooling');
     showView('city');
     updateTopbarHeight();
-    City.start(payload, mySession.playerId);
+    City.start({ ...payload, snapshot: toCitySnap(payload.snapshot) }, mySession.playerId);
+    // build the mansion in the background so walking in is instant
+    if (ensureMaze()) {
+      Maze3D.start(
+        { ...payload.mansion, players: payload.players, startsAt: payload.startsAt, serverNow: payload.serverNow, snapshot: toMazeSnap(payload.snapshot) },
+        mySession.playerId,
+        undefined,
+        { paused: true }
+      );
+    }
+    SoundFX.prepareBody();
     updateCityHud(payload.snapshot);
+    if (worldOf(payload.snapshot) === 1) switchWorld(1);
   }
 
-  function closeQuiz() {
-    cancelAnimationFrame(quizRAF);
-    refs.cityQuiz.classList.add('hidden');
-  }
-
-  function openQuiz(q) {
-    const offsetNow = q.serverNow - Date.now();
-    refs.cqHead.textContent = `${q.mission.icon} ${q.mission.name} — answer to unlock ${q.mission.label}`;
-    refs.cqQ.textContent = q.text;
-    refs.cqResult.classList.add('hidden');
-    refs.cqChoices.innerHTML = '';
-    q.choices.forEach((c, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'cq-choice';
-      b.textContent = `${'ABCD'[i]}: ${c}`;
-      b.onclick = () => {
-        refs.cqChoices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
-        b.classList.add('selected');
-        SoundFX.lock();
-        socket.emit(EVENTS.CITY_ANSWER, { choiceIndex: i });
-      };
-      refs.cqChoices.appendChild(b);
-    });
-    refs.cityQuiz.classList.remove('hidden');
-    cancelAnimationFrame(quizRAF);
-    const tick = () => {
-      const left = q.endsAt - (Date.now() + offsetNow);
-      refs.cqBar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
-      if (left > 0 && !refs.cityQuiz.classList.contains('hidden')) quizRAF = requestAnimationFrame(tick);
-    };
-    tick();
-    SoundFX.count();
-    VoiceHost.speak(q.text);
-  }
-
-  // ---- We Gotta Go: HUD, quiz and view ----
   function ensureMaze() {
     if (mazeMounted) return true;
     try {
       Maze3D.mount(refs.mazeCanvas, refs.mazeMini, refs.mazeJoy, refs.mazeKnob, {
-        sendInput: (dx, dy) => socket.emit(EVENTS.MAZE_INPUT, { dx, dy }),
+        sendInput: (dx, dy) => socket.emit(EVENTS.CITY_INPUT, { dx, dy }),
         flash: doFlash,
         danger: (k) => refs.viewMaze.style.setProperty('--danger', k.toFixed(2)),
         thunder: () => SoundFX.thunder(),
@@ -2355,10 +2314,33 @@
       });
       mazeMounted = true;
     } catch (err) {
-      console.warn('3D maze unavailable', err);
+      console.warn('3D mansion unavailable', err);
       return false;
     }
     return true;
+  }
+
+  // step through the door of the mansion (or back out of it)
+  function switchWorld(w) {
+    myWorld = w;
+    closeQuiz();
+    refs.cityLock.classList.add('hidden');
+    refs.mazeLock.classList.add('hidden');
+    if (w === 1) {
+      City.stop();
+      showView('maze');
+      if (mazeMounted) Maze3D.resume();
+      updateTopbarHeight();
+      refs.mazeHint.classList.remove('gone');
+      setTimeout(() => refs.mazeHint.classList.add('gone'), 9000);
+      SoundFX.door();
+      SoundFX.ghost();
+    } else {
+      if (mazeMounted) Maze3D.stop();
+      showView('city');
+      City.resume();
+      updateTopbarHeight();
+    }
   }
 
   function doFlash() {
@@ -2370,101 +2352,194 @@
       refs.flashBtn.classList.remove('cooling');
     }, 7000);
     SoundFX.flashlight();
-    socket.emit(EVENTS.MAZE_FLASH);
+    socket.emit(EVENTS.CITY_ZAP);
   }
   refs.flashBtn.addEventListener('click', doFlash);
 
-  function bladderFace(p) {
-    return p < 25 ? '😌' : p < 50 ? '🙂' : p < 70 ? '😬' : p < 85 ? '😖' : p < 95 ? '😱' : '💦';
+  /* ---- the quiz overlay (the same for city gates, mansion keys and public toilets) ---- */
+
+  function qEls() {
+    return activeView === 'maze'
+      ? { box: refs.mazeQuiz, head: refs.mqHead, bar: refs.mqBar, q: refs.mqQ, choices: refs.mqChoices, result: refs.mqResult, lock: refs.mazeLock }
+      : { box: refs.cityQuiz, head: refs.cqHead, bar: refs.cqBar, q: refs.cqQ, choices: refs.cqChoices, result: refs.cqResult, lock: refs.cityLock };
   }
 
-  function updateMazeHud(snap) {
-    if (!mazeInfo || !snap) return;
-    const pct = Math.max(0, Math.min(100, snap.b));
-    refs.blFill.style.width = `${pct}%`;
-    refs.blPct.textContent = `${Math.round(pct)}%`;
-    refs.blFace.textContent = bladderFace(pct);
-    refs.bladder.classList.toggle('warn', pct >= 55 && pct < 80);
-    refs.bladder.classList.toggle('panic', pct >= 80);
-    if (pct >= 80 && !updateMazeHud.warned) {
-      updateMazeHud.warned = true;
-      SoundFX.siren();
-    }
-    if (pct < 80) updateMazeHud.warned = false;
-    const chips = mazeInfo.keys.map((k) => {
-      const got = snap.open.includes(k.letter.toUpperCase());
-      return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + k.letter.toUpperCase() + ' ✓' : '🔑 ' + k.letter}</span>`;
-    });
-    refs.mazeObj.innerHTML = `<div>🚽 Reach the toilet — <b>${snap.done}/${mazeInfo.players.length}</b> made it</div><small>Win each key with a quiz · ghosts add to the bladder</small><div class="maze-keys">${chips.join('')}</div>`;
-    refs.mazeBoard.innerHTML = snap.p
-      .slice()
-      .sort((a, b) => b[6] - a[6])
-      .map((e) => {
-        const info = mazeInfo.players[e[0]];
-        const done = e[4] & 32;
-        return `<div class="cb-row${e[0] === mazeMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))} <b>${done ? '🚽' : '🔑' + e[5]}</b> ${e[6]}</div>`;
-      })
-      .join('');
-  }
-
-  function startMazeView(payload) {
-    if (!ensureMaze()) {
-      showToast("This device can't show 3D graphics, so We Gotta Go isn't available here.");
-      return;
-    }
-    mazeInfo = payload;
-    mazeMeIdx = payload.players.findIndex((pl) => pl.playerId === mySession.playerId);
-    resetArenaState();
-    hideCountdown();
-    leaveStage();
-    refs.mazeQuiz.classList.add('hidden');
-    refs.mazeLock.classList.add('hidden');
-    refs.mazeHint.classList.remove('gone');
-    setTimeout(() => refs.mazeHint.classList.add('gone'), 11000);
-    flashCooling = false;
-    refs.flashBtn.classList.remove('cooling');
-    showView('maze');
-    updateTopbarHeight();
-    Maze3D.start(payload, mySession.playerId);
-    updateMazeHud(payload.snapshot);
-    SoundFX.ghost();
-  }
-
-  function closeMazeQuiz() {
-    cancelAnimationFrame(mazeQuizRAF);
+  function closeQuiz() {
+    cancelAnimationFrame(quizRAF);
+    refs.cityQuiz.classList.add('hidden');
     refs.mazeQuiz.classList.add('hidden');
   }
 
-  function openMazeQuiz(q) {
+  function openQuiz(q) {
+    const E = qEls();
     const offsetNow = q.serverNow - Date.now();
-    refs.mqHead.textContent = `🔑 Key ${q.key.toUpperCase()} is locked — answer to win it for the team`;
-    refs.mqQ.textContent = q.text;
-    refs.mqResult.classList.add('hidden');
-    refs.mqChoices.innerHTML = '';
+    E.head.textContent = q.head || `${q.mission.icon} ${q.mission.name} — answer to unlock ${q.mission.label}`;
+    E.q.textContent = q.text;
+    E.result.classList.add('hidden');
+    E.choices.innerHTML = '';
     q.choices.forEach((c, i) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'cq-choice';
       b.textContent = `${'ABCD'[i]}: ${c}`;
       b.onclick = () => {
-        refs.mqChoices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
+        E.choices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
         b.classList.add('selected');
         SoundFX.lock();
-        socket.emit(EVENTS.MAZE_ANSWER, { choiceIndex: i });
+        socket.emit(EVENTS.CITY_ANSWER, { choiceIndex: i });
       };
-      refs.mqChoices.appendChild(b);
+      E.choices.appendChild(b);
     });
-    refs.mazeQuiz.classList.remove('hidden');
-    cancelAnimationFrame(mazeQuizRAF);
+    E.box.classList.remove('hidden');
+    cancelAnimationFrame(quizRAF);
     const tick = () => {
       const left = q.endsAt - (Date.now() + offsetNow);
-      refs.mqBar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
-      if (left > 0 && !refs.mazeQuiz.classList.contains('hidden')) mazeQuizRAF = requestAnimationFrame(tick);
+      E.bar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
+      if (left > 0 && !E.box.classList.contains('hidden')) quizRAF = requestAnimationFrame(tick);
     };
     tick();
     SoundFX.count();
     VoiceHost.speak(q.text);
   }
+
+  function floatAtMe(text, color) {
+    if (activeView === 'maze' && mazeMounted) Maze3D.floatText(text, color);
+    else City.floatText(text, color);
+  }
+
+  function handleQuizResult(r) {
+    if (r.kind === 'exit') {
+      floatAtMe(`+${r.gained}`, '#3ee08f');
+      SoundFX.combo(4);
+      return;
+    }
+    const E = qEls();
+    [...E.choices.querySelectorAll('.cq-choice')].forEach((b, i) => {
+      b.disabled = true;
+      if (i === r.correctIndex) b.classList.add('right');
+      else if (b.classList.contains('selected')) b.classList.add('wrong');
+    });
+    E.result.classList.remove('hidden', 'good', 'bad');
+    if (r.correct) {
+      E.result.classList.add('good');
+      if (r.kind === 'key') E.result.textContent = `🔑 Key won — ${r.reward ? r.reward.label : ''} is open for you! +${r.gained}`;
+      else if (r.kind === 'wc') E.result.textContent = `😌 Sweet relief! +${r.gained}`;
+      else if (r.entered) E.result.textContent = `🏚️ The gate creaks open… win 3 keys and find the toilet exit! +${r.gained}`;
+      else E.result.textContent = r.finished ? `🏁 MISSION COMPLETE — you made it! +${r.gained}` : `✅ Unlocked ${r.reward ? r.reward.label : ''}! +${r.gained}`;
+      SoundFX.combo(4);
+      if (r.kind === 'key') SoundFX.key();
+      vibrate([30, 40, 30]);
+      Engine.flash('rgba(62,224,143,0.3)');
+      floatAtMe(`+${r.gained}`, '#3ee08f');
+      if (r.finished) SoundFX.win();
+    } else {
+      E.result.classList.add('bad');
+      E.result.textContent = r.kind === 'wc' ? `❌ Wrong — the stall stays locked! Try again in a moment (${Math.round(r.lockoutMs / 1000)}s)` : `❌ Wrong — access denied. Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
+      SoundFX.wrong();
+      SoundFX.toot();
+      vibrate([40, 60, 40]);
+      Engine.flash('rgba(255,60,90,0.3)');
+      clearTimeout(lockTimer);
+      const until = Date.now() + r.lockoutMs;
+      E.lock.classList.remove('hidden');
+      const tickLock = () => {
+        const left = until - Date.now();
+        if (left <= 0) return E.lock.classList.add('hidden');
+        E.lock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
+        lockTimer = setTimeout(tickLock, 200);
+      };
+      tickLock();
+    }
+    setTimeout(closeQuiz, r.correct ? 1500 : 2200);
+  }
+
+  /* ---- body events: farts, accidents, relief, ghosts, shouts (visuals + real recorded sounds) ---- */
+
+  // how loud something is for me: full for my own body, fading with distance, silent from the other world
+  function fxVolume(playerId) {
+    if (playerId === mySession.playerId) return 1;
+    if (!lastSnap) return 0.4;
+    const idx = cityInfo ? cityInfo.players.findIndex((p) => p.playerId === playerId) : -1;
+    const a = lastSnap.p.find((e) => e[0] === cityMeIdx);
+    const b = lastSnap.p.find((e) => e[0] === idx);
+    if (!a || !b || (a[9] || 0) !== (b[9] || 0)) return 0;
+    const range = (a[9] || 0) === 1 ? 420 : 560;
+    const d = Math.hypot(a[1] - b[1], a[2] - b[2]);
+    return d > range ? 0 : Math.max(0.12, 1 - d / range);
+  }
+
+  function bodyFx(e) {
+    if (City.fx) City.fx(e);
+    if (mazeMounted) Maze3D.fx(e);
+    const mine = e.playerId === mySession.playerId;
+    const vol = fxVolume(e.playerId);
+    if (e.type === 'fart') {
+      if (vol > 0) SoundFX.fart(e.kind, vol * (e.big ? 1.2 : 1));
+      if (mine) vibrate([25, 30, 45]);
+    } else if (e.type === 'accident') {
+      if (vol > 0) SoundFX.accident(vol);
+      if (mine) {
+        vibrate([80, 50, 120]);
+        Engine.flash('rgba(150,170,50,0.35)');
+      }
+    } else if (e.type === 'relief') {
+      if (vol > 0) SoundFX.relief(vol);
+      if (mine) Engine.flash('rgba(255,224,77,0.3)');
+    } else if (e.type === 'caught') {
+      SoundFX.boo();
+      SoundFX.ghost();
+      if (mine) {
+        vibrate([80, 40, 80]);
+        Engine.flash('rgba(120,190,255,0.35)');
+      }
+    } else if (e.type === 'flash') {
+      if (!mine) SoundFX.flashlight();
+    } else if (e.type === 'shout') {
+      if (vol > 0 && !mine) SoundFX.voice('scream', vol);
+    } else if (e.type === 'key' && !mine) {
+      if (vol > 0.3) SoundFX.key();
+    }
+  }
+
+  /* ---- the microphone: team voice chat + shout-to-scare ---- */
+
+  function refreshMicButtons() {
+    const on = VoiceChat.active;
+    for (const b of [refs.micBtnCity, refs.micBtnMaze]) {
+      b.classList.toggle('on', on);
+      b.textContent = on ? '🎙️ Mic on' : '🎙️ Mic off';
+    }
+  }
+
+  async function toggleMic() {
+    SoundFX.unlock();
+    SoundFX.click();
+    if (VoiceChat.active) VoiceChat.disable();
+    else if (!(await VoiceChat.enable())) showToast('Microphone blocked — allow it in your browser to talk with your team and to scare ghosts by shouting.');
+    refreshMicButtons();
+  }
+  refs.micBtnCity.addEventListener('click', toggleMic);
+  refs.micBtnMaze.addEventListener('click', toggleMic);
+
+  VoiceChat.init(socket, EVENTS, {
+    shout: () => socket.emit(EVENTS.CITY_SHOUT),
+    level: (lv, thr) => {
+      const k = Math.min(1, lv / (thr || 0.3)).toFixed(2);
+      refs.micBtnCity.style.setProperty('--mic', k);
+      refs.micBtnMaze.style.setProperty('--mic', k);
+    },
+    speaking: (set) => {
+      speakingIds = set;
+      if (lastSnap && cityInfo) {
+        const rows = boardHtml(lastSnap);
+        refs.cityBoard.innerHTML = rows;
+        refs.mazeBoard.innerHTML = rows;
+      }
+    },
+    state: refreshMicButtons,
+    error: () => {},
+  });
+
 
   // ---- Back / leave ----
   function openLeave() {

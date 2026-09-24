@@ -672,7 +672,7 @@ const CityWorld = (function () {
       return c;
     }
 
-    const FLOORS = { gun: 4, garage: 3, arcade: 4, museum: 4, radio: 5, police: 5, diner: 2, airport: 4, bank: 6, hospital: 7 };
+    const FLOORS = { gun: 4, garage: 3, arcade: 4, mansion: 5, radio: 5, police: 5, diner: 2, restroom: 4, bank: 6, hospital: 7 };
     const CONCRETE = '#c9c3b6';
     const acMat = std(0x9aa0a8, 0.6, 0.4);
     const darkMetal = std(0x2b2f37, 0.5, 0.6);
@@ -722,10 +722,26 @@ const CityWorld = (function () {
         const blink = new T.MeshStandardMaterial({ color: 0x300000, emissive: 0xff2222, emissiveIntensity: 3 });
         mesh(new T.SphereGeometry(3.4, 10, 8), blink, W / 2 - 40, top + 132, 10, g, false);
         animated.push((t) => (blink.emissiveIntensity = Math.sin(t * 5) > 0 ? 4 : 0.2));
-      } else if (b.kind === 'airport') {
-        mesh(new T.CylinderGeometry(9, 12, 84, 14), std(0xd7d9de, 0.7), -W / 2 + 40, top + 42, 0, g);
-        mesh(new T.CylinderGeometry(20, 14, 16, 14), std(0x1a2c3d, 0.15, 0.7), -W / 2 + 40, top + 90, 0, g);
-        mesh(new T.CylinderGeometry(22, 22, 3, 14), std(0xd7d9de, 0.6), -W / 2 + 40, top + 100, 0, g);
+      } else if (b.kind === 'restroom') {
+        const gold = new T.MeshStandardMaterial({ color: 0xffd45a, roughness: 0.2, metalness: 0.9, emissive: 0x6b4a00, emissiveIntensity: 0.35 });
+        const prof = [[0, 0], [9, 0], [12, 3], [16, 12], [18, 20], [17, 25], [15, 26.5], [13.5, 25], [14.5, 20], [12, 10], [7, 5], [0, 4]].map(([x, y]) => new T.Vector2(x, y));
+        const bowl = new T.Mesh(new T.LatheGeometry(prof, 28), gold);
+        bowl.scale.set(3.4, 3.2, 2.9);
+        bowl.position.set(-W / 6, top + 6, 0);
+        bowl.castShadow = true;
+        g.add(bowl);
+        const tank = box(30, 96, 90, gold, -W / 6 - 62, top + 54, 0, g);
+        tank.castShadow = true;
+        const seat = new T.Mesh(new T.TorusGeometry(50, 7, 10, 32), gold);
+        seat.scale.set(1.12, 0.92, 1);
+        seat.rotation.x = Math.PI / 2;
+        seat.position.set(-W / 6, top + 92, 0);
+        g.add(seat);
+        const halo = new T.Sprite(new T.SpriteMaterial({ color: 0xffe08a, transparent: true, opacity: 0.55, depthWrite: false, blending: T.AdditiveBlending }));
+        halo.scale.set(420, 420, 1);
+        halo.position.set(-W / 6, top + 60, 0);
+        g.add(halo);
+        animated.push((t) => (halo.material.opacity = 0.45 + Math.sin(t * 2.4) * 0.15));
         const dish = new T.Group();
         dish.position.set(W / 2 - 60, top + 8, 10);
         g.add(dish);
@@ -766,7 +782,7 @@ const CityWorld = (function () {
       const zf = D / 2 + 2; // front plane of the ground floor
       const kc = b.color;
       const col = std(mixHex(kc, '#ffffff', 0.55), 0.7);
-      if (b.kind === 'bank' || b.kind === 'museum') {
+      if (b.kind === 'bank' || b.kind === 'mansion') {
         const colGeo = new T.CylinderGeometry(6, 6.6, base + 30, 14);
         for (let i = 0; i < 6; i++) {
           const cx = -W / 2 + 34 + i * ((W - 68) / 5);
@@ -776,7 +792,22 @@ const CityWorld = (function () {
         }
         box(W - 24, 8, 22, white, 0, base + 34, zf + 12, g);
         box(W - 10, 6, 40, std(0xb9b3a4, 0.9), 0, 3, zf + 24, g); // steps
-        if (b.kind === 'museum') {
+        if (b.kind === 'mansion') {
+          // a haunted manor: gravestones out front, a glowing purple window and a creepy halo
+          const stone = std(0x565a6a, 0.9);
+          for (let i = 0; i < 5; i++) {
+            const gx = -W / 2 + 20 + i * 44 + (i % 2) * 6;
+            const gs = new T.Mesh(new T.BoxGeometry(11, 20 + (i % 3) * 5, 4), stone);
+            gs.position.set(gx, 12, zf + 52);
+            gs.rotation.z = (i % 2 ? 1 : -1) * 0.08;
+            gs.castShadow = true;
+            g.add(gs);
+          }
+          const halo = new T.Sprite(new T.SpriteMaterial({ color: 0x8a5cff, transparent: true, opacity: 0.4, depthWrite: false, blending: T.AdditiveBlending }));
+          halo.scale.set(380, 300, 1);
+          halo.position.set(0, base + 80, 0);
+          g.add(halo);
+          animated.push((t) => (halo.material.opacity = 0.3 + Math.sin(t * 1.3) * 0.12));
           const sh = new T.Shape();
           sh.moveTo(-(W - 24) / 2, 0);
           sh.lineTo((W - 24) / 2, 0);
@@ -899,6 +930,60 @@ const CityWorld = (function () {
         aabb: { x0: b.x, x1: b.x + W, z0: b.y, z1: b.y + D, top: top + 30 },
         signMat,
       });
+    }
+
+    /* ------------------------------------------------- public toilet stalls */
+
+    const glowTexCache = { t: null };
+    function glowTex() {
+      if (!glowTexCache.t) {
+        const c = cv(64, 64);
+        const g2 = c.getContext('2d');
+        const gr = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gr.addColorStop(0, 'rgba(255,255,255,1)');
+        gr.addColorStop(0.3, 'rgba(255,255,255,0.4)');
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g2.fillStyle = gr;
+        g2.fillRect(0, 0, 64, 64);
+        glowTexCache.t = tex(c);
+      }
+      return glowTexCache.t;
+    }
+
+    {
+      const bodyMat = std(0x2f9ed8, 0.5, 0.15);
+      const doorMat = std(0x1c6f9c, 0.5, 0.15);
+      const roofMat2 = std(0xe9eef3, 0.5);
+      const signC = cv(128, 128);
+      {
+        const gx = signC.getContext('2d');
+        gx.fillStyle = '#fff';
+        gx.beginPath();
+        gx.arc(64, 64, 58, 0, TAU);
+        gx.fill();
+        gx.font = '84px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+        gx.textAlign = 'center';
+        gx.textBaseline = 'middle';
+        gx.fillText('🚽', 64, 70);
+      }
+      const signTex = tex(signC);
+      for (const w of map.wcs || []) {
+        const grp = new T.Group();
+        grp.position.set(w.x, 0, w.y);
+        root.add(grp);
+        box(24, 48, 24, bodyMat, 0, 26, 0, grp);
+        box(20, 40, 1.4, doorMat, 0, 24, 12.4, grp);
+        box(27, 3, 27, roofMat2, 0, 51.5, 0, grp);
+        const sign = new T.Mesh(new T.PlaneGeometry(13, 13), new T.MeshBasicMaterial({ map: signTex, transparent: true, toneMapped: false }));
+        sign.position.set(0, 34, 13.2);
+        grp.add(sign);
+        const lite = new T.Sprite(new T.SpriteMaterial({ map: glowTex(), color: 0x7fd8ff, transparent: true, opacity: 0.5, depthWrite: false, blending: T.AdditiveBlending }));
+        lite.scale.set(60, 60, 1);
+        lite.position.set(0, 62, 0);
+        grp.add(lite);
+        glow.lampGlowSprites = glow.lampGlowSprites || [];
+        glow.lampGlowSprites.push(lite);
+      }
     }
 
     /* ---------------------------------------------- street furniture */

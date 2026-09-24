@@ -249,7 +249,7 @@ function startMaze(io, room) {
   const sim = {
     layout,
     collision: buildCollision(layout),
-    questionPool: shuffled(getQuestions('haunted')),
+    questionPool: shuffled(getQuestions('city')),
     startsAt: now + START_COUNTDOWN_MS,
     bladder: 0,
     bladderBase: 100 / (BLADDER_MS / 1000), // percent per second
@@ -794,4 +794,42 @@ function stopMaze(room) {
   room.maze = null;
 }
 
-module.exports = { startMaze, initPayload, setInput, answer, flash, finishMaze, stopMaze, generateLayout, COLS, ROWS, CELL };
+// collision against a maze for someone who has opened a personal set of doors (used by the merged City mode)
+function collidesWith(collision, layout, opened, x, y, r) {
+  if (x < r || y < r || x > W - r || y > H - r) return true;
+  const c = cellAt(x, y);
+  for (const rc of collision[idxOf(c.r, c.c)]) if (circleHitsRect(x, y, r, rc)) return true;
+  for (const d of layout.doors) {
+    if (opened.has(d.letter)) continue;
+    const cx = d.c * CELL;
+    const cy = d.r * CELL;
+    if (circleHitsRect(x, y, r, { x0: cx + 2, x1: cx + CELL - 2, y0: cy + 2, y1: cy + CELL - 2 })) return true;
+  }
+  return false;
+}
+
+module.exports = {
+  startMaze,
+  initPayload,
+  setInput,
+  answer,
+  flash,
+  finishMaze,
+  stopMaze,
+  generateLayout,
+  buildCollision,
+  collidesWith,
+  compactWalls,
+  bfs,
+  neighborsOf,
+  cellAt,
+  cellCenter,
+  idxOf,
+  COLS,
+  ROWS,
+  CELL,
+  WALL_T,
+  PLAYER_R,
+  KEY_RADIUS,
+  TOILET_RADIUS,
+};

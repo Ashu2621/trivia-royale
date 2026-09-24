@@ -97,6 +97,136 @@ const SoundFX = (function () {
     src.stop(now + duration + 0.05);
   }
 
+  /* ---- real recorded samples (CC0, see sounds/CREDITS.md): farts, tummy rumbles, grunts, screams, sighs, flushes ---- */
+  const Samples = { buffers: {}, loading: null };
+
+  function prepareSamples() {
+    if (Samples.loading) return Samples.loading;
+    const audioCtx = getCtx();
+    if (!audioCtx) return Promise.resolve();
+    Samples.loading = fetch('sounds/manifest.json')
+      .then((r) => r.json())
+      .then((manifest) => {
+        const jobs = [];
+        Object.keys(manifest).forEach((kind) => {
+          Samples.buffers[kind] = [];
+          manifest[kind].forEach((file, i) => {
+            jobs.push(
+              fetch('sounds/' + file)
+                .then((r) => r.arrayBuffer())
+                .then((data) => new Promise((res, rej) => audioCtx.decodeAudioData(data, res, rej)))
+                .then((buf) => {
+                  Samples.buffers[kind][i] = buf;
+                })
+                .catch(() => {})
+            );
+          });
+        });
+        return Promise.all(jobs);
+      })
+      .catch(() => {});
+    return Samples.loading;
+  }
+
+  // play one recorded clip: { rate, gain, delay, lowpass, pan }
+  function playSample(kind, index, o) {
+    const audioCtx = getCtx();
+    const list = Samples.buffers[kind];
+    if (!audioCtx || muted || !list || !list.length) return null;
+    const buf = list[((index % list.length) + list.length) % list.length];
+    if (!buf) return null;
+    const opts = o || {};
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = opts.rate || 1;
+    const gain = audioCtx.createGain();
+    gain.gain.value = opts.gain == null ? 1 : opts.gain;
+    let node = src;
+    if (opts.lowpass) {
+      const f = audioCtx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = opts.lowpass;
+      node.connect(f);
+      node = f;
+    }
+    node.connect(gain);
+    let out = gain;
+    if (opts.pan && audioCtx.createStereoPanner) {
+      const p = audioCtx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, opts.pan));
+      gain.connect(p);
+      out = p;
+    }
+    out.connect(audioCtx.destination);
+    src.start(audioCtx.currentTime + (opts.delay || 0));
+    return src;
+  }
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  // eight different kinds of trouser trumpet, built from the real recordings with a bit of processing
+  function fartRecipe(kind, v, pan) {
+    const j = () => rnd(0.94, 1.07);
+    const vol = Math.max(0.05, Math.min(1.4, v));
+    switch (kind % 8) {
+      case 0: // quick little pfft
+        playSample('fart', 3, { rate: 1.3 * j(), gain: 0.9 * vol, pan });
+        break;
+      case 1: // the classic
+        playSample('fart', 0, { rate: j(), gain: vol, pan });
+        break;
+      case 2: // long and low
+        playSample('fart', 0, { rate: 0.72 * j(), gain: 1.05 * vol, lowpass: 1000, pan });
+        break;
+      case 3: // squeaker
+        playSample('fart', 1, { rate: 1.75 * j(), gain: 0.85 * vol, pan });
+        break;
+      case 4: // double trouble
+        playSample('fart', 2, { rate: 1.05 * j(), gain: vol, pan });
+        playSample('fart', 3, { rate: 0.95 * j(), gain: vol, delay: 0.2, pan });
+        break;
+      case 5: // muffled, straight through the pants
+        playSample('fart', 1, { rate: 0.85 * j(), gain: 1.25 * vol, lowpass: 520, pan });
+        break;
+      case 6: // thunderous
+        playSample('fart', 0, { rate: 0.55 * j(), gain: 1.1 * vol, lowpass: 800, pan });
+        playSample('fart', 1, { rate: 0.62 * j(), gain: 0.9 * vol, lowpass: 700, delay: 0.03, pan });
+        break;
+      default: // a moist one
+        playSample('fart', 3, { rate: 0.9 * j(), gain: vol, pan });
+        playSample('bubble', Math.floor(Math.random() * 2), { rate: 1.1, gain: 0.5 * vol, delay: 0.05, pan });
+    }
+    if (Math.random() < 0.22) playSample('gut', Math.floor(Math.random() * 16), { rate: rnd(0.85, 1.1), gain: 0.55 * vol, delay: -0.0, pan });
+  }
+
+  // the little noises a person makes trying to hold it in
+  function voiceLine(type, v, pan) {
+    const vol = Math.max(0.05, Math.min(1.4, v));
+    const i = Math.floor(Math.random() * 10);
+    switch (type) {
+      case 'strain':
+        playSample('grunt', i, { rate: rnd(0.8, 1.05), gain: 0.95 * vol, pan });
+        if (Math.random() < 0.5) playSample('gut', Math.floor(Math.random() * 16), { gain: 0.5 * vol, delay: 0.25, pan });
+        break;
+      case 'panic':
+        playSample('ooh', 0, { rate: rnd(0.95, 1.15), gain: vol, pan });
+        break;
+      case 'hurt':
+        playSample('hurt', i, { rate: rnd(0.85, 1.05), gain: vol, pan });
+        break;
+      case 'gasp':
+        playSample('gasp', 0, { rate: rnd(0.95, 1.1), gain: vol, pan });
+        break;
+      case 'scream':
+        playSample('scream', i, { rate: rnd(0.9, 1.1), gain: vol, pan });
+        break;
+      case 'sigh':
+        playSample('sigh', 0, { rate: rnd(0.9, 1.05), gain: 1.2 * vol, pan });
+        break;
+      default:
+        playSample('burp', i, { gain: vol, pan });
+    }
+  }
+
   let tensionNodes = null;
   function stopTension() {
     if (!tensionNodes) return;
@@ -229,6 +359,39 @@ const SoundFX = (function () {
       osc.start();
       lfo.start();
       tensionNodes = { osc, lfo, gain, audioCtx };
+    },
+    // ---- real body sounds (recordings) ----
+    prepareBody() {
+      return prepareSamples();
+    },
+    bodyReady() {
+      return Object.keys(Samples.buffers).reduce((n, k) => n + Samples.buffers[k].filter(Boolean).length, 0);
+    },
+    fart(kind, volume, pan) {
+      fartRecipe(kind || 0, volume == null ? 1 : volume, pan || 0);
+    },
+    voice(type, volume, pan) {
+      voiceLine(type, volume == null ? 1 : volume, pan || 0);
+    },
+    tummy(volume) {
+      playSample('gut', Math.floor(Math.random() * 16), { rate: rnd(0.9, 1.1), gain: 0.8 * (volume == null ? 1 : volume) });
+    },
+    // the full disaster: a scream, a monster fart and a lot of bubbling
+    accident(volume) {
+      const v = volume == null ? 1 : volume;
+      voiceLine('scream', v);
+      fartRecipe(6, 1.2 * v, 0);
+      setTimeout(() => {
+        fartRecipe(7, v, 0);
+        playSample('bubble', 0, { gain: 0.7 * v, rate: 0.9 });
+      }, 420);
+      setTimeout(() => voiceLine('hurt', 0.8 * v), 900);
+    },
+    // sweet, sweet relief
+    relief(volume) {
+      const v = volume == null ? 1 : volume;
+      voiceLine('sigh', v);
+      setTimeout(() => playSample('flush', Math.floor(Math.random() * 2), { gain: 0.9 * v }), 500);
     },
     // ---- We Gotta Go (haunted maze) ----
     ghost() {

@@ -1,0 +1,65 @@
+{
+ "fart": [
+  "fart_01.mp3",
+  "fart_02.mp3",
+  "fart_03.mp3",
+  "fart_04.mp3"
+ ],
+ "gut": [
+  "gut_01.mp3",
+  "gut_02.mp3",
+  "gut_03.mp3",
+  "gut_04.mp3",
+  "gut_05.mp3",
+  "gut_06.mp3",
+  "gut_07.mp3",
+  "gut_08.mp3",
+  "gut_09.mp3",
+  "gut_10.mp3",
+  "gut_11.mp3",
+  "gut_12.mp3",
+  "gut_13.mp3",
+  "gut_14.mp3",
+  "gut_15.mp3",
+  "gut_16.mp3"
+ ],
+ "grunt": [
+  "grunt_01.mp3",
+  "grunt_02.mp3",
+  "grunt_03.mp3",
+  "grunt_04.mp3",
+  "grunt_05.mp3",
+  "grunt_06.mp3",
+  "grunt_07.mp3"
+ ],
+ "hurt": [
+  "hurt_01.mp3",
+  "hurt_02.mp3",
+  "hurt_03.mp3"
+ ],
+ "ooh": [
+  "ooh_01.mp3"
+ ],
+ "scream": [
+  "scream_01.mp3",
+  "scream_02.mp3"
+ ],
+ "gasp": [
+  "gasp_01.mp3"
+ ],
+ "sigh": [
+  "sigh_01.mp3"
+ ],
+ "burp": [
+  "burp_01.mp3",
+  "burp_02.mp3"
+ ],
+ "flush": [
+  "flush_01.mp3",
+  "flush_02.mp3"
+ ],
+ "bubble": [
+  "bubble_01.mp3",
+  "bubble_02.mp3"
+ ]
+}

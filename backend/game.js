@@ -7,7 +7,6 @@ const { serializePlayers, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } 
 const bots = require('./bots');
 const { pickLine } = require('./botLines');
 const city = require('./city');
-const maze = require('./maze');
 const db = require('./db');
 
 const START_COUNTDOWN_MS = 3400;
@@ -198,16 +197,6 @@ function startGame(io, room) {
     room.awards = null;
     room.teamMode = 0;
     city.startCity(io, room);
-    return;
-  }
-  if (room.category === 'haunted') {
-    clearRoomTimers(room);
-    room.stats = new Map();
-    room.fans = new Map();
-    room.teamPlace = {};
-    room.awards = null;
-    room.teamMode = 0;
-    maze.startMaze(io, room);
     return;
   }
   for (const p of room.players.values()) {
@@ -707,7 +696,6 @@ function resetToLobby(io, room) {
   room.teamPlace = {};
   room.awards = null;
   city.stopCity(room);
-  maze.stopMaze(room);
   room.stagePlan = null;
   room.questionIndex = -1;
   room.answers = new Map();
@@ -732,7 +720,7 @@ function handleLeave(io, room, player) {
   rooms.markDisconnected(room, player.playerId);
   rooms.promoteNextHostIfNeeded(room, player.playerId);
   emitToRoom(io, room, EVENTS.PLAYER_LIST_UPDATE, { players: serializePlayers(room) });
-  if (room.state === 'city' || room.state === 'maze') return; // the simulations notice the player has left
+  if (room.state === 'city') return; // the city simulation notices the player has left
   if (room.state === 'question') maybeEndQuestionEarly(io, room);
   else if ((room.state === 'steal_prompt' || room.state === 'freeze_prompt') && room.stealState && room.stealState.chooserId === player.playerId) {
     resolvePowerChoice(io, room, null);

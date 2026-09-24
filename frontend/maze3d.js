@@ -23,12 +23,11 @@ const Maze3D = (function () {
     return d;
   };
   const SPEED = 165;
-  const WALL_H = 64;
+  const WALL_H = 78;
   const mobile = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || Math.min(screen.width, screen.height) < 700;
   const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const KEY_COL = { a: '#ff5a5a', b: '#5aa8ff', c: '#5aff9a' };
   const TINTS = ['#e63946', '#4361ee', '#2a9d8f', '#f4a261', '#9b5de5', '#f15bb5', '#00bbf9', '#8ac926', '#ff7b00', '#7209b7'];
-  const SOLDIER_SCALE = 27;
 
   let canvas = null;
   let overlay = null;
@@ -75,7 +74,7 @@ const Maze3D = (function () {
   let lightning = { at: 0, until: 0, next: 0 };
   let danger = 0;
 
-  const cam = { yaw: 0, yawT: 0, pitch: 1.15, pitchT: 1.15, dist: 430, distT: 430, x: 0, z: 0, shake: 0 };
+  const cam = { yaw: 0, yawT: 0, pitch: 1.15, pitchT: 1.15, dist: 380, distT: 380, x: 0, z: 0, shake: 0 };
   const camPos = new T.Vector3();
   const focus = { x: 0, z: 0 };
 
@@ -92,8 +91,6 @@ const Maze3D = (function () {
   let glowTex = null;
   let coneTex = null;
   const labels = [];
-  let soldierGLTF = null;
-  let modelWait = Promise.resolve();
   const matCache = new Map();
 
   /* ---------------------------------------------------------- layout */
@@ -834,94 +831,62 @@ const Maze3D = (function () {
 
   /* -------------------------------------------------------- characters */
 
-  function loadModels() {
-    if (!T.GLTFLoader || !T.SkeletonUtils) return;
-    modelWait = new Promise((resolve) => {
-      new T.GLTFLoader().load(
-        'models/Soldier.glb',
-        (g) => {
-          soldierGLTF = g;
-          resolve();
-        },
-        undefined,
-        () => resolve()
-      );
-    });
-  }
+  const SOLDIER_SCALE = 40;
 
   function buildSoldier(idx) {
-    const root = new T.Group();
-    const tint = new T.Color(TINTS[idx % TINTS.length]).lerp(new T.Color('#ffffff'), 0.5);
-    let inner = null;
-    let mixer = null;
-    const acts = {};
-    if (soldierGLTF) {
-      inner = T.SkeletonUtils.clone(soldierGLTF.scene);
-      inner.scale.setScalar(SOLDIER_SCALE);
-      inner.rotation.y = Math.PI / 2;
-      root.add(inner);
-      inner.traverse((m) => {
-        if (!m.isMesh) return;
-        m.castShadow = true;
-        m.receiveShadow = true;
-        m.frustumCulled = false;
-        m.material = m.material.clone();
-        if (/body/i.test(m.material.name)) m.material.color.copy(tint);
-      });
-      mixer = new T.AnimationMixer(inner);
-      for (const name of ['Idle', 'Walk', 'Run']) {
-        const a = mixer.clipAction(T.AnimationClip.findByName(soldierGLTF.animations, name));
-        a.play();
-        a.setEffectiveWeight(name === 'Idle' ? 1 : 0);
-        acts[name] = a;
-      }
-      mixer.update(Math.random() * 2);
+    let s0;
+    if (Soldier.ready()) {
+      s0 = Soldier.create({ scale: SOLDIER_SCALE, tint: TINTS[idx % TINTS.length], tintMix: 0.5 });
     } else {
       // fallback figure if the model failed to load
-      inner = new T.Group();
+      const root = new T.Group();
+      const inner = new T.Group();
       root.add(inner);
-      const b = new T.Mesh(new T.CapsuleGeometry(8, 24, 4, 10), new T.MeshStandardMaterial({ color: tint }));
-      b.position.y = 22;
-      b.castShadow = true;
-      inner.add(b);
+      const b0 = new T.Mesh(new T.CapsuleGeometry(10, 34, 4, 10), new T.MeshStandardMaterial({ color: TINTS[idx % TINTS.length] }));
+      b0.position.y = 32;
+      b0.castShadow = true;
+      inner.add(b0);
+      s0 = { root, inner, scale: 40 };
     }
+    const k = s0.scale / 27;
     const blob = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
-    blob.scale.set(30, 30, 1);
+    blob.scale.set(32 * k, 32 * k, 1);
     blob.position.y = 0.9;
-    root.add(blob);
+    s0.root.add(blob);
     // torch beam
-    const cone = new T.Mesh(new T.ConeGeometry(30, 130, 18, 1, true), new T.MeshBasicMaterial({ map: coneTex, transparent: true, opacity: 0.16, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false }));
+    const cone = new T.Mesh(new T.ConeGeometry(34, 140, 18, 1, true), new T.MeshBasicMaterial({ map: coneTex, transparent: true, opacity: 0.16, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false }));
     cone.rotation.z = -Math.PI / 2; // apex at the origin pointing +X (forward)
-    cone.geometry.translate(0, -65, 0);
-    cone.position.set(10, 30, 8);
-    root.add(cone);
-    return { root, inner, mixer, acts, w: { Idle: 1, Walk: 0, Run: 0 }, cone, h: 0, seen: false, px: 0, py: 0, phase: Math.random() * TAU, tint };
+    cone.geometry.translate(0, -70, 0);
+    cone.position.set(14, 40, 10);
+    s0.root.add(cone);
+    return Object.assign(s0, { blob, cone, h: 0, seen: false, px: 0, py: 0, phase: Math.random() * TAU });
   }
 
   function animateSoldier(p, dt, moving, speed, st) {
-    const stunned = !!(st && st.stunned);
-    if (p.mixer) {
-      const go = moving && !stunned;
-      const target = { Idle: go ? 0 : 1, Walk: go && speed < 90 ? 1 : 0, Run: go && speed >= 90 ? 1 : 0 };
-      const k = Math.min(1, dt * 9);
-      for (const n of ['Idle', 'Walk', 'Run']) {
-        p.w[n] += (target[n] - p.w[n]) * k;
-        p.acts[n].setEffectiveWeight(Math.max(0.0001, p.w[n]));
-      }
-      p.acts.Walk.setEffectiveTimeScale(clamp(speed / 38, 0.6, 2.2));
-      p.acts.Run.setEffectiveTimeScale(clamp(speed / 125, 0.7, 1.9));
-      p.mixer.update(dt);
-    }
-    // the more the bladder fills, the more everyone hops and wobbles
-    const dance = clamp((bladder - 45) / 55, 0, 1);
-    const hop = Math.abs(Math.sin(nowT * (10 + dance * 8) + p.phase)) * 4.5 * dance;
-    p.inner.position.y = stunned ? 0 : hop;
-    p.inner.rotation.z = stunned ? Math.sin(nowT * 5) * 0.3 : Math.sin(nowT * 9 + p.phase) * 0.14 * dance;
-    p.inner.rotation.x = stunned ? 0.25 : 0;
-    const flashing = !!(st && st.flash);
+    if (p.mixer) Soldier.update(p, dt, Object.assign({ moving, speed, time: nowT }, st));
+    const flashing = !!(st && st.flashing);
     p.cone.material.opacity = flashing ? 0.7 : p.isMe ? 0.07 : 0.035;
     p.cone.scale.set(flashing ? 1.8 : 1, flashing ? 1.6 : 1, flashing ? 1.8 : 1);
+  }
+
+  const smoothstep = (a0, a1, x) => {
+    const k = clamp((x - a0) / (a1 - a0), 0, 1);
+    return k * k * (3 - 2 * k);
+  };
+  // body language from the bladder level and the server's state flags
+  function poseOf(b, flags) {
+    const clench = flags & 256 ? 1 : 0;
+    const shame = flags & 128 ? 1 : 0;
+    return {
+      hold: shame ? 0 : Math.max(smoothstep(60, 86, b), clench),
+      squeeze: shame ? 0 : smoothstep(50, 80, b),
+      hunch: shame ? 0 : smoothstep(62, 92, b),
+      hop: shame ? 0 : smoothstep(48, 96, b) * (0.35 + 0.65 * smoothstep(70, 100, b)),
+      butt: shame ? 0 : clench,
+      shame,
+      shout: flags & 1024 ? 1 : 0,
+    };
   }
 
   function buildGhost(i) {
@@ -1024,6 +989,48 @@ const Maze3D = (function () {
     }
   }
 
+  /* ---- stink clouds ---- */
+  let smoke = [];
+  function makeSmoke() {
+    smoke = [];
+    for (let i = 0; i < 70; i++) {
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, opacity: 0, color: 0xb5cf6a }));
+      sp.visible = false;
+      scene.add(sp);
+      smoke.push({ sp, v: new T.Vector3(), life: 0, max: 1, size: 20 });
+    }
+  }
+  function puff(x, y, z, n, color, size, life, rise) {
+    let made = 0;
+    for (const p of smoke) {
+      if (p.life > 0) continue;
+      p.sp.position.set(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 8, z + (Math.random() - 0.5) * 10);
+      p.sp.material.color.set(color);
+      const a = Math.random() * TAU;
+      p.v.set(Math.cos(a) * (4 + Math.random() * 16), (rise || 20) * (0.6 + Math.random() * 0.7), Math.sin(a) * (4 + Math.random() * 16));
+      p.max = p.life = (life || 1.4) * (0.75 + Math.random() * 0.5);
+      p.size = (size || 20) * (0.7 + Math.random() * 0.5);
+      p.sp.visible = true;
+      if (++made >= n) break;
+    }
+  }
+  function stepSmoke(dt) {
+    for (const p of smoke) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.sp.visible = false;
+        continue;
+      }
+      p.sp.position.addScaledVector(p.v, dt);
+      p.v.multiplyScalar(1 - dt * 0.8);
+      const k = p.life / p.max;
+      p.sp.material.opacity = Math.min(0.55, k * 0.8);
+      p.sp.scale.setScalar(p.size * (1.7 - k * 0.7));
+    }
+  }
+  const TOOT_WORDS = ['PFFT!', 'PRRT!', 'BRAAP!', 'toot!', 'psst…', 'BLURP!', 'PFFFRT!', 'phbbt!'];
+
   function fxEvent(e) {
     if (!scene) return;
     const idx = indexById.get(e.playerId);
@@ -1038,14 +1045,27 @@ const Maze3D = (function () {
       if (idx === meIdx && !reduceMotion) cam.shake = Math.max(cam.shake, 14);
     } else if (e.type === 'key') {
       const k = keyObjs.get(e.letter);
-      if (k) {
-        k.taken = true;
-        burst(k.grp.position.x, 34, k.grp.position.z, KEY_COL[e.letter], 34, 150, 11, 1, 40);
-      }
+      if (k && idx === meIdx) burst(k.grp.position.x, 34, k.grp.position.z, KEY_COL[e.letter], 34, 150, 11, 1, 40);
       fx.push({ kind: 'text', text: `🔑 ${e.letter.toUpperCase()}!`, color: KEY_COL[e.letter], x: pos.x, z: pos.z, born: nowT, life: 1.6 });
-    } else if (e.type === 'toilet') {
-      burst(P.toilet.x, 40, P.toilet.y, '#ffe27a', 30, 120, 12, 1, 40);
-      fx.push({ kind: 'text', text: '🚽 AAAH!', color: '#ffe27a', x: P.toilet.x, z: P.toilet.y, born: nowT, life: 1.8 });
+    } else if (e.type === 'fart' || e.type === 'accident' || e.type === 'relief' || e.type === 'shout') {
+      const h = o && o.h !== undefined ? o.h : 0;
+      const bx = pos.x - Math.cos(h) * 18;
+      const bz = pos.z + Math.sin(h) * 18;
+      if (e.type === 'fart') {
+        puff(bx, 34, bz, e.big ? 16 : 9, '#b5cf6a', e.big ? 30 : 22, e.big ? 2.2 : 1.5, 18);
+        if (!reduceMotion) fx.push({ kind: 'text', text: TOOT_WORDS[(e.kind || 0) % TOOT_WORDS.length], color: '#c8e58a', x: pos.x, z: pos.z, born: nowT, life: 1.2 });
+      } else if (e.type === 'accident') {
+        puff(pos.x, 30, pos.z, 30, '#8fb04c', 38, 3, 16);
+        puff(pos.x, 46, pos.z, 12, '#6d7c3a', 30, 3.4, 22);
+        fx.push({ kind: 'text', text: '💩 OOPS!', color: '#e0c56a', x: pos.x, z: pos.z, born: nowT, life: 2.4 });
+        if (idx === meIdx && !reduceMotion) cam.shake = Math.max(cam.shake, 9);
+      } else if (e.type === 'relief') {
+        burst(pos.x, 40, pos.z, '#ffe27a', 30, 120, 12, 1, 40);
+        fx.push({ kind: 'text', text: '😌 AAAH!', color: '#ffe27a', x: pos.x, z: pos.z, born: nowT, life: 2 });
+      } else {
+        fx.push({ kind: 'text', text: '📢 AAAAH!', color: '#bfe6ff', x: pos.x, z: pos.z, born: nowT, life: 1.4 });
+        fx.push({ kind: 'ring', x: pos.x, z: pos.z, born: nowT, life: 0.7, color: '#bfe6ff' });
+      }
     }
   }
 
@@ -1061,7 +1081,7 @@ const Maze3D = (function () {
 
   /* -------------------------------------------------------- start / state */
 
-  function start(payload, myPlayerId, h) {
+  function start(payload, myPlayerId, h, opts) {
     hooks = h || hooks;
     P = payload;
     parseLayout(payload);
@@ -1083,7 +1103,9 @@ const Maze3D = (function () {
       });
     }
     particles = [];
+    smoke = [];
     buildWorld();
+    makeSmoke();
     playerObjs = players.map(() => null);
     ghostObjs = [];
     for (let i = 0; i < payload.ghostCount; i++) {
@@ -1093,12 +1115,13 @@ const Maze3D = (function () {
     }
     cam.yaw = cam.yawT = 0;
     cam.pitch = cam.pitchT = 1.15;
-    cam.dist = cam.distT = 430;
+    cam.dist = cam.distT = 380;
     lightning = { at: 0, until: 0, next: nowT + 12 + Math.random() * 10 };
     if (payload.snapshot) applyState(payload.snapshot);
     running = false;
     resize();
-    Promise.race([modelWait, new Promise((r) => setTimeout(r, 7000))]).then(begin);
+    if (opts && opts.paused) return;
+    Promise.race([Soldier.load(), new Promise((r) => setTimeout(r, 7000))]).then(begin);
   }
 
   function begin() {
@@ -1158,7 +1181,7 @@ const Maze3D = (function () {
     return {
       p: b.p.map((e, i) => {
         const o = a.p[i] || e;
-        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], keys: e[5], points: e[6] };
+        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], keys: e[5], points: e[6], bladder: e[8] || 0 };
       }),
       g: b.g.map((e, i) => {
         const o = a.g[i] || e;
@@ -1217,9 +1240,10 @@ const Maze3D = (function () {
       }
       o.root.position.set(x, 0, y);
       o.root.rotation.y = o.h;
-      animateSoldier(o, dt, moving, f.speed, { stunned: !!(flags & 1), flash: !!(flags & 4) });
+      const bl = isMe ? bladder : e.bladder;
+      animateSoldier(o, dt, moving, f.speed, Object.assign({ stunned: !!(flags & 1), flashing: !!(flags & 512) }, poseOf(bl, flags)));
       o.pos = { x, y };
-      labels.push({ x, z: y, h: 62, info, isMe, idx: e.idx, flags });
+      labels.push({ x, z: y, h: 92, info, isMe, idx: e.idx, flags, bladder: bl });
       if (isMe && moving && Math.random() < dt * 8) burst(x, 2, y, '#7a7f96', 1, 14, 8, 0.5, -8);
     }
 
@@ -1347,7 +1371,8 @@ const Maze3D = (function () {
       d.lbl.material.opacity = 1 - d.open;
       d.grp.visible = d.open < 0.985;
     }
-    for (const [, k] of keyObjs) {
+    for (const [letter, k] of keyObjs) {
+      k.taken = opened.has(letter.toUpperCase());
       if (k.taken) {
         k.gone = Math.min(1, k.gone + dt * 3);
         k.grp.scale.setScalar(Math.max(0.001, 1 - k.gone));
@@ -1412,7 +1437,7 @@ const Maze3D = (function () {
       octx.fill();
       octx.fillStyle = L.isMe ? '#2a1b00' : '#fff';
       octx.fillText(label, p.x, p.y - 3);
-      const dance = bladder > 70;
+      const dance = (L.bladder || 0) > 70;
       if (L.flags & 1) {
         octx.font = `${16 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
         for (let k = 0; k < 3; k++) {
@@ -1424,7 +1449,7 @@ const Maze3D = (function () {
         octx.fillText('💭', p.x + 26, p.y - fs - 10);
       } else if (dance) {
         octx.font = `${17 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
-        octx.fillText(bladder > 88 ? '😱💦' : '😬', p.x + 30, p.y - fs - 6 + Math.sin(nowT * 12 + L.idx) * 3);
+        octx.fillText((L.bladder || 0) > 88 ? '😱💦' : '😬', p.x + 30, p.y - fs - 6 + Math.sin(nowT * 12 + L.idx) * 3);
       }
       const b = bubbles.get(L.idx);
       if (b && b.until > nowT) {
@@ -1608,6 +1633,7 @@ const Maze3D = (function () {
     updateCamera(dt);
     updateWorld(nowT, dt);
     stepParticles(dt);
+    stepSmoke(dt);
     renderer.render(scene, camera);
     drawOverlay();
     drawMinimap(s);
@@ -1799,7 +1825,7 @@ const Maze3D = (function () {
     renderer.setClearColor(0x0a0d1e, 1);
     const cap = renderer.capabilities;
     quality = mobile ? { texScale: 0.85, shadowSize: 1024, aniso: Math.min(2, cap.getMaxAnisotropy()) } : { texScale: 1.25, shadowSize: 2048, aniso: Math.min(8, cap.getMaxAnisotropy()) };
-    loadModels();
+    Soldier.load();
     mini = miniEl;
     mctx = mini.getContext('2d');
     hooks = h || {};
@@ -1826,6 +1852,7 @@ const Maze3D = (function () {
     stop,
     applyState,
     fx: fxEvent,
+    resume() { if (P && !running) begin(); },
     say,
     floatText,
     get running() { return running; },
@@ -1833,7 +1860,8 @@ const Maze3D = (function () {
     get cam() { return cam; },
     get layout() { return P; },
     get opened() { return opened; },
-    walkTo(x, y) { goPath = routeTo(me.x, me.y, x, y); },
+    walkTo(x, y) { goPath = routeTo(me.x, me.y, x, y); return !!goPath; },
+    get hasPath() { return !!(goPath && goPath.length); },
     reduceMotion,
   };
 })();

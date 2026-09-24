@@ -14,6 +14,7 @@ const City3D = (function () {
 
   const TAU = Math.PI * 2;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
   const lerp = (a, b, k) => a + (b - a) * k;
   const angDiff = (a, b) => {
     let d = (b - a) % TAU;
@@ -66,7 +67,7 @@ const City3D = (function () {
   let snaps = [];
   let offset = 0;
   let startsAt = 0;
-  let me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0 };
+  let me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0, bladder: 0, world: 0 };
   const keys = { up: false, down: false, left: false, right: false };
   let joy = { x: 0, y: 0 };
   let goTo = null;
@@ -75,7 +76,7 @@ const City3D = (function () {
   const bubbles = new Map();
 
   // camera rig
-  const cam = { yaw: 0, yawT: 0, pitch: 1.04, pitchT: 1.04, dist: 410, distT: 410, x: 0, z: 0, shake: 0 };
+  const cam = { yaw: 0, yawT: 0, pitch: 1.04, pitchT: 1.04, dist: 350, distT: 350, x: 0, z: 0, shake: 0 };
   const camPos = new T.Vector3();
   const focus = { x: 0, z: 0 };
 
@@ -240,119 +241,63 @@ const City3D = (function () {
     return m;
   }
 
-  /* ------------------------------------------- skinned soldier model */
+  /* ------------------------------------------- skinned soldier model (shared) */
 
-  // A real rigged, textured character (Mixamo "Vanguard", MIT-hosted in three.js examples)
-  // with Idle / Walk / Run clips. Everyone in the city is this model, tinted per person.
-  let soldierGLTF = null;
-  let modelWait = Promise.resolve();
-  const SOLDIER_SCALE = 27; // 1.83 m model -> ~49 world units
-
-  function loadModels() {
-    if (!T.GLTFLoader || !T.SkeletonUtils) return;
-    modelWait = new Promise((resolve) => {
-      new T.GLTFLoader().load(
-        'models/Soldier.glb',
-        (g) => {
-          soldierGLTF = g;
-          resolve();
-        },
-        undefined,
-        (err) => {
-          console.warn('soldier model failed to load, using the built-in figures', err);
-          resolve();
-        }
-      );
-    });
-  }
+  // Everyone in the city is the rigged Mixamo soldier from soldier.js, tinted per person. Big enough
+  // that the acting (holding it in!) reads clearly from the chase camera.
+  const SOLDIER_SCALE = 40;
 
   function buildSoldier(look, o) {
     geos();
     const npc = !!o.npc;
-    const root = new T.Group();
-    const inner = T.SkeletonUtils.clone(soldierGLTF.scene);
-    inner.scale.setScalar(SOLDIER_SCALE * (npc ? look.sv : 1));
-    inner.rotation.y = Math.PI / 2; // the model faces +Z, our heading faces +X
-    root.add(inner);
-    const tint = new T.Color(look.shirt).lerp(new T.Color('#ffffff'), npc ? 0.4 : 0.55);
-    inner.traverse((m) => {
-      if (!m.isMesh) return;
-      m.castShadow = npc ? q.npcShadows : true;
-      m.receiveShadow = true;
-      m.frustumCulled = false;
-      m.material = m.material.clone();
-      if (/body/i.test(m.material.name)) m.material.color.copy(tint);
-      m.material.roughness = 0.62;
-      world && world.envMats.push(m.material);
+    const s0 = Soldier.create({
+      scale: SOLDIER_SCALE * (npc ? look.sv * 0.94 : 1),
+      tint: look.shirt,
+      tintMix: npc ? 0.4 : 0.55,
+      castShadow: npc ? q.npcShadows : true,
+      envMats: world && world.envMats,
+      gun: !npc,
     });
-    const mixer = new T.AnimationMixer(inner);
-    const acts = {};
-    for (const name of ['Idle', 'Walk', 'Run']) {
-      const a = mixer.clipAction(T.AnimationClip.findByName(soldierGLTF.animations, name));
-      a.play();
-      a.setEffectiveWeight(name === 'Idle' ? 1 : 0);
-      acts[name] = a;
-    }
-    mixer.update(Math.random() * 2);
-
-    // rifle in the right hand
-    const gun = new T.Group();
-    gun.visible = false;
-    const hand = inner.getObjectByName('mixamorigRightHand');
-    if (hand) {
-      const ws = new T.Vector3();
-      hand.getWorldScale(ws);
-      gun.scale.setScalar(1 / (ws.x || 0.27));
-      gun.position.set(0, 6, 3);
-      gun.rotation.set(0, 0, Math.PI / 2);
-      hand.add(gun);
-    } else root.add(gun);
-    const metal = pm('#23262c', 0.45, 0.7);
-    part(G.gunBody, metal, gun, 0, -3, 0);
-    part(G.gunBarrel, pm('#111', 0.4, 0.8), gun, 0, -14, 0);
-    part(G.gunMag, pm('#1a1c20', 0.6, 0.4), gun, 0, -3.5, 0).position.x = 2.4;
-    part(G.gunScope, pm('#2c313a', 0.4, 0.6), gun, 0, -1, 0).position.x = -1.9;
-    const tip = part(new T.SphereGeometry(1.6, 6, 6), new T.MeshBasicMaterial({ color: 0xffa040, toneMapped: false }), gun, 0, -19, 0, false);
-    tip.visible = false;
-
+    const k = s0.scale / 27;
     const blob = new T.Mesh(G.shadow, new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
-    blob.scale.set(32, 32, 1);
+    blob.scale.set(32 * k, 32 * k, 1);
     blob.position.y = 0.9;
-    root.add(blob);
-    const shield = new T.Mesh(new T.SphereGeometry(23, 20, 14), new T.MeshBasicMaterial({ color: 0x5adcff, transparent: true, opacity: 0.2, depthWrite: false, blending: T.AdditiveBlending }));
-    shield.position.y = 25;
+    s0.root.add(blob);
+    const shield = new T.Mesh(new T.SphereGeometry(23 * k, 20, 14), new T.MeshBasicMaterial({ color: 0x5adcff, transparent: true, opacity: 0.2, depthWrite: false, blending: T.AdditiveBlending }));
+    shield.position.y = 25 * k;
     shield.visible = false;
-    root.add(shield);
-
-    return { root, inner, mixer, acts, w: { Idle: 1, Walk: 0, Run: 0 }, gun, tip, shield, blob, phase: Math.random() * TAU, h: 0, px: 0, py: 0, seen: false, soldier: !npc, baseScale: inner.scale.x };
+    s0.root.add(shield);
+    return Object.assign(s0, { blob, shield, phase: Math.random() * TAU, h: 0, px: 0, py: 0, seen: false, soldier: !npc });
   }
 
   function animateSoldier(p, dt, moving, speed, st) {
-    const dazed = !!(st && st.stunned);
-    const won = !!(st && st.finished);
-    const go = moving && !dazed && !(st && st.thinking);
-    const target = { Idle: go ? 0 : 1, Walk: go && speed < 105 ? 1 : 0, Run: go && speed >= 105 ? 1 : 0 };
-    const k = Math.min(1, dt * 9);
-    for (const n of ['Idle', 'Walk', 'Run']) {
-      p.w[n] += (target[n] - p.w[n]) * k;
-      p.acts[n].setEffectiveWeight(Math.max(0.0001, p.w[n]));
-    }
-    p.acts.Walk.setEffectiveTimeScale(clamp(speed / 38, 0.6, 2.2));
-    p.acts.Run.setEffectiveTimeScale(clamp(speed / 125, 0.7, 1.9));
-    p.acts.Idle.setEffectiveTimeScale(dazed ? 0.4 : 1);
-    p.mixer.update(dt);
-    p.inner.position.y = won ? Math.abs(Math.sin(nowT * 7)) * 6 : 0;
-    p.inner.rotation.z = dazed ? Math.sin(nowT * 5) * 0.28 : 0;
-    p.inner.rotation.x = dazed ? 0.22 : 0;
-    p.gun.visible = !!(st && st.armed);
-    p.tip.visible = false;
+    Soldier.update(p, dt, Object.assign({ moving, speed, time: nowT }, st));
+  }
+
+  // body language from the bladder level and the server's state flags
+  const smoothstep = (a0, a1, x) => {
+    const k = clamp((x - a0) / (a1 - a0), 0, 1);
+    return k * k * (3 - 2 * k);
+  };
+  function poseOf(b, flags) {
+    const clench = flags & 256 ? 1 : 0;
+    const shame = flags & 128 ? 1 : 0;
+    return {
+      hold: shame ? 0 : Math.max(smoothstep(60, 86, b), clench),
+      squeeze: shame ? 0 : smoothstep(50, 80, b),
+      hunch: shame ? 0 : smoothstep(62, 92, b),
+      hop: shame ? 0 : smoothstep(48, 96, b) * (0.35 + 0.65 * smoothstep(70, 100, b)),
+      butt: shame ? 0 : clench,
+      shame,
+      shout: flags & 1024 ? 1 : 0,
+    };
   }
 
   // a person, 49 units tall, facing +X (his right hand is +Z)
   function buildPerson(look, o) {
     geos();
-    if (soldierGLTF) return buildSoldier(look, o || {});
+    if (Soldier.ready()) return buildSoldier(look, o || {});
     o = o || {};
     const soldier = !!o.soldier;
     const skin = pm(look.skin, 0.65);
@@ -714,6 +659,80 @@ const City3D = (function () {
     }
   }
 
+  /* ------------------------------------------------------- stink clouds + body fx */
+
+  let smoke = [];
+  function makeSmoke() {
+    smoke = [];
+    for (let i = 0; i < 70; i++) {
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, opacity: 0, color: 0xb5cf6a }));
+      sp.visible = false;
+      scene.add(sp);
+      smoke.push({ sp, v: new T.Vector3(), life: 0, max: 1, size: 20, grow: 1 });
+    }
+  }
+
+  function puff(x, y, z, n, color, size, life, rise) {
+    let made = 0;
+    for (const p of smoke) {
+      if (p.life > 0) continue;
+      p.sp.position.set(x + rand(-5, 5), y + rand(-4, 4), z + rand(-5, 5));
+      p.sp.material.color.set(color);
+      const a = Math.random() * TAU;
+      p.v.set(Math.cos(a) * rand(4, 20), (rise || 20) * rand(0.6, 1.3), Math.sin(a) * rand(4, 20));
+      p.max = p.life = (life || 1.4) * rand(0.75, 1.25);
+      p.size = (size || 20) * rand(0.7, 1.2);
+      p.sp.visible = true;
+      if (++made >= n) break;
+    }
+  }
+
+  function stepSmoke(dt) {
+    for (const p of smoke) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.sp.visible = false;
+        continue;
+      }
+      p.sp.position.addScaledVector(p.v, dt);
+      p.v.multiplyScalar(1 - dt * 0.8);
+      const k = p.life / p.max;
+      p.sp.material.opacity = Math.min(0.55, k * 0.8);
+      p.sp.scale.setScalar(p.size * (1.7 - k * 0.7));
+    }
+  }
+
+  const TOOT_WORDS = ['PFFT!', 'PRRT!', 'BRAAP!', 'toot!', 'psst…', 'BLURP!', 'PFFFRT!', 'phbbt!'];
+
+  // server body events: farts, accidents, relief
+  function fxEvent(e) {
+    if (!scene || !e) return;
+    const idx = indexById.get(e.playerId);
+    const o = idx === undefined ? null : playerObjs[idx];
+    const isMe = idx === meIdx;
+    const px = isMe ? me.x : o && o.pos ? o.pos.x : me.x;
+    const pz = isMe ? me.y : o && o.pos ? o.pos.y : me.y;
+    const h = o && o.heading !== undefined ? o.heading : 0;
+    const bx = px - Math.cos(h) * 16;
+    const bz = pz + Math.sin(h) * 16;
+    if (e.type === 'fart') {
+      puff(bx, 30, bz, e.big ? 16 : 9, '#b5cf6a', e.big ? 30 : 22, e.big ? 2.2 : 1.5, 18);
+      if (!reduceMotion) fx.push({ kind: 'text', text: TOOT_WORDS[(e.kind || 0) % TOOT_WORDS.length], color: '#c8e58a', x: px, y: pz, born: nowT, life: 1.2 });
+    } else if (e.type === 'accident') {
+      puff(px, 26, pz, 30, '#8fb04c', 38, 3, 16);
+      puff(px, 40, pz, 12, '#6d7c3a', 30, 3.4, 22);
+      fx.push({ kind: 'text', text: '💩 OOPS!', color: '#e0c56a', x: px, y: pz, born: nowT, life: 2.4 });
+      if (isMe && !reduceMotion) cam.shake = Math.max(cam.shake, 9);
+    } else if (e.type === 'relief') {
+      burst(px, 40, pz, '#ffe27a', 30, 120, 12, 1, 40);
+      puff(px, 20, pz, 8, '#ffffff', 26, 1.4, 30);
+      fx.push({ kind: 'text', text: '😌 AAAH!', color: '#ffe27a', x: px, y: pz, born: nowT, life: 2 });
+    } else if (e.type === 'shout') {
+      fx.push({ kind: 'text', text: '📢 AAAAH!', color: '#bfe6ff', x: px, y: pz, born: nowT, life: 1.4 });
+    }
+  }
+
   /* ---------------------------------------------------- start / state */
 
   function start(payload, myPlayerId, h) {
@@ -731,26 +750,27 @@ const City3D = (function () {
     fx.length = 0;
     bubbles.clear();
     goTo = null;
-    me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0 };
+    me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0, bladder: 0, world: 0 };
     ensureWorld();
     missionBuilding = missions.map((m) => map.buildings.findIndex((b) => b.door.x === m.door.x && b.door.y === m.door.y));
     buildEntities();
     if (payload.snapshot) applyState(payload.snapshot);
     running = false;
     resize();
-    Promise.race([modelWait, new Promise((r) => setTimeout(r, 7000))]).then(begin);
+    Promise.race([Soldier.load(), new Promise((r) => setTimeout(r, 7000))]).then(begin);
   }
 
   function buildEntities() {
     while (entityGroup.children.length) entityGroup.remove(entityGroup.children[0]);
     if (!particles.length) makeParticles();
+    if (!smoke.length) makeSmoke();
     npcObjs = [];
     for (let i = 0; i < 40; i++) npcObjs.push(null);
     carObjs = [];
     playerObjs = players.map(() => null);
     cam.yaw = cam.yawT = 0;
     cam.pitch = cam.pitchT = 1.04;
-    cam.dist = cam.distT = 410;
+    cam.dist = cam.distT = 350;
   }
 
   function personLook(idx, soldier) {
@@ -787,7 +807,9 @@ const City3D = (function () {
     if (snaps.length > 12) snaps.shift();
     const mine = s.p.find((e) => e[0] === meIdx);
     if (!mine) return;
-    const [, sx, sy, face, flags, mission, points, blaster] = mine;
+    const [, sx, sy, face, flags, mission, points, blaster, bladder, world] = mine;
+    me.bladder = bladder || 0;
+    me.world = world || 0;
     me.flags = flags;
     me.mission = mission;
     me.points = points;
@@ -867,7 +889,7 @@ const City3D = (function () {
     return {
       p: b.p.map((e, i) => {
         const o = a.p[i] || e;
-        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], mission: e[5], points: e[6], blaster: e[7] };
+        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], mission: e[5], points: e[6], blaster: e[7], bladder: e[8] || 0 };
       }),
       n: b.n.map((e, i) => {
         const o = a.n[i] || e;
@@ -961,6 +983,7 @@ const City3D = (function () {
       const y = isMe ? me.y : e.y;
       const flags = isMe ? me.flags : e.flags;
       const blaster = isMe ? me.blaster : e.blaster;
+      const bladderLevel = isMe ? me.bladder : e.bladder;
       let o = playerObjs[e.idx];
       if (!o) {
         const look = personLook(e.idx, true);
@@ -992,7 +1015,7 @@ const City3D = (function () {
         o.car.head.emissiveIntensity = 0.4 + world.night * 3;
         if (moving && Math.random() < dt * 22) burst(x - Math.cos(-o.h) * 30, 4, y + Math.sin(-o.h) * 30, '#cfc9bd', 1, 28, 14, 0.6, -10);
       } else {
-        animatePerson(o.person, dt, moving, f.speed, { armed: blaster > 0, aim: blaster > 0 && !moving, stunned: !!(flags & 1), finished: !!(flags & 32), thinking: !!(flags & 8) });
+        animatePerson(o.person, dt, moving, f.speed, Object.assign({ armed: blaster > 0, aim: blaster > 0 && !moving, stunned: !!(flags & 1), finished: !!(flags & 32), thinking: !!(flags & 8) }, poseOf(bladderLevel, flags)));
         if (isMe && moving && Math.random() < dt * 9) burst(x, 2, y, '#d9d2c2', 1, 18, 9, 0.5, -10);
       }
       o.person.shield.visible = !!(flags & 2);
@@ -1000,8 +1023,9 @@ const City3D = (function () {
         o.person.shield.material.opacity = 0.16 + 0.07 * Math.sin(nowT * 5);
         o.person.shield.scale.setScalar(1 + 0.03 * Math.sin(nowT * 6));
       }
-      labels.push({ x, z: y, h: inCar ? 46 : 58, info, isMe, idx: e.idx, flags });
+      labels.push({ x, z: y, h: inCar ? 60 : 88, info, isMe, idx: e.idx, flags, bladder: bladderLevel });
       o.pos = { x, y };
+      o.heading = o.h;
     }
   }
 
@@ -1300,6 +1324,7 @@ const City3D = (function () {
     updateMarker(nowT);
     world.update(nowT, dt, focus, camPos, target ? missionBuilding[me.mission] : -1);
     stepParticles(dt);
+    stepSmoke(dt);
     drawZaps(s);
     renderer.render(scene, camera);
     drawOverlay();
@@ -1497,7 +1522,7 @@ const City3D = (function () {
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.setClearColor(0x0b1022, 1);
     tuneQuality();
-    loadModels();
+    Soldier.load();
     mini = miniEl;
     mctx = mini.getContext('2d');
     hooks = h || {};
@@ -1518,5 +1543,5 @@ const City3D = (function () {
     });
   }
 
-  return { mount, start, stop, applyState, zapFx, say, floatText, get running() { return running; }, get me() { return me; }, get camYaw() { return cam.yaw; }, get cam() { return cam; }, get missions() { return missions; }, walkTo(x, y) { goTo = { x, y }; }, reduceMotion };
+  return { mount, start, stop, applyState, zapFx, say, floatText, fx: fxEvent, resume() { if (map && !running) begin(); }, get running() { return running; }, get me() { return me; }, get camYaw() { return cam.yaw; }, get cam() { return cam; }, get missions() { return missions; }, walkTo(x, y) { goTo = { x, y }; }, reduceMotion };
 })();

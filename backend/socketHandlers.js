@@ -4,7 +4,6 @@ const game = require('./game');
 const ai = require('./ai');
 const bots = require('./bots');
 const city = require('./city');
-const maze = require('./maze');
 const questionHistory = require('./questionHistory');
 const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
@@ -51,7 +50,6 @@ function buildRoomState(room) {
     teamMode: room.teamMode,
     fans: fanCounts(room),
     city: room.state === 'city' && room.city ? city.initPayload(room) : null,
-    maze: room.state === 'maze' && room.maze ? maze.initPayload(room) : null,
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -155,17 +153,43 @@ function register(io, socket) {
     if (ctx) city.zap(io, ctx.room, ctx.player.playerId);
   });
 
-  socket.on(EVENTS.MAZE_INPUT, ({ dx, dy } = {}) => {
+  // a loud shout into the microphone (the client measures the volume)
+  socket.on(EVENTS.CITY_SHOUT, () => {
     const ctx = getContext(socket);
-    if (ctx) maze.setInput(ctx.room, ctx.player.playerId, dx, dy);
+    if (ctx) city.shout(io, ctx.room, ctx.player.playerId);
   });
-  socket.on(EVENTS.MAZE_ANSWER, ({ choiceIndex } = {}) => {
+
+  // ---- live voice chat: the server only relays WebRTC signalling between the players ----
+  function voiceSet(room) {
+    if (!room.voice) room.voice = new Set();
+    return room.voice;
+  }
+  function dropVoice(room, playerId) {
+    const set = voiceSet(room);
+    if (!set.delete(playerId)) return;
+    io.to(room.code).emit(EVENTS.VOICE_LEFT, { playerId });
+  }
+  socket.on(EVENTS.VOICE_JOIN, () => {
     const ctx = getContext(socket);
-    if (ctx) maze.answer(io, ctx.room, ctx.player.playerId, choiceIndex);
+    if (!ctx) return;
+    const { room, player } = ctx;
+    const set = voiceSet(room);
+    const others = [...set].filter((id) => id !== player.playerId);
+    set.add(player.playerId);
+    socket.emit(EVENTS.VOICE_PEERS, { peers: others });
+    socket.to(room.code).emit(EVENTS.VOICE_JOINED, { playerId: player.playerId });
   });
-  socket.on(EVENTS.MAZE_FLASH, () => {
+  socket.on(EVENTS.VOICE_LEAVE, () => {
     const ctx = getContext(socket);
-    if (ctx) maze.flash(io, ctx.room, ctx.player.playerId);
+    if (ctx) dropVoice(ctx.room, ctx.player.playerId);
+  });
+  socket.on(EVENTS.VOICE_SIGNAL, ({ to, data } = {}) => {
+    const ctx = getContext(socket);
+    if (!ctx || typeof to !== 'string' || !data) return;
+    const target = ctx.room.players.get(to);
+    if (!target || !target.socketId || !target.connected) return;
+    if (JSON.stringify(data).length > 20000) return;
+    io.to(target.socketId).emit(EVENTS.VOICE_SIGNAL_IN, { from: ctx.player.playerId, data });
   });
 
   socket.on(EVENTS.TEAM_SET, ({ teams } = {}) => {
@@ -328,6 +352,7 @@ function register(io, socket) {
     rooms.markDisconnected(room, meta.playerId);
     rooms.promoteNextHostIfNeeded(room, meta.playerId);
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
+    if (room.voice && room.voice.delete(meta.playerId)) io.to(room.code).emit(EVENTS.VOICE_LEFT, { playerId: meta.playerId });
 
     if (room.state === 'question') {
       game.maybeEndQuestionEarly(io, room);

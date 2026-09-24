@@ -31,6 +31,8 @@ const City = (function () {
     zapFx: (...a) => impl && impl.zapFx(...a),
     say: (...a) => impl && impl.say(...a),
     floatText: (...a) => impl && impl.floatText(...a),
+    fx: (...a) => impl && impl.fx && impl.fx(...a),
+    resume: () => impl && impl.resume && impl.resume(),
     get running() { return !!impl && impl.running; },
     get me() { return impl ? impl.me : { x: 0, y: 0 }; },
     get cam() { return impl && impl.cam; },

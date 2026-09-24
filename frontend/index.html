@@ -99,8 +99,7 @@
           <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
           <button id="quickBtn" class="btn btn-accent" type="button">⚡ Quick Play vs Bot</button>
           <button id="dailyBtn" class="btn btn-daily" type="button">📅 Daily Challenge <span class="daily-chip" id="dailyChip"></span></button>
-          <button id="cityBtn" class="btn btn-city" type="button">🌆 City Mission <span class="daily-chip">NEW</span></button>
-          <button id="mazeBtn" class="btn btn-maze" type="button">🚽 We Gotta Go <span class="daily-chip">NEW</span></button>
+          <button id="cityBtn" class="btn btn-city" type="button">🌆 City Mission: We Gotta Go <span class="daily-chip">NEW</span></button>
           <div class="or-divider"><span>or join friends</span></div>
           <label class="field">
             <span>Room code</span>
@@ -313,10 +312,16 @@
           </div>
           <div class="city-rightcol">
             <div class="city-timer" id="cityTimer">8:00</div>
+            <div class="bladder" id="cityBladder" title="Your bladder — find a public toilet before it hits 100%!">
+              <span class="bl-face" id="cbFace">😌</span>
+              <div class="bl-track"><i id="cbFill"></i></div>
+              <b class="bl-pct" id="cbPct">0%</b>
+            </div>
             <canvas id="miniMap" class="mini-map" width="180" height="106" aria-label="Radar"></canvas>
           </div>
         </div>
         <div class="city-items" id="cityItems"></div>
+        <button id="micBtnCity" class="mic-btn" type="button">🎙️ Mic off</button>
         <div class="city-gps hidden" id="cityGps"><span class="gps-arrow" id="gpsArrow">➤</span><span id="gpsDist"></span></div>
         <div class="city-lock hidden" id="cityLock"></div>
         <p class="city-hint" id="cityHint">WASD to move · drag to look around · Space to zap · or tap the ground to walk</p>
@@ -344,6 +349,7 @@
             <div class="city-board" id="mazeBoard"></div>
           </div>
           <div class="city-rightcol">
+            <div class="city-timer" id="mazeTimer">8:00</div>
             <div class="bladder" id="bladder" title="Team bladder — reach the toilet before it hits 100%">
               <span class="bl-face" id="blFace">😌</span>
               <div class="bl-track"><i id="blFill"></i></div>
@@ -353,7 +359,8 @@
           </div>
         </div>
         <div class="city-lock hidden" id="mazeLock"></div>
-        <p class="city-hint" id="mazeHint">Find the keys 🔑 (each one is a quiz), open the doors and reach the 🚽 — WASD to move · drag to look · Space = flashlight</p>
+        <button id="micBtnMaze" class="mic-btn" type="button">🎙️ Mic off</button>
+        <p class="city-hint" id="mazeHint">Win the 3 keys 🔑 (each one is a quiz), open the gates and find the 🚽 exit — WASD to move · drag to look · Space = flashlight · shout into your mic to scare ghosts</p>
       </div>
       <div class="joy" id="mazeJoy"><div class="joy-knob" id="mazeKnob"></div></div>
       <button id="flashBtn" class="zap-btn flash-btn" type="button" aria-label="Flashlight — scare nearby ghosts">🔦</button>
@@ -395,7 +402,7 @@
         <li>🤝 <strong>Team mode</strong> — the host can split the room into 2–4 colour teams. Scores are shared; with 3+ teams the lowest team is knocked out together at the end of each level.</li>
         <li>📅 <strong>Daily Challenge</strong> — the same 12 questions for everyone each day (India time). Your best score of the day is shown on the button, and the Hall of Fame has a “Today” filter.</li>
         <li>😎 <strong>Reactions</strong> pop up over your table for everyone. If you're eliminated, tap a contender's table to cheer for them. The computer players talk back, too. 🎙️ turns on a spoken voice host.</li>
-        <li>🌆 <strong>City Mission</strong> — an open-world city with wandering pedestrians and traffic. Walk (joystick / WASD / tap) to the marked building on the map; at the door a <strong>quiz gate</strong> opens and only a correct answer unlocks the reward: 🔫 a blaster that stuns rivals for 3 s, 🚗 a turbo car, 🛡️ a shield or 💰 cash. Wrong answer = locked out for a few seconds. Finish all missions and reach the ✈️ airport first to win.</li>
+        <li>🌆 <strong>City Mission: We Gotta Go</strong> — race through a 3D city. Every target has a <strong>quiz gate</strong> (a correct answer unlocks 🔫 a blaster, 🚗 a turbo car, 🛡️ a shield or 💰 cash); one target is the 🏚️ <strong>Haunted Mansion</strong> where you win 3 keys with quizzes, dodge ghosts and find the toilet exit. Your <strong>bladder</strong> keeps filling — find a blue public toilet stall (quiz-locked too) before it hits 100%! Switch on 🎙️ to talk with your team, and shout to scare ghosts. First to the 🚽 Royal Restroom wins.</li>
         <li>🏅 At the end you get awards — Fastest Finger, Streak King, Sharpshooter, Point Thief, Comeback Kid.</li>
         <li>🇮🇳 Try the <strong>Hinglish GK</strong> category, or in Study Mode pick English / Hinglish / Hindi and even paste your own notes or upload a PDF to turn them into a quiz.</li>
         <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
@@ -456,6 +463,8 @@
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/SkeletonUtils.js"></script>
+  <script src="soldier.js"></script>
+  <script src="voice.js"></script>
   <script src="arena2d.js"></script>
   <script src="arena3d.js"></script>
   <script src="arena.js"></script>
