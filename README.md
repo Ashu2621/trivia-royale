@@ -18,6 +18,17 @@ A live multiplayer trivia game. No login, no app install — join with a 4-lette
 8. Every finished game's top score is saved to the **🏆 Hall of Fame** (top-right) — an all-time leaderboard across every room ever played.
 9. Pick **📝 Custom / Study Mode** as the category to turn any room into an exam-prep quiz: choose a grade level (Class 1–12, undergraduate, postgraduate, PhD) or a competitive exam (JEE, NEET, UPSC, SSC, Banking, GATE, CAT), then a category and sub-category (e.g. Physics → Optics), and let AI generate original exam-style questions — or add your own questions by hand. Needs at least 4 questions in the pool before the host can start.
 
+## 🌆 City Mission (open world)
+
+A GTA-inspired (cartoon, non-violent) mode: pick **City Mission** on the home screen (or as a room category). Everyone drops into a small open-world city with wandering AI pedestrians and traffic, and gets the same list of missions.
+
+- **Fixed targets on the map** — the current mission is a building marked with a glowing ring and beam, a radar/minimap, and a GPS arrow when it's off-screen (Gun Store, Garage, Bank, Hospital, Arcade, Museum, Radio, Police, Diner … always ending at the ✈️ Airport).
+- **A quiz gate at every door** — reach the door and a question opens; only a correct answer unlocks the reward. A wrong answer locks you out for a few seconds.
+- **Rewards** — 🔫 a blaster (3 zaps that stun a nearby rival for 3 s), 🚗 a turbo car/scooter (1.75x speed for 25 s), 🛡️ a shield (blocks the next stun) or cash. Faster answers score more; the first three to reach the airport get finish bonuses.
+- **Controls** — joystick on phones and tablets, WASD/arrows on laptops (Space to zap), or just tap the map to walk there.
+- **Computer players** run the same missions with A* pathfinding, answer the quiz gates at their level's accuracy, chat, and zap rivals.
+- Server-authoritative: the server simulates the city at 20 Hz and sends 10 Hz snapshots; your own character is predicted locally so it feels instant. Code: `backend/city.js` (simulation), `frontend/city.js` (renderer and controls).
+
 ## More ways to play
 
 - **🤝 Team mode** — the host picks Solo / 2 / 3 / 4 teams in the lobby. Players are dealt onto colour teams (humans first); shirts and table stripes show the team, a live team-score strip sits above the map, and steal/freeze can only target other teams. With 3+ teams the lowest-scoring team is knocked out together at the end of each level; with 2 teams the match is a straight team-vs-team score race.

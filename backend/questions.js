@@ -92,6 +92,11 @@ const CATEGORIES = {
       { text: '"Jai Hind" ka naara kisne diya?', choices: ['Bhagat Singh', 'Subhash Chandra Bose', 'Lala Lajpat Rai', 'Bal Gangadhar Tilak'], correctIndex: 1 },
     ],
   },
+  city: {
+    label: 'City Mission',
+    emoji: '🌆',
+    questions: [], // the quiz gates draw from every ready-made bank
+  },
   daily: {
     label: 'Daily Challenge',
     emoji: '📅',
@@ -143,7 +148,7 @@ function getDailyQuestions() {
   if (dailyCache.key === key) return dailyCache.questions;
   const pool = [];
   for (const [catKey, c] of Object.entries(CATEGORIES)) {
-    if (catKey === 'custom' || catKey === 'daily') continue;
+    if (catKey === 'custom' || catKey === 'daily' || catKey === 'city') continue;
     pool.push(...c.questions);
   }
   const rnd = seededRandom(`trivia-royale-${key}`);
@@ -158,6 +163,11 @@ function getDailyQuestions() {
 function getQuestions(categoryKey) {
   const key = resolveCategory(categoryKey);
   if (key === 'daily') return getDailyQuestions();
+  if (key === 'city') {
+    return Object.entries(CATEGORIES)
+      .filter(([k]) => !['custom', 'daily', 'city'].includes(k))
+      .flatMap(([, c]) => c.questions);
+  }
   return CATEGORIES[key].questions;
 }
 

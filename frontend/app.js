@@ -85,6 +85,28 @@
     spectatorMsg: el('spectatorMsg'),
     backBtn: el('backBtn'),
     voiceBtn: el('voiceBtn'),
+    cityBtn: el('cityBtn'),
+    cityCanvas: el('cityCanvas'),
+    miniMap: el('miniMap'),
+    joy: el('joy'),
+    joyKnob: el('joyKnob'),
+    cityMission: el('cityMission'),
+    cityTimer: el('cityTimer'),
+    cityBoard: el('cityBoard'),
+    cityItems: el('cityItems'),
+    cityGps: el('cityGps'),
+    gpsArrow: el('gpsArrow'),
+    gpsDist: el('gpsDist'),
+    cityLock: el('cityLock'),
+    cityHint: el('cityHint'),
+    zapBtn: el('zapBtn'),
+    zapCount: el('zapCount'),
+    cityQuiz: el('cityQuiz'),
+    cqHead: el('cqHead'),
+    cqBar: el('cqBar'),
+    cqQ: el('cqQ'),
+    cqChoices: el('cqChoices'),
+    cqResult: el('cqResult'),
     dailyBtn: el('dailyBtn'),
     dailyChip: el('dailyChip'),
     teamControls: el('teamControls'),
@@ -173,6 +195,12 @@
   let userTheme = 'candy';
   let stageActive = false;
   let historyArmed = false;
+  let quickBotsWanted = 1;
+  let cityInfo = null;
+  let cityMeIdx = -1;
+  let cityOffset = 0;
+  let quizRAF = null;
+  let lockTimer = null;
   let teamMode = 0;
   let notesPayload = null;
   let dailyDate = null;
@@ -359,6 +387,8 @@
       tensionOn = false;
     }
     if (id === 'lobby' || id === 'home') leaveStage();
+    document.body.classList.toggle('in-city', id === 'city');
+    if (id !== 'city' && City.running) City.stop();
     refs.backBtn.classList.toggle('hidden', id === 'home');
     if (id !== 'home' && !historyArmed) {
       historyArmed = true;
@@ -661,9 +691,9 @@
   }
 
   function renderTeamControls() {
-    const host = amHost();
+    const host = amHost() && currentCategory !== 'city';
     refs.teamControls.classList.toggle('hidden', !host);
-    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode);
+    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode || currentCategory === 'city');
     refs.lobbyModeMsg.textContent = teamMode ? `🤝 Team mode — ${teamMode} teams` : '';
     if (!host) return;
     refs.teamPills.innerHTML = '';
@@ -1261,6 +1291,8 @@
     hideCountdown();
     if (roomState.state === 'lobby') {
       showLobby();
+    } else if (roomState.state === 'city' && roomState.city) {
+      startCityView(roomState.city);
     } else if (roomState.state === 'starting') {
       enterStage();
       showView('question');
@@ -1326,7 +1358,10 @@
     };
     saveSession();
     applyRoomState(data.roomState);
-    if (quickPending && data.isCreator) socket.emit(EVENTS.BOT_ADD, { difficulty: selectedTier });
+    if (quickPending && data.isCreator) {
+      const tiers = quickBotsWanted > 1 ? ['veteran', 'elite', 'rookie'] : [selectedTier];
+      for (let i = 0; i < quickBotsWanted; i++) socket.emit(EVENTS.BOT_ADD, { difficulty: tiers[i % tiers.length] });
+    }
   });
 
   socket.on(EVENTS.ROOM_ERROR, ({ code, message }) => {
@@ -1342,7 +1377,7 @@
 
   socket.on(EVENTS.PLAYER_LIST_UPDATE, ({ players: p }) => {
     players = p;
-    if (quickPending && players.some((x) => x.isBot) && activeView === 'lobby') {
+    if (quickPending && players.filter((x) => x.isBot).length >= quickBotsWanted && activeView === 'lobby') {
       quickPending = false;
       socket.emit(EVENTS.GAME_START);
     }
@@ -1727,6 +1762,68 @@
     renderLiveBoard();
   });
 
+  socket.on(EVENTS.CITY_START, (payload) => startCityView(payload));
+
+  socket.on(EVENTS.CITY_STATE, (snap) => {
+    if (activeView !== 'city') return;
+    City.applyState(snap);
+    updateCityHud(snap);
+  });
+
+  socket.on(EVENTS.CITY_QUIZ, (q) => {
+    if (activeView === 'city') openQuiz(q);
+  });
+
+  socket.on(EVENTS.CITY_RESULT, (r) => {
+    const buttons = [...refs.cqChoices.querySelectorAll('.cq-choice')];
+    buttons.forEach((b, i) => {
+      b.disabled = true;
+      if (i === r.correctIndex) b.classList.add('right');
+      else if (b.classList.contains('selected')) b.classList.add('wrong');
+    });
+    refs.cqResult.classList.remove('hidden', 'good', 'bad');
+    if (r.correct) {
+      refs.cqResult.classList.add('good');
+      refs.cqResult.textContent = r.finished ? `🏁 MISSION COMPLETE — you made it! +${r.gained}` : `✅ Unlocked ${r.reward ? r.reward.label : ''}! +${r.gained}`;
+      SoundFX.combo(4);
+      vibrate([30, 40, 30]);
+      Engine.flash('rgba(62,224,143,0.3)');
+      City.floatText(`+${r.gained}`, '#3ee08f');
+      if (r.finished) SoundFX.win();
+    } else {
+      refs.cqResult.classList.add('bad');
+      refs.cqResult.textContent = `❌ Wrong — access denied. Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
+      SoundFX.wrong();
+      vibrate([40, 60, 40]);
+      Engine.flash('rgba(255,60,90,0.3)');
+      clearTimeout(lockTimer);
+      const until = Date.now() + r.lockoutMs;
+      refs.cityLock.classList.remove('hidden');
+      const tickLock = () => {
+        const left = until - Date.now();
+        if (left <= 0) return refs.cityLock.classList.add('hidden');
+        refs.cityLock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
+        lockTimer = setTimeout(tickLock, 200);
+      };
+      tickLock();
+    }
+    setTimeout(closeQuiz, r.correct ? 1500 : 2200);
+  });
+
+  socket.on(EVENTS.CITY_FX, ({ type, from, to, blocked }) => {
+    if (type !== 'zap' || activeView !== 'city') return;
+    City.zapFx(from, to, blocked);
+    if (to === mySession.playerId && !blocked) {
+      SoundFX.freeze();
+      vibrate([60, 40, 60]);
+      Engine.flash('rgba(255,224,77,0.3)');
+    } else SoundFX.steal();
+  });
+
+  socket.on(EVENTS.CITY_FEED, ({ text }) => {
+    if (activeView === 'city') pushFeed(escapeHtml(text));
+  });
+
   socket.on(EVENTS.TEAM_UPDATE, ({ teamMode: tm }) => {
     teamMode = tm || 0;
     if (activeView === 'lobby') {
@@ -1745,6 +1842,7 @@
 
   socket.on(EVENTS.BOT_SAY, ({ playerId, text }) => {
     if (activeView === 'question') Arena.say(playerId, text);
+    else if (activeView === 'city') City.say(playerId, text);
   });
 
   socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
@@ -1791,6 +1889,7 @@
       return;
     }
     quickPending = true;
+    quickBotsWanted = 1;
     mySession.name = name;
     mySession.avatar = selectedAvatar;
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: refs.categorySelect.value });
@@ -1813,12 +1912,25 @@
     renderDailyChip();
   }
 
+  refs.cityBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    quickPending = true;
+    quickBotsWanted = 3;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'city' });
+  });
+
   refs.dailyBtn.addEventListener('click', () => {
     SoundFX.unlock();
     SoundFX.click();
     const name = requireName();
     if (!name) return;
     quickPending = true;
+    quickBotsWanted = 1;
     mySession.name = name;
     mySession.avatar = selectedAvatar;
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'daily' });
@@ -1964,10 +2076,144 @@
     socket.emit(EVENTS.GAME_PLAY_AGAIN);
   });
 
+  // ---- City Mission (open world) ----
+  City.mount(refs.cityCanvas, refs.miniMap, refs.joy, refs.joyKnob, {
+    sendInput: (dx, dy) => socket.emit(EVENTS.CITY_INPUT, { dx, dy }),
+    zap: () => socket.emit(EVENTS.CITY_ZAP),
+    gps: updateGps,
+  });
+  refs.zapBtn.addEventListener('click', () => socket.emit(EVENTS.CITY_ZAP));
+
+  function updateTopbarHeight() {
+    const tb = document.querySelector('.topbar');
+    if (tb) document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
+  }
+  updateTopbarHeight();
+  window.addEventListener('resize', updateTopbarHeight);
+
+  // A compass arrow to the current target when it is off-screen, like a GPS.
+  function updateGps(target, screen, meWorld) {
+    if (!target || activeView !== 'city') {
+      refs.cityGps.classList.add('hidden');
+      return;
+    }
+    const w = refs.cityCanvas.clientWidth;
+    const h = refs.cityCanvas.clientHeight;
+    const margin = 44;
+    const dist = Math.round(Math.hypot(target.door.x - meWorld.x, target.door.y - meWorld.y) / 10);
+    const onScreen = screen.x > margin && screen.x < w - margin && screen.y > margin && screen.y < h - margin;
+    if (onScreen) {
+      refs.cityGps.classList.add('hidden');
+      return;
+    }
+    const cx = w / 2;
+    const cy = h / 2;
+    const ang = Math.atan2(screen.y - cy, screen.x - cx);
+    const k = Math.min((w / 2 - margin) / Math.abs(Math.cos(ang) || 1e-6), (h / 2 - margin - 40) / Math.abs(Math.sin(ang) || 1e-6));
+    refs.cityGps.style.left = `${cx + Math.cos(ang) * k}px`;
+    refs.cityGps.style.top = `${cy + Math.sin(ang) * k}px`;
+    refs.gpsArrow.style.transform = `rotate(${ang}rad)`;
+    refs.gpsDist.textContent = `${dist} m`;
+    refs.cityGps.classList.remove('hidden');
+  }
+
+  function fmtClock(ms) {
+    const t = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  }
+
+  function updateCityHud(snap) {
+    if (!cityInfo || !snap) return;
+    const mine = snap.p.find((e) => e[0] === cityMeIdx);
+    const total = cityInfo.missions.length;
+    if (mine) {
+      const [, , , , flags, mission, , blaster] = mine;
+      const m = cityInfo.missions[mission];
+      refs.cityMission.innerHTML = m
+        ? `MISSION ${mission + 1}/${total} · ${m.icon} ${escapeHtml(m.name)}<small>${escapeHtml(m.line)} — a quiz gate guards the door</small>`
+        : '🏁 All missions done! Waiting for the others…';
+      const chips = [];
+      if (blaster > 0) chips.push(`<span class="ci">🔫 ×${blaster}</span>`);
+      if (flags & 4) chips.push('<span class="ci">🚗 Turbo</span>');
+      if (flags & 2) chips.push('<span class="ci">🛡️ Shield</span>');
+      if (flags & 1) chips.push('<span class="ci warn">⭐ Stunned</span>');
+      refs.cityItems.innerHTML = chips.join('');
+      refs.zapBtn.classList.toggle('hidden', blaster <= 0);
+      refs.zapCount.textContent = blaster;
+    }
+    const left = snap.endsAt - (Date.now() + cityOffset);
+    refs.cityTimer.textContent = fmtClock(left);
+    refs.cityTimer.classList.toggle('urgent', left < 30000);
+    const rows = snap.p
+      .filter((e) => !(e[4] & 64))
+      .slice()
+      .sort((a, b) => b[6] - a[6])
+      .slice(0, 4)
+      .map((e) => {
+        const info = cityInfo.players[e[0]];
+        const done = e[4] & 32;
+        return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))} <b>${done ? '🏁' : `${e[5]}/${total}`}</b> ${e[6]}</div>`;
+      });
+    refs.cityBoard.innerHTML = rows.join('');
+  }
+
+  function startCityView(payload) {
+    cityInfo = payload;
+    cityOffset = payload.serverNow - Date.now();
+    cityMeIdx = payload.players.findIndex((pl) => pl.playerId === mySession.playerId);
+    resetArenaState();
+    hideCountdown();
+    leaveStage();
+    refs.cityQuiz.classList.add('hidden');
+    refs.cityLock.classList.add('hidden');
+    refs.cityHint.classList.remove('gone');
+    setTimeout(() => refs.cityHint.classList.add('gone'), 9000);
+    showView('city');
+    updateTopbarHeight();
+    City.start(payload, mySession.playerId);
+    updateCityHud(payload.snapshot);
+  }
+
+  function closeQuiz() {
+    cancelAnimationFrame(quizRAF);
+    refs.cityQuiz.classList.add('hidden');
+  }
+
+  function openQuiz(q) {
+    const offsetNow = q.serverNow - Date.now();
+    refs.cqHead.textContent = `${q.mission.icon} ${q.mission.name} — answer to unlock ${q.mission.label}`;
+    refs.cqQ.textContent = q.text;
+    refs.cqResult.classList.add('hidden');
+    refs.cqChoices.innerHTML = '';
+    q.choices.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cq-choice';
+      b.textContent = `${'ABCD'[i]}: ${c}`;
+      b.onclick = () => {
+        refs.cqChoices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
+        b.classList.add('selected');
+        SoundFX.lock();
+        socket.emit(EVENTS.CITY_ANSWER, { choiceIndex: i });
+      };
+      refs.cqChoices.appendChild(b);
+    });
+    refs.cityQuiz.classList.remove('hidden');
+    cancelAnimationFrame(quizRAF);
+    const tick = () => {
+      const left = q.endsAt - (Date.now() + offsetNow);
+      refs.cqBar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
+      if (left > 0 && !refs.cityQuiz.classList.contains('hidden')) quizRAF = requestAnimationFrame(tick);
+    };
+    tick();
+    SoundFX.count();
+    VoiceHost.speak(q.text);
+  }
+
   // ---- Back / leave ----
   function openLeave() {
     if (activeView === 'home') return;
-    const inMatch = activeView === 'question' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
+    const inMatch = activeView === 'question' || activeView === 'city' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
     refs.leaveTitle.textContent = inMatch ? 'Leave the match?' : 'Leave the room?';
     refs.leaveDesc.textContent = inMatch
       ? "You'll drop out of this match and can't rejoin it. Your points stay on the board."

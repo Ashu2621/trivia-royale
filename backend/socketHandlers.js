@@ -3,6 +3,7 @@ const rooms = require('./rooms');
 const game = require('./game');
 const ai = require('./ai');
 const bots = require('./bots');
+const city = require('./city');
 const questionHistory = require('./questionHistory');
 const { getQuestions, getCategoryList } = require('./questions');
 const { getLevelList, getLevelLabel } = require('./levels');
@@ -48,6 +49,7 @@ function buildRoomState(room) {
     stage: room.stagePlan && room.activeQuestions.length ? game.stageInfo(room) : null,
     teamMode: room.teamMode,
     fans: fanCounts(room),
+    city: room.state === 'city' && room.city ? city.initPayload(room) : null,
   };
   if (room.state === 'question' && room.currentQuestion) {
     const q = room.currentQuestion;
@@ -136,6 +138,19 @@ function register(io, socket) {
     socket.leave(room.code);
     socketMeta.delete(socket.id);
     game.handleLeave(io, room, player);
+  });
+
+  socket.on(EVENTS.CITY_INPUT, ({ dx, dy } = {}) => {
+    const ctx = getContext(socket);
+    if (ctx) city.setInput(ctx.room, ctx.player.playerId, dx, dy);
+  });
+  socket.on(EVENTS.CITY_ANSWER, ({ choiceIndex } = {}) => {
+    const ctx = getContext(socket);
+    if (ctx) city.answer(io, ctx.room, ctx.player.playerId, choiceIndex);
+  });
+  socket.on(EVENTS.CITY_ZAP, () => {
+    const ctx = getContext(socket);
+    if (ctx) city.zap(io, ctx.room, ctx.player.playerId);
   });
 
   socket.on(EVENTS.TEAM_SET, ({ teams } = {}) => {

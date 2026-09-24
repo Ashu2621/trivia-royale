@@ -102,7 +102,8 @@ function newRoom(code, hostPlayer, categoryKey) {
     currentQuestion: null,
     stealState: null, // { type: 'steal'|'freeze', chooserId, decisionEndsAt, resolved }
     frozenPlayerId: null, // set by a Freeze Round choice, consumed by the next question
-    timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, botTimeouts: [] },
+    timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, cityTick: null, botTimeouts: [] },
+    city: null, // live simulation state while a City Mission match is running
     allDisconnectedSince: null,
     customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
     teamMode: 0, // 0 = everyone for themselves, 2-4 = that many teams

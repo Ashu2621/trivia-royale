@@ -6,6 +6,7 @@ const rooms = require('./rooms');
 const { serializePlayers, clearRoomTimers, LIFELINES_PER_GAME, POLLS_PER_GAME } = rooms;
 const bots = require('./bots');
 const { pickLine } = require('./botLines');
+const city = require('./city');
 const db = require('./db');
 
 const START_COUNTDOWN_MS = 3400;
@@ -188,6 +189,16 @@ function emitToRoom(io, room, event, payload) {
 
 function startGame(io, room) {
   if (room.state !== 'lobby') return;
+  if (room.category === 'city') {
+    clearRoomTimers(room);
+    room.stats = new Map();
+    room.fans = new Map();
+    room.teamPlace = {};
+    room.awards = null;
+    room.teamMode = 0;
+    city.startCity(io, room);
+    return;
+  }
   for (const p of room.players.values()) {
     p.score = 0;
     p.streak = 0;
@@ -684,6 +695,7 @@ function resetToLobby(io, room) {
   room.fans = new Map();
   room.teamPlace = {};
   room.awards = null;
+  city.stopCity(room);
   room.stagePlan = null;
   room.questionIndex = -1;
   room.answers = new Map();
@@ -708,6 +720,7 @@ function handleLeave(io, room, player) {
   rooms.markDisconnected(room, player.playerId);
   rooms.promoteNextHostIfNeeded(room, player.playerId);
   emitToRoom(io, room, EVENTS.PLAYER_LIST_UPDATE, { players: serializePlayers(room) });
+  if (room.state === 'city') return; // the city simulation notices the player has left
   if (room.state === 'question') maybeEndQuestionEarly(io, room);
   else if ((room.state === 'steal_prompt' || room.state === 'freeze_prompt') && room.stealState && room.stealState.chooserId === player.playerId) {
     resolvePowerChoice(io, room, null);
