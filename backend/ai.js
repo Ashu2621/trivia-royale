@@ -9,7 +9,7 @@
 const DEFAULT_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
 const MAX_COUNT = 15;
 const MIN_COUNT = 4;
-const REQUEST_TIMEOUT_MS = 45000;
+const REQUEST_TIMEOUT_MS = 50000;
 
 let workingModel = null;
 let discovered = null;
@@ -21,6 +21,7 @@ async function discoverModels() {
   try {
     const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
       headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY },
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) {
       lastDetail = `ListModels ${res.status}`;
@@ -43,14 +44,6 @@ async function discoverModels() {
 
 function isEnabled() {
   return !!process.env.GEMINI_API_KEY;
-}
-
-function modelCandidates() {
-  const list = [];
-  if (process.env.GEMINI_MODEL) list.push(process.env.GEMINI_MODEL.trim());
-  if (workingModel) list.push(workingModel);
-  for (const m of DEFAULT_MODELS) list.push(m);
-  return [...new Set(list)];
 }
 
 const QUESTION_SCHEMA = {
@@ -152,6 +145,39 @@ function friendlyHttpError(status, body) {
   return `AI request failed (${status}).`;
 }
 
+function validQuestions(parsed) {
+  return (parsed.questions || [])
+    .filter(
+      (q) =>
+        q &&
+        typeof q.text === 'string' &&
+        q.text.trim() &&
+        Array.isArray(q.choices) &&
+        q.choices.length === 4 &&
+        q.choices.every((c) => typeof c === 'string' && c.trim()) &&
+        Number.isInteger(q.correctIndex) &&
+        q.correctIndex >= 0 &&
+        q.correctIndex <= 3
+    )
+    .map((q) => ({
+      text: q.text.trim().slice(0, 300),
+      choices: q.choices.map((c) => c.trim().slice(0, 120)),
+      correctIndex: q.correctIndex,
+    }));
+}
+
+// Models that returned 404 ("no longer available") are remembered so later calls skip them.
+const deadModels = new Set();
+
+async function orderedModels() {
+  const list = [];
+  if (process.env.GEMINI_MODEL) list.push(process.env.GEMINI_MODEL.trim());
+  if (workingModel) list.push(workingModel);
+  else list.push(...(await discoverModels()).slice(0, 4));
+  list.push(...DEFAULT_MODELS);
+  return [...new Set(list)].filter((m) => !deadModels.has(m));
+}
+
 async function generateQuestions({ levelLabel, subject, count, avoid, language, notes }) {
   if (!isEnabled()) {
     throw new Error('AI question generation is not configured on this server.');
@@ -161,34 +187,38 @@ async function generateQuestions({ levelLabel, subject, count, avoid, language, 
   const pdf = notes && notes.pdf ? notes.pdf : null;
 
   let lastError = null;
-  const tried = new Set();
-  let candidates = modelCandidates();
-  for (let round = 0; round < 2; round++) {
-  for (const model of candidates) {
-    if (tried.has(model)) continue;
-    tried.add(model);
+  let tries = 0;
+  for (const model of await orderedModels()) {
+    if (tries >= 4) break; // never let one request spin through the whole catalogue
+    tries += 1;
     for (let attempt = 0; attempt < 2; attempt++) {
+      const started = Date.now();
       let res;
       try {
         res = await callModel(model, prompt, attempt === 0, pdf);
       } catch (err) {
-        lastError = new Error(err.name === 'AbortError' ? 'The AI took too long to respond — try again.' : `AI request failed: ${err.message}`);
-        continue;
+        const timedOut = err.name === 'AbortError';
+        console.error(`Gemini ${model} attempt ${attempt}: ${timedOut ? 'timed out' : err.message} after ${Date.now() - started}ms`);
+        lastError = new Error(timedOut ? 'The AI took too long to respond — try again in a moment.' : `AI request failed: ${err.message}`);
+        break; // a slow/unreachable model: move straight on to the next one
       }
+      console.log(`Gemini ${model} attempt ${attempt}: ${res.status} in ${Date.now() - started}ms`);
 
       if (res.status === 404) {
-        // This model name has been retired — move on to the next candidate.
         const body404 = await res.text().catch(() => '');
+        deadModels.add(model);
         lastDetail = `${model}: ${body404.replace(/\s+/g, ' ').slice(0, 160)}`;
-        console.error('Gemini 404 for', lastDetail);
         lastError = new Error(`No Gemini model responded (${lastDetail})`);
         break;
       }
       if (res.status === 429 || res.status === 503) {
         const body = await res.text().catch(() => '');
         lastError = new Error(friendlyHttpError(res.status, body));
-        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
-        continue;
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        break;
       }
       if (!res.ok) {
         const body = await res.text().catch(() => '');
@@ -205,49 +235,23 @@ async function generateQuestions({ levelLabel, subject, count, avoid, language, 
       const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
       if (!text) {
         lastError = new Error('AI returned an empty response — try again.');
-        continue;
+        break;
       }
-
       let parsed;
       try {
         parsed = extractJson(text);
       } catch (e) {
         lastError = new Error('AI returned malformed data — try a different topic.');
-        continue;
+        break;
       }
-
-      const valid = (parsed.questions || [])
-        .filter(
-          (q) =>
-            q &&
-            typeof q.text === 'string' &&
-            q.text.trim() &&
-            Array.isArray(q.choices) &&
-            q.choices.length === 4 &&
-            q.choices.every((c) => typeof c === 'string' && c.trim()) &&
-            Number.isInteger(q.correctIndex) &&
-            q.correctIndex >= 0 &&
-            q.correctIndex <= 3
-        )
-        .map((q) => ({
-          text: q.text.trim().slice(0, 300),
-          choices: q.choices.map((c) => c.trim().slice(0, 120)),
-          correctIndex: q.correctIndex,
-        }));
-
+      const valid = validQuestions(parsed);
       if (!valid.length) {
         lastError = new Error('AI returned no valid questions — try a different topic.');
-        continue;
+        break;
       }
       workingModel = model;
       return valid;
     }
-  }
-  if (round === 0) {
-    const found = await discoverModels();
-    if (!found.length) break;
-    candidates = found.slice(0, 4);
-  }
   }
   throw lastError || new Error('AI question generation failed — try again.');
 }
