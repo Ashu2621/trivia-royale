@@ -1,8 +1,8 @@
 {
-  "name": "trivia-royale",
+  "name": "city-chaos",
   "version": "1.0.0",
   "private": true,
-  "description": "Live multiplayer trivia game with Steal and Freeze power rounds. Join with a room code, no login.",
+  "description": "City Chaos: We Gotta Go \u2014 a free-roam 3D multiplayer city brawl for the browser.",
   "engines": {
     "node": ">=18"
   },

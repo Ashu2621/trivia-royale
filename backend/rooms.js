@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const { resolveCategory } = require('./questions');
 const { getTier, DEFAULT_TIER } = require('./bots');
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O, avoids look-alike confusion
@@ -12,11 +11,6 @@ const AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙',
 const DEFAULT_AVATAR = AVATARS[0];
 const BOT_NAMES = ['Ada', 'Turing', 'Byte', 'Nova', 'Cipher', 'Echo', 'Volt', 'Pixel', 'Newton', 'Ranger'];
 const MAX_PLAYERS = 10;
-const LIFELINES_PER_GAME = 2;
-const POLLS_PER_GAME = 1;
-const MAX_CUSTOM_QUESTIONS = 40;
-const MAX_QUESTION_LENGTH = 300;
-const MAX_OPTION_LENGTH = 120;
 
 const rooms = new Map(); // roomCode -> Room
 
@@ -52,13 +46,7 @@ function createPlayer(name, avatar, socketId, isCreator) {
     disconnectedAt: null,
     isBot: false,
     botTier: null,
-    streak: 0,
-    lifelines: 0,
-    polls: 0,
-    eliminated: false,
     left: false,
-    place: null,
-    team: null,
   };
 }
 
@@ -78,52 +66,32 @@ function createBot(existingNames, tierKey) {
     disconnectedAt: null,
     isBot: true,
     botTier: tier.key,
-    streak: 0,
-    lifelines: 0,
-    polls: 0,
-    eliminated: false,
     left: false,
-    place: null,
-    team: null,
     lastSayAt: 0,
   };
 }
 
-function newRoom(code, hostPlayer, categoryKey) {
+function newRoom(code, hostPlayer) {
   return {
     code,
     createdAt: Date.now(),
     hostPlayerId: hostPlayer.playerId,
-    category: resolveCategory(categoryKey),
-    state: 'lobby', // lobby | question | reveal | steal_prompt | freeze_prompt | final
-    questionIndex: -1,
+    state: 'lobby', // lobby | city | final
     players: new Map([[hostPlayer.playerId, hostPlayer]]),
-    answers: new Map(), // playerId -> { choiceIndex, answeredAt }
-    currentQuestion: null,
-    stealState: null, // { type: 'steal'|'freeze', chooserId, decisionEndsAt, resolved }
-    frozenPlayerId: null, // set by a Freeze Round choice, consumed by the next question
-    timers: { questionTimeout: null, revealTimeout: null, stealTimeout: null, cityTick: null, botTimeouts: [] },
-    city: null, // live simulation state while a City Mission match is running
+    timers: { cityTick: null, botTimeouts: [] },
+    city: null, // live simulation state while a match is running
     voice: null, // player ids currently in the voice chat
     allDisconnectedSince: null,
-    customQuestions: [], // { text, choices[4], correctIndex } — live pool for category === 'custom'
-    teamMode: 0, // 0 = everyone for themselves, 2-4 = that many teams
-    fans: new Map(), // spectator playerId -> the contender they are cheering for
-    stats: new Map(), // playerId -> per-match numbers used for the end-of-match awards
-    stagePlan: null, // { count, per, names } — levels of the match, set when a game starts
     startsAt: null,
-    activeQuestions: [], // the actual per-game order — shuffled static bank, or a copy of customQuestions
-    levelKey: null, // last level used for AI generation in this room, for display/reuse
-    subject: null, // last subject used for AI generation in this room, for display/reuse
   };
 }
 
-function createRoom(rawName, rawAvatar, socketId, categoryKey) {
+function createRoom(rawName, rawAvatar, socketId) {
   const name = sanitizeName(rawName);
   if (!name) return { error: { code: 'INVALID_NAME', message: 'Enter a name to create a room.' } };
   const code = generateRoomCode();
   const player = createPlayer(name, rawAvatar, socketId, true);
-  const room = newRoom(code, player, categoryKey);
+  const room = newRoom(code, player);
   rooms.set(code, room);
   return { room, player };
 }
@@ -199,48 +167,6 @@ function removeBot(room, playerId) {
   return { removed: true };
 }
 
-function sanitizeQuestionText(s) {
-  return String(s || '').trim().slice(0, MAX_QUESTION_LENGTH);
-}
-function sanitizeOptionText(s) {
-  return String(s || '').trim().slice(0, MAX_OPTION_LENGTH);
-}
-
-function addCustomQuestion(room, { text, choices, correctIndex }) {
-  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only edit questions in the lobby.' } };
-  if (room.category !== 'custom') return { error: { code: 'WRONG_MODE', message: 'Switch the room category to Custom / Study Mode first.' } };
-  const cleanText = sanitizeQuestionText(text);
-  if (!cleanText) return { error: { code: 'INVALID_QUESTION', message: 'Question text is required.' } };
-  const cleanChoices = Array.isArray(choices) ? choices.map(sanitizeOptionText) : [];
-  if (cleanChoices.length !== 4 || cleanChoices.some((c) => !c)) {
-    return { error: { code: 'INVALID_QUESTION', message: 'Exactly 4 non-empty options are required.' } };
-  }
-  if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) {
-    return { error: { code: 'INVALID_QUESTION', message: 'Pick which option is correct.' } };
-  }
-  if (room.customQuestions.length >= MAX_CUSTOM_QUESTIONS) {
-    return { error: { code: 'POOL_FULL', message: `Rooms cap out at ${MAX_CUSTOM_QUESTIONS} questions.` } };
-  }
-  room.customQuestions.push({ text: cleanText, choices: cleanChoices, correctIndex });
-  return { ok: true };
-}
-
-function addCustomQuestions(room, list) {
-  const space = Math.max(0, MAX_CUSTOM_QUESTIONS - room.customQuestions.length);
-  const accepted = (list || []).slice(0, space);
-  room.customQuestions.push(...accepted);
-  return accepted.length;
-}
-
-function removeCustomQuestion(room, index) {
-  if (room.state !== 'lobby') return { error: { code: 'GAME_IN_PROGRESS', message: 'Can only edit questions in the lobby.' } };
-  if (!Number.isInteger(index) || index < 0 || index >= room.customQuestions.length) {
-    return { error: { code: 'INVALID_INDEX', message: 'That question no longer exists.' } };
-  }
-  room.customQuestions.splice(index, 1);
-  return { ok: true };
-}
-
 function serializePlayers(room) {
   return [...room.players.values()]
     .map((p) => ({
@@ -251,17 +177,10 @@ function serializePlayers(room) {
       isCreator: p.isCreator,
       isBot: p.isBot,
       botTier: p.botTier ? getTier(p.botTier).label : null,
-      streak: p.streak || 0,
-      lifelines: p.lifelines || 0,
-      polls: p.polls || 0,
-      eliminated: !!p.eliminated,
       left: !!p.left,
-      place: p.place || null,
-      team: p.team === null || p.team === undefined ? null : p.team,
       score: p.score,
     }))
-    // survivors first (by score), then the eliminated by how long they lasted
-    .sort((a, b) => (a.eliminated ? 1 : 0) - (b.eliminated ? 1 : 0) || (a.eliminated ? (a.place || 99) - (b.place || 99) : 0) || b.score - a.score || a.name.localeCompare(b.name));
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
 function countConnected(room) {
@@ -363,12 +282,6 @@ module.exports = {
   joinRoom,
   addBot,
   removeBot,
-  addCustomQuestion,
-  addCustomQuestions,
-  removeCustomQuestion,
-  MAX_CUSTOM_QUESTIONS,
-  LIFELINES_PER_GAME,
-  POLLS_PER_GAME,
   serializePlayers,
   countConnected,
   markDisconnected,

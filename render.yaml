@@ -8,5 +8,3 @@ services:
     envVars:
       - key: MONGODB_URI
         sync: false
-      - key: GEMINI_API_KEY
-        sync: false

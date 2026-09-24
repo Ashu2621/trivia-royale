@@ -97,6 +97,40 @@ const SoundFX = (function () {
     src.stop(now + duration + 0.05);
   }
 
+  // a hard-attack noise hit for gunshots, punches and explosions
+  function snap(startOffset, duration, freq, q, peak, rate, type, pan) {
+    const audioCtx = getCtx();
+    const buf = noise();
+    if (!audioCtx || !buf || muted) return;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.playbackRate.value = rate || 1;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = type || 'bandpass';
+    filter.frequency.value = freq;
+    filter.Q.value = q;
+    const gain = audioCtx.createGain();
+    const now = audioCtx.currentTime + startOffset;
+    gain.gain.setValueAtTime(peak, now);
+    gain.gain.exponentialRampToValueAtTime(0.0005, now + duration);
+    let out = gain;
+    src.connect(filter).connect(gain);
+    if (pan && audioCtx.createStereoPanner) {
+      const p = audioCtx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      gain.connect(p);
+      out = p;
+    }
+    out.connect(audioCtx.destination);
+    src.start(now);
+    src.stop(now + duration + 0.05);
+  }
+
+  function thump(startOffset, from, to, duration, peak) {
+    sweep(from, to, startOffset, duration, 'sine', peak);
+  }
+
   /* ---- real recorded samples (CC0, see sounds/CREDITS.md): farts, tummy rumbles, grunts, screams, sighs, flushes ---- */
   const Samples = { buffers: {}, loading: null };
 
@@ -392,6 +426,117 @@ const SoundFX = (function () {
       const v = volume == null ? 1 : volume;
       voiceLine('sigh', v);
       setTimeout(() => playSample('flush', Math.floor(Math.random() * 2), { gain: 0.9 * v }), 500);
+    },
+    // ---- City Chaos: combat ----
+    gun(kind, volume, pan) {
+      const v = volume == null ? 1 : volume;
+      if (kind === 3) { // SMG: a short, dry rattle
+        snap(0, 0.09, 1900, 0.7, 0.16 * v, 1.2, 'bandpass', pan);
+        thump(0, 260, 90, 0.08, 0.1 * v);
+      } else if (kind === 4) { // shotgun: a big boom with a low thud
+        snap(0, 0.4, 700, 0.4, 0.3 * v, 0.7, 'lowpass', pan);
+        snap(0, 0.12, 2400, 0.6, 0.2 * v, 1.1, 'bandpass', pan);
+        thump(0, 150, 45, 0.3, 0.22 * v);
+        snap(0.42, 0.06, 3000, 3, 0.05 * v, 1.4, 'bandpass', pan);
+        snap(0.5, 0.05, 2600, 3, 0.04 * v, 1.4, 'bandpass', pan);
+      } else { // pistol: a sharp crack
+        snap(0, 0.18, 1500, 0.6, 0.2 * v, 1, 'bandpass', pan);
+        thump(0, 210, 70, 0.14, 0.14 * v);
+        snap(0.16, 0.08, 2800, 3, 0.035 * v, 1.3, 'bandpass', pan);
+      }
+    },
+    punch(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.1, 380, 0.9, 0.22 * v, 0.8, 'lowpass');
+      thump(0, 160, 70, 0.1, 0.16 * v);
+    },
+    swing(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.22, 1800, 0.8, 0.07 * v, 1.6, 'bandpass');
+      sweep(500, 1100, 0, 0.2, 'sine', 0.02 * v);
+    },
+    // a bat cracking against something
+    bat(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.14, 900, 1.5, 0.3 * v, 1, 'bandpass');
+      thump(0, 300, 80, 0.16, 0.18 * v);
+      tone(1250, 0, 0.09, 'triangle', 0.05 * v);
+    },
+    hit(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.07, 520, 1, 0.14 * v, 1, 'bandpass');
+    },
+    ricochet() {
+      sweep(2600, 900, 0, 0.22, 'sine', 0.04);
+    },
+    hurtGrunt(volume) {
+      voiceLine('hurt', volume == null ? 0.8 : volume);
+    },
+    boom(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 1.1, 260, 0.5, 0.38 * v, 0.55, 'lowpass');
+      thump(0, 110, 30, 0.9, 0.3 * v);
+      snap(0.05, 0.5, 900, 0.5, 0.15 * v, 0.9, 'bandpass');
+    },
+    crash(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.3, 500, 0.5, 0.22 * v, 0.8, 'lowpass');
+      snap(0.02, 0.2, 2400, 1.5, 0.08 * v, 1.2, 'bandpass');
+      thump(0, 130, 50, 0.25, 0.16 * v);
+    },
+    honk(volume) {
+      const v = volume == null ? 1 : volume;
+      tone(392, 0, 0.32, 'sawtooth', 0.06 * v);
+      tone(494, 0, 0.32, 'sawtooth', 0.05 * v);
+    },
+    engineRev(volume) {
+      const v = volume == null ? 1 : volume;
+      sweep(70, 190, 0, 0.5, 'sawtooth', 0.05 * v);
+      snap(0, 0.5, 240, 0.7, 0.05 * v, 0.6, 'lowpass');
+    },
+    carDoor(volume) {
+      const v = volume == null ? 1 : volume;
+      snap(0, 0.1, 500, 1, 0.16 * v, 0.9, 'lowpass');
+      thump(0, 180, 70, 0.1, 0.1 * v);
+    },
+    cash() {
+      tone(1568, 0, 0.09, 'triangle', 0.1);
+      tone(2093, 0.07, 0.22, 'triangle', 0.09);
+    },
+    pickup() {
+      tone(660, 0, 0.08, 'square', 0.07);
+      tone(990, 0.07, 0.14, 'square', 0.07);
+    },
+    reload() {
+      snap(0, 0.05, 2200, 2, 0.08, 1.3, 'bandpass');
+      snap(0.22, 0.06, 1500, 2, 0.1, 1, 'bandpass');
+    },
+    // a police siren whoop
+    policeSiren(volume) {
+      const v = volume == null ? 1 : volume;
+      for (let i = 0; i < 3; i++) {
+        sweep(700, 1000, i * 0.44, 0.22, 'sawtooth', 0.035 * v);
+        sweep(1000, 700, i * 0.44 + 0.22, 0.22, 'sawtooth', 0.035 * v);
+      }
+    },
+    wanted() {
+      [523.25, 392, 523.25, 392].forEach((f, i) => tone(f, i * 0.14, 0.13, 'square', 0.07));
+      this.policeSiren(0.8);
+    },
+    wasted() {
+      sweep(420, 55, 0, 1.1, 'sawtooth', 0.13);
+      snap(0, 0.6, 300, 0.7, 0.14, 0.6, 'lowpass');
+      tone(98, 0.1, 0.9, 'square', 0.05);
+    },
+    respawn() {
+      [392, 523.25, 659.25, 880].forEach((f, i) => tone(f, i * 0.06, 0.22, 'triangle', 0.1));
+    },
+    heistAlarm() {
+      for (let i = 0; i < 6; i++) tone(i % 2 ? 880 : 1046, i * 0.14, 0.12, 'square', 0.08);
+    },
+    heartbeat() {
+      thump(0, 90, 50, 0.16, 0.2);
+      thump(0.2, 80, 45, 0.18, 0.15);
     },
     // ---- We Gotta Go (haunted maze) ----
     ghost() {

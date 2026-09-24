@@ -5,7 +5,7 @@
  * glowing keys, floating ghosts and a very welcome toilet. Everyone is interpolated between
  * snapshots; your own soldier is predicted locally with the same wall collision the server uses.
  * Third-person camera: drag to orbit, wheel/pinch to zoom, WASD/joystick to move (relative to the
- * camera), tap the floor to walk there, Space / 🔦 to scare nearby ghosts.
+ * camera), Space fights, F / 🔦 flashes nearby ghosts.
  */
 const Maze3D = (function () {
   'use strict';
@@ -63,7 +63,8 @@ const Maze3D = (function () {
   let snaps = [];
   let offset = 0;
   let startsAt = 0;
-  let me = { x: 0, y: 0, face: -1, init: false, flags: 0 };
+  let me = { x: 0, y: 0, face: -1, ang: 0, init: false, flags: 0 };
+  const fire = { key: false, btn: false, last: 0 };
   const keys = { up: false, down: false, left: false, right: false, rotL: false, rotR: false };
   let joy = { x: 0, y: 0 };
   let goPath = null;
@@ -836,7 +837,7 @@ const Maze3D = (function () {
   function buildSoldier(idx) {
     let s0;
     if (Soldier.ready()) {
-      s0 = Soldier.create({ scale: SOLDIER_SCALE, tint: TINTS[idx % TINTS.length], tintMix: 0.5 });
+      s0 = Soldier.create({ scale: SOLDIER_SCALE, tint: TINTS[idx % TINTS.length], tintMix: 0.5, gun: true });
     } else {
       // fallback figure if the model failed to load
       const root = new T.Group();
@@ -860,7 +861,7 @@ const Maze3D = (function () {
     cone.geometry.translate(0, -70, 0);
     cone.position.set(14, 40, 10);
     s0.root.add(cone);
-    return Object.assign(s0, { blob, cone, h: 0, seen: false, px: 0, py: 0, phase: Math.random() * TAU });
+    return Object.assign(s0, { blob, cone, h: 0, seen: false, px: 0, py: 0, phase: Math.random() * TAU, lastAtk: -9, atkAlt: 0 });
   }
 
   function animateSoldier(p, dt, moving, speed, st) {
@@ -1036,7 +1037,25 @@ const Maze3D = (function () {
     const idx = indexById.get(e.playerId);
     const o = playerObjs[idx];
     const pos = o ? o.root.position : { x: me.x, z: me.y };
-    if (e.type === 'flash') {
+    if (e.type === 'shot' || e.type === 'melee') {
+      if (o) {
+        o.lastAtk = nowT;
+        o.atkAlt ^= 1;
+      }
+      if (e.type === 'shot') {
+        burst(e.x, 30, e.y, '#ffd27a', 4, 40, 16, 0.12, 0);
+        for (const end of e.ends || []) {
+          const dx = end[0] - e.x;
+          const dz = end[1] - e.y;
+          const n = Math.max(2, Math.floor(Math.hypot(dx, dz) / 40));
+          for (let i = 1; i <= n; i++) burst(e.x + (dx * i) / n, 30, e.y + (dz * i) / n, '#ffe6a0', 1, 4, 6, 0.09, 0);
+          burst(end[0], 20, end[1], '#ffe9b0', 3, 60, 7, 0.3, 90);
+        }
+      }
+    } else if (e.type === 'hit') {
+      burst(e.x, 34, e.y, '#ff4d4d', 8, 70, 9, 0.5, 130);
+      if (e.dmg > 0) fx.push({ kind: 'text', text: String(e.dmg), color: '#ff5a5a', x: e.x, z: e.y, born: nowT, life: 0.9 });
+    } else if (e.type === 'flash') {
       fx.push({ kind: 'ring', x: pos.x, z: pos.z, born: nowT, life: 0.6, color: '#fff2b0' });
       burst(pos.x, 30, pos.z, '#fff2b0', 18, 130, 9, 0.5, 0);
     } else if (e.type === 'caught') {
@@ -1096,7 +1115,7 @@ const Maze3D = (function () {
     goPath = null;
     opened = new Set();
     bladder = 0;
-    me = { x: 0, y: 0, face: -1, init: false, flags: 0 };
+    me = { x: 0, y: 0, face: -1, ang: 0, init: false, flags: 0, weapon: 0 };
     if (scene) {
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -1134,6 +1153,7 @@ const Maze3D = (function () {
   function stop() {
     running = false;
     keys.up = keys.down = keys.left = keys.right = keys.rotL = keys.rotR = false;
+    fire.key = fire.btn = false;
     joy = { x: 0, y: 0 };
   }
 
@@ -1146,10 +1166,12 @@ const Maze3D = (function () {
     if (!mine) return;
     const [, sx, sy, face, flags] = mine;
     me.flags = flags;
+    me.weapon = mine[7] || 0;
     if (!me.init) {
       me.x = sx;
       me.y = sy;
       me.face = face;
+      me.ang = face / 100;
       me.init = true;
       cam.x = sx;
       cam.z = sy;
@@ -1181,7 +1203,7 @@ const Maze3D = (function () {
     return {
       p: b.p.map((e, i) => {
         const o = a.p[i] || e;
-        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], keys: e[5], points: e[6], bladder: e[8] || 0 };
+        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), ang: e[3] / 100, flags: e[4], keys: e[12], cash: e[6], weapon: e[7], hp: e[8], bladder: e[10] || 0 };
       }),
       g: b.g.map((e, i) => {
         const o = a.g[i] || e;
@@ -1206,7 +1228,7 @@ const Maze3D = (function () {
     const d = Math.hypot(dx, dy);
     obj.px = x;
     obj.py = y;
-    if (d > 0.08) obj.h += angDiff(obj.h, Math.atan2(-dy, dx)) * Math.min(1, dt * 12);
+    if (d > 0.08 && !obj.isMe) obj.h += angDiff(obj.h, Math.atan2(-dy, dx)) * Math.min(1, dt * 12);
     return { moved: d, speed: dt > 0 ? d / dt : 0 };
   }
 
@@ -1241,7 +1263,14 @@ const Maze3D = (function () {
       o.root.position.set(x, 0, y);
       o.root.rotation.y = o.h;
       const bl = isMe ? bladder : e.bladder;
-      animateSoldier(o, dt, moving, f.speed, Object.assign({ stunned: !!(flags & 1), flashing: !!(flags & 512) }, poseOf(bl, flags)));
+      if (flags & 4096 && nowT - o.lastAtk > 0.35) {
+        o.lastAtk = nowT;
+        o.atkAlt ^= 1;
+      }
+      if (isMe) o.h += angDiff(o.h, -me.ang) * Math.min(1, dt * 16);
+      else if (nowT - o.lastAtk < 0.4 || f.moved < 0.05) o.h += angDiff(o.h, -e.ang) * Math.min(1, dt * 12);
+      o.root.rotation.y = o.h;
+      animateSoldier(o, dt, moving, f.speed, Object.assign({ stunned: !!(flags & 1), flashing: !!(flags & 512), weapon: isMe ? me.weapon : e.weapon, atkAge: nowT - o.lastAtk, atkAlt: o.atkAlt, hurt: !!(flags & 8192), ghost: !!(flags & 16384) }, poseOf(bl, flags)));
       o.pos = { x, y };
       labels.push({ x, z: y, h: 92, info, isMe, idx: e.idx, flags, bladder: bl });
       if (isMe && moving && Math.random() < dt * 8) burst(x, 2, y, '#7a7f96', 1, 14, 8, 0.5, -8);
@@ -1649,7 +1678,13 @@ const Maze3D = (function () {
     if (P && me.init) {
       const v = inputVector();
       stepMe(dt, v);
+      const firing = fire.key || fire.btn;
+      if ((v.dx || v.dy) && !firing) me.ang = Math.atan2(v.dy, v.dx);
       const nowMs = performance.now();
+      if (firing && nowMs - fire.last > 90 && !(me.flags & (1 | 32)) && nowServer() >= startsAt) {
+        fire.last = nowMs;
+        hooks.attack && hooks.attack(Math.round(me.ang * 1000) / 1000);
+      }
       if (Math.abs(v.dx - lastSent.dx) > 0.02 || Math.abs(v.dy - lastSent.dy) > 0.02 || nowMs - lastSent.t > 250) {
         lastSent = { dx: v.dx, dy: v.dy, t: nowMs };
         hooks.sendInput && hooks.sendInput(v.dx, v.dy);
@@ -1709,9 +1744,11 @@ const Maze3D = (function () {
         e.preventDefault();
       } else if (e.key === 'q' || e.key === 'Q') keys.rotL = true;
       else if (e.key === 'e' || e.key === 'E') keys.rotR = true;
-      else if (e.key === ' ' || e.key === 'Enter') {
-        hooks.flash && hooks.flash();
+      else if (e.key === ' ' || e.key === 'j' || e.key === 'J') {
+        fire.key = true;
         e.preventDefault();
+      } else if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
+        hooks.flash && hooks.flash();
       } else if (e.key === '+' || e.key === '=') cam.distT = clamp(cam.distT - 40, 200, 620);
       else if (e.key === '-' || e.key === '_') cam.distT = clamp(cam.distT + 40, 200, 620);
     });
@@ -1719,8 +1756,10 @@ const Maze3D = (function () {
       if (KEYMAP[e.key]) keys[KEYMAP[e.key]] = false;
       else if (e.key === 'q' || e.key === 'Q') keys.rotL = false;
       else if (e.key === 'e' || e.key === 'E') keys.rotR = false;
+      else if (e.key === ' ' || e.key === 'j' || e.key === 'J') fire.key = false;
     });
     window.addEventListener('blur', () => {
+      fire.key = fire.btn = false;
       keys.up = keys.down = keys.left = keys.right = keys.rotL = keys.rotR = false;
     });
 
@@ -1853,6 +1892,7 @@ const Maze3D = (function () {
     applyState,
     fx: fxEvent,
     resume() { if (P && !running) begin(); },
+    setFire(on) { fire.btn = !!on; },
     say,
     floatText,
     get running() { return running; },

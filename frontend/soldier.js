@@ -86,6 +86,7 @@ const Soldier = (function () {
     root.add(inner);
     const tint = new T.Color(o.tint || '#ffffff').lerp(new T.Color('#ffffff'), o.tintMix === undefined ? 0.5 : o.tintMix);
     const mats = [];
+    const allMats = [];
     inner.traverse((m) => {
       if (!m.isMesh) return;
       m.castShadow = o.castShadow !== false;
@@ -97,6 +98,7 @@ const Soldier = (function () {
         mats.push(m.material);
       }
       m.material.roughness = 0.62;
+      allMats.push(m.material);
       if (o.envMats) o.envMats.push(m.material);
     });
     const mixer = new T.AnimationMixer(inner);
@@ -127,10 +129,13 @@ const Soldier = (function () {
       lens,
       scale,
       mats,
+      allMats,
+      deadK: 0,
+      wcode: -1,
       tint,
       fwd: o.forward === 'z' ? new T.Vector3(0, 0, 1) : new T.Vector3(1, 0, 0),
       side: o.forward === 'z' ? new T.Vector3(1, 0, 0) : new T.Vector3(0, 0, -1), // the character's LEFT
-      pose: { hold: 0, squeeze: 0, hunch: 0, clench: 0, shame: 0, shout: 0, butt: 0 },
+      pose: { hold: 0, squeeze: 0, hunch: 0, clench: 0, shame: 0, shout: 0, butt: 0, aim: 0 },
       hopPhase: Math.random() * TAU,
       gun: null,
       tip: null,
@@ -167,6 +172,27 @@ const Soldier = (function () {
     tip.visible = false;
     obj.gun = gun;
     obj.tip = tip;
+    obj.gunBase = gun.scale.x;
+    // baseball bat, held in the same hand
+    const bat = new T.Group();
+    bat.visible = false;
+    if (hand) {
+      const ws2 = new T.Vector3();
+      hand.getWorldScale(ws2);
+      bat.scale.setScalar(1 / (ws2.x || 0.27));
+      bat.position.set(0, 4, 2);
+      bat.rotation.set(0, 0, Math.PI / 2);
+      hand.add(bat);
+    } else obj.root.add(bat);
+    const wood = new T.MeshStandardMaterial({ color: 0xb98a4c, roughness: 0.6, metalness: 0.05 });
+    const shaft = new T.Mesh(new T.CylinderGeometry(1.7, 1.0, 19, 8), wood);
+    shaft.position.set(0, -9, 0);
+    shaft.castShadow = true;
+    bat.add(shaft);
+    const knob = new T.Mesh(new T.SphereGeometry(1.5, 8, 6), wood);
+    knob.position.set(0, 0.6, 0);
+    bat.add(knob);
+    obj.bat = bat;
   }
 
   // aim a bone so its child sits along the given WORLD direction
@@ -247,6 +273,16 @@ const Soldier = (function () {
     const ease = Math.min(1, dt * 7);
     for (const key of ['hold', 'squeeze', 'hunch', 'clench', 'shame', 'shout', 'butt']) p[key] += ((s[key] || 0) - p[key]) * ease;
 
+    // combat state: which weapon is in hand and how long ago the last strike was
+    const wc = s.weapon | 0;
+    const age = s.atkAge == null ? 99 : s.atkAge;
+    const ranged = wc >= 2;
+    const dead = !!s.dead;
+    const wantAim = ranged && age < 1.6 && !dead ? 1 : 0;
+    p.aim += (wantAim - p.aim) * Math.min(1, dt * 12);
+    const punching = wc === 0 && age < 0.26 && !dead;
+    const swinging = wc === 1 && age < 0.5 && !dead;
+
     const anyPose = p.hold + p.squeeze + p.hunch + p.clench + p.shame + p.shout + p.butt > 0.01;
     const t = s.time || 0;
     if (anyPose) {
@@ -293,15 +329,71 @@ const Soldier = (function () {
         bend(B.spine, AX, 0.3, p.shame);
       }
     }
+    // fighting: an outstretched gun arm, alternating punches, a full baseball-bat swing
+    if (p.aim > 0.01 || punching || swinging) {
+      obj.root.updateMatrixWorld(true);
+      const B = obj.bones;
+      const s2 = obj.scale / 27;
+      const chest = B.spine2.getWorldPosition(new T.Vector3());
+      const atc = (f, u, sd) => chest.clone().addScaledVector(obj.fwd, f * s2).addScaledVector(obj.side, sd * s2).add(new T.Vector3(0, u * s2, 0));
+      if (p.aim > 0.01) {
+        const recoil = age < 0.09 ? (1 - age / 0.09) * 2.5 : 0;
+        armIK(obj, B.rArm, B.rFore, B.rHand, atc(19 - recoil, 1, -3), local(obj, -2, -4, -12), p.aim);
+        if (wc >= 3) armIK(obj, B.lArm, B.lFore, B.lHand, atc(13 - recoil, -2.5, 3.5), local(obj, -2, -4, 12), p.aim);
+        bend(B.spine, AX, -0.04, p.aim);
+      }
+      if (punching) {
+        const k = Math.sin((Math.PI * age) / 0.26);
+        const right = (s.atkAlt | 0) === 0;
+        const hitB = right ? [B.rArm, B.rFore, B.rHand] : [B.lArm, B.lFore, B.lHand];
+        const guardB = right ? [B.lArm, B.lFore, B.lHand] : [B.rArm, B.rFore, B.rHand];
+        armIK(obj, hitB[0], hitB[1], hitB[2], atc(5 + 19 * k, 1.5, right ? -3 : 3), local(obj, -2, -4, right ? -12 : 12), 1);
+        armIK(obj, guardB[0], guardB[1], guardB[2], atc(9, 4, right ? 5 : -5), local(obj, -2, -4, right ? 12 : -12), 0.85);
+        bend(B.spine, AY, (right ? -1 : 1) * 0.35 * k, 1);
+      }
+      if (swinging) {
+        const u01 = clamp(age / 0.5, 0, 1);
+        const swing = smooth(0.05, 0.85, u01);
+        const sd = -16 + 26 * swing;
+        const f = 6 + 14 * Math.sin(Math.PI * swing);
+        const up = 14 - 20 * swing;
+        armIK(obj, B.rArm, B.rFore, B.rHand, atc(f, up, sd), local(obj, -2, -4, -12), 1);
+        armIK(obj, B.lArm, B.lFore, B.lHand, atc(f - 2, up - 1, sd + 5), local(obj, -2, -4, 12), 0.9);
+        bend(B.spine, AY, 0.5 * (1 - 2 * swing), 1);
+      }
+    }
+    // knocked out: fall over backwards; a red flash when hurt; a see-through blink while invulnerable
+    obj.deadK += ((dead ? 1 : 0) - obj.deadK) * Math.min(1, dt * (dead ? 7 : 12));
+    const hurtK = s.hurt ? 1 : 0;
+    const ghost = !!s.ghost;
+    for (const m of obj.allMats) {
+      if (m.emissive) m.emissive.setRGB(0.75 * hurtK, 0.04 * hurtK, 0.04 * hurtK);
+      const blink = ghost ? 0.45 + 0.25 * Math.sin(t * 16) : 1;
+      if (m.opacity !== blink) {
+        m.transparent = ghost;
+        m.opacity = blink;
+      }
+    }
+
     // the whole body hops and shivers with desperation
     const hopAmp = (s.hop || 0) * 4.2 * (obj.scale / 27);
     const hop = hopAmp * Math.abs(Math.sin(t * (9 + 5 * (s.hop || 0)) + obj.hopPhase));
     obj.inner.position.y = s.finished ? Math.abs(Math.sin(t * 7)) * 6 : hop;
     obj.inner.rotation.z = s.stunned ? Math.sin(t * 5) * 0.28 : Math.sin(t * 11 + obj.hopPhase) * 0.09 * (s.hop || 0);
     obj.inner.rotation.x = s.stunned ? 0.22 : 0;
+    if (obj.deadK > 0.01) {
+      obj.inner.rotation.z = 1.5 * obj.deadK; // over backwards (about the body's side-to-side axis)
+      obj.inner.position.y = 5 * obj.deadK * (obj.scale / 27);
+    }
     if (obj.gun) {
-      obj.gun.visible = !!s.armed && p.hold < 0.5;
+      const showGun = wc >= 2 && obj.deadK < 0.5 && p.hold < 0.5;
+      if (obj.wcode !== wc) {
+        obj.wcode = wc;
+        obj.gun.scale.setScalar(obj.gunBase * (wc === 2 ? 0.75 : wc === 3 ? 0.95 : 1.2));
+      }
+      obj.gun.visible = showGun;
       obj.tip.visible = false;
+      if (obj.bat) obj.bat.visible = wc === 1 && obj.deadK < 0.5;
     }
   }
 

@@ -1,25 +1,26 @@
 /*
- * City Mission: We Gotta Go — the open-world race with a haunted mansion and a full bladder.
- * Server-authoritative.
+ * City Chaos: We Gotta Go — a GTA-style multiplayer free-roam brawl. Server-authoritative.
  *
- * Everyone (humans and computer players) runs the same list of missions through a small city
- * full of wandering pedestrians and traffic. Every mission target is a building; reaching its
- * door opens a QUIZ gate — only a correct answer unlocks the reward (a blaster that stuns rivals,
- * a turbo car, a shield, cash…). One target is the HAUNTED MANSION: answer its gate and you step
- * into a spooky maze where three doors (A, B, C) block the way, each key is guarded by a quiz,
- * and ghosts chase you; the way out is the toilet at the far end. The last target is the Royal
- * Restroom — the first player through it wins.
+ * Everyone (humans and computer players) is dropped into a small 3D city full of pedestrians,
+ * traffic, armed guards and — when you misbehave — the police. Fists, a baseball bat, a pistol,
+ * an SMG and a shotgun; steal any car and run people over; rob the bank and watch the wanted
+ * stars climb. Missions are stops on the map (Gun Store → Haunted Mansion → Bank heist → the
+ * Royal Restroom) that pay out cash; the richest player when time runs out wins, and the first
+ * one through the Royal Restroom doors ends the match early.
  *
- * And the whole time your own BLADDER is filling. Around town there are public toilet stalls
- * (quiz-locked too) for relief; at high pressure you clench, fart and hop, and at 100% you have
- * an accident that costs you time and points. It is a pure race: everybody's bladder is their own.
+ * The Haunted Mansion is a maze of moonlit halls: three locked rooms (A, B, C), a key for each
+ * lying somewhere in the dark, ghosts on patrol (shoot them, blind them with the flashlight or
+ * shout at them) and a toilet exit at the far end.
+ *
+ * And the whole time your own BLADDER is filling. Blue public toilet stalls give relief; at high
+ * pressure you clench, fart and hop, and at 100% you have an accident that costs you cash and
+ * freezes you in shame for a few seconds.
  *
  * Positions are simulated at 20 Hz; clients get snapshots at 10 Hz and predict their own movement.
  */
 const EVENTS = require('./events');
-const { getQuestions } = require('./questions');
 const { serializePlayers } = require('./rooms');
-const bots = require('./bots');
+const { getTier } = require('./bots');
 const { pickLine } = require('./botLines');
 const db = require('./db');
 const mz = require('./maze');
@@ -33,39 +34,46 @@ const PLAYER_R = 11;
 const TICK_MS = 50;
 const SNAPSHOT_EVERY = 2; // ticks
 const BASE_SPEED = 170;
-const BOOST_SPEED_MUL = 1.75;
-const STUN_MS = 3000;
-const ZAP_RANGE = 160;
-const ZAP_COOLDOWN_MS = 1200;
-const QUIZ_MS = 15000;
-const LOCKOUT_MS = 4000;
 const MATCH_MS = 8 * 60 * 1000;
 const FINISH_GRACE_MS = 40000;
-// Computer players walk a bit slower than a human, more so at lower levels, so a person can keep up.
-const BOT_SPEED_MUL = { rookie: 0.6, veteran: 0.74, elite: 0.85, legend: 0.93 };
 const START_COUNTDOWN_MS = 3400;
 const DOOR_RADIUS = 46;
 const NPC_COUNT = 26;
 const CAR_COUNT = 8;
-const FINISH_BONUS = [1000, 600, 300];
+const FINISH_BONUS = [2000, 1200, 600];
+
+const RESPAWN_MS = 4000;
+const INVULN_MS = 2500;
+const START_HP = 100;
+
+// ---- vehicles ----
+const CAR_R = 20;
+const CAR_MAX_SPEED = 310;
+const CAR_TURN = 3.4;
+const CAR_HP = 220;
+const ROADKILL_DMG = 34;
+const ENTER_CAR_RANGE = 64;
+const PARKED_TTL_MS = 25000;
+const WRECK_RESPAWN_MS = 12000;
 
 // ---- bladder, farts and accidents ----
 const BLADDER_FILL_S = Number(process.env.BLADDER_FILL_S) || 150; // 0 -> 100% in this many seconds if nothing else happens
+const STARTER_ARSENAL = process.env.STARTER_ARSENAL === '1'; // test knob: everyone starts with every weapon
 const CLENCH_MS = 650;
 const CLENCH_SPEED_MUL = 0.35;
 const ACCIDENT_MS = 5500;
 const ACCIDENT_PENALTY = 250;
 const ACCIDENT_RESET = 35;
-const WRONG_BLADDER = 4;
 const CATCH_BLADDER = 7;
 const WC_RADIUS = 34;
+const WC_HOLD_MS = 1500;
 const WC_COOLDOWN_MS = 25000;
 const WC_MIN_BLADDER = 18;
-const WC_POINTS = 150;
 const FART_KINDS = 8; // the client maps a kind number to a sound recipe
 
 // ---- haunted mansion ----
-const MANSION_BONUS = 600;
+const MANSION_BONUS = 1000;
+const KEY_CASH = 300;
 const FLASH_RANGE = 210;
 const FLASH_COOLDOWN_MS = 7000;
 const GHOST_STUN_MS = 3500;
@@ -73,6 +81,23 @@ const GHOST_SCARE_STUN_MS = 2500;
 const GHOST_CATCH_COOLDOWN_MS = 7000;
 const SHOUT_RANGE = 170;
 const SHOUT_COOLDOWN_MS = 6000;
+
+// ---- law and order ----
+const MAX_STARS = 5;
+const WANTED_DECAY_MS = 22000;
+const COP_HP = 70;
+const GUARD_HP = 60;
+const NPC_HP = 30;
+
+const WEAPONS = {
+  fists: { code: 0, melee: true, dmg: 14, range: 42, cd: 420, cone: 1.2, label: 'Fists' },
+  bat: { code: 1, melee: true, dmg: 32, range: 58, cd: 720, cone: 1.5, label: 'Bat' },
+  pistol: { code: 2, dmg: 17, range: 520, cd: 380, spread: 0.03, ammoKey: 'pistol', label: 'Pistol' },
+  smg: { code: 3, dmg: 9, range: 460, cd: 110, spread: 0.1, ammoKey: 'smg', label: 'SMG' },
+  shotgun: { code: 4, dmg: 11, pellets: 6, range: 250, cd: 900, spread: 0.24, ammoKey: 'shotgun', label: 'Shotgun' },
+};
+const WEAPON_BY_CODE = ['fists', 'bat', 'pistol', 'smg', 'shotgun'];
+const AMMO_CAP = { pistol: 120, smg: 300, shotgun: 40 };
 
 /* ------------------------------------------------------------------ map */
 
@@ -83,17 +108,18 @@ const LAYOUT = [
   [{ kind: 'police', name: 'Police Dept' }, { kind: 'diner', name: 'Diner' }, { kind: 'park', name: 'Riverside Park' }, { kind: 'restroom', name: 'Royal Restroom' }],
 ];
 
+// act: what standing at the door for `hold` ms does. Side stops work any time (with a cooldown).
 const KINDS = {
-  gun: { icon: '🔫', color: '#c0392b', reward: 'blaster', label: 'a Blaster', line: 'Pick up a blaster that stuns rivals' },
-  garage: { icon: '🚗', color: '#2980b9', reward: 'car', label: 'a Turbo Car', line: 'Grab a turbo car — double speed' },
-  bank: { icon: '💰', color: '#d4a017', reward: 'cash', label: '+500 cash', line: 'Collect the cash', cash: 500 },
-  hospital: { icon: '🛡️', color: '#16a085', reward: 'shield', label: 'a Shield', line: 'Get a shield against the next stun' },
-  arcade: { icon: '🎮', color: '#8e44ad', reward: 'cash', label: '+300 tokens', line: 'Win arcade tokens', cash: 300 },
-  radio: { icon: '📻', color: '#e67e22', reward: 'cash', label: '+300 fame', line: 'Go on air for a fame bonus', cash: 300 },
-  police: { icon: '🚓', color: '#2c3e50', reward: 'shield', label: 'a Shield', line: 'Get a police shield' },
-  diner: { icon: '🍔', color: '#e74c3c', reward: 'car', label: 'a Turbo Scooter', line: 'Refuel — turbo scooter' },
-  mansion: { icon: '🏚️', color: '#5b3fd6', reward: 'mansion', label: 'the Haunted Mansion', line: 'Enter the haunted mansion — win 3 keys, dodge the ghosts, reach the toilet', cash: 0 },
-  restroom: { icon: '🚽', color: '#f1c40f', reward: 'finish', label: 'the win', line: 'Reach the Royal Restroom to win', cash: 0 },
+  gun: { icon: '🔫', color: '#c0392b', act: 'weapons', hold: 1500, side: true, guards: 2, label: 'a full arsenal', line: 'Grab guns at the Gun Store' },
+  garage: { icon: '🚗', color: '#2980b9', act: 'car', hold: 1500, side: true, guards: 1, label: 'a free car', line: 'A free car is waiting at the Garage' },
+  bank: { icon: '💰', color: '#d4a017', act: 'heist', hold: 4200, side: true, guards: 3, label: '$1500 (and 3 wanted stars!)', line: 'Rob the bank — the cops will come' },
+  hospital: { icon: '🏥', color: '#16a085', act: 'heal', hold: 1500, side: true, guards: 0, label: 'full health and armor', line: 'Patch yourself up at the Hospital' },
+  arcade: { icon: '🎮', color: '#8e44ad', act: 'cash', hold: 1500, side: true, guards: 1, cash: 400, label: '+$400', line: 'Win arcade tokens' },
+  radio: { icon: '📻', color: '#e67e22', act: 'cash', hold: 1500, side: true, guards: 1, cash: 400, label: '+$400', line: 'Go on air for a fame bonus' },
+  police: { icon: '🚓', color: '#2c3e50', act: 'bribe', hold: 1500, side: true, guards: 0, label: 'a clean record', line: 'Bribe the police ($300) to lose your stars' },
+  diner: { icon: '🍔', color: '#e74c3c', act: 'food', hold: 1500, side: true, guards: 1, cash: 250, label: 'a hot meal', line: 'Grab a burger for health' },
+  mansion: { icon: '🏚️', color: '#5b3fd6', act: 'mansion', hold: 1500, side: false, guards: 2, label: 'the Haunted Mansion', line: 'Enter the haunted mansion — win 3 keys, dodge the ghosts, find the toilet' },
+  restroom: { icon: '🚽', color: '#f1c40f', act: 'finish', hold: 2000, side: false, guards: 3, label: 'the win', line: 'Reach the Royal Restroom to win' },
 };
 
 function buildMap() {
@@ -157,6 +183,8 @@ function seeded(seed) {
 }
 
 const MAP = buildMap();
+const BUILDING_BY_KIND = Object.fromEntries(MAP.buildings.map((b) => [b.kind, b]));
+const CITY_RECTS = MAP.obstacles.map((o) => ({ x0: o.x, x1: o.x + o.w, y0: o.y, y1: o.y + o.h }));
 
 function collides(x, y, r) {
   if (x < r || y < r || x > W - r || y > H - r) return true;
@@ -277,7 +305,17 @@ function randomWalkable() {
   return { x: 50, y: 50 };
 }
 
-/* --------------------------------------------------------------- world sim */
+/* --------------------------------------------------------------- helpers */
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const TAU = Math.PI * 2;
+const angDiff = (a, b) => {
+  let d = (b - a) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+};
 
 function shuffled(list) {
   const copy = list.slice();
@@ -288,43 +326,117 @@ function shuffled(list) {
   return copy;
 }
 
-// shop, haunted mansion, shop, Royal Restroom (the finish)
+// distance along a ray to the first wall (or `max`)
+function rayRect(ox, oy, dx, dy, rc) {
+  let t0 = 0;
+  let t1 = Infinity;
+  for (const [o, d, lo, hi] of [[ox, dx, rc.x0, rc.x1], [oy, dy, rc.y0, rc.y1]]) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return Infinity;
+    } else {
+      let a = (lo - o) / d;
+      let b = (hi - o) / d;
+      if (a > b) [a, b] = [b, a];
+      t0 = Math.max(t0, a);
+      t1 = Math.min(t1, b);
+      if (t0 > t1) return Infinity;
+    }
+  }
+  return t0;
+}
+
+function wallDistance(sim, world, ox, oy, ang, max) {
+  const dx = Math.cos(ang);
+  const dy = Math.sin(ang);
+  let best = max;
+  const rects = world === 1 ? sim.mansion.rects : CITY_RECTS;
+  for (const rc of rects) {
+    const t = rayRect(ox, oy, dx, dy, rc);
+    if (t < best) best = t;
+  }
+  return best;
+}
+
+function segmentClear(sim, world, x1, y1, x2, y2) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  if (d < 1) return true;
+  return wallDistance(sim, world, x1, y1, Math.atan2(y2 - y1, x2 - x1), d) >= d - 0.5;
+}
+
+/* --------------------------------------------------------------- world sim */
+
 function pickMissions() {
-  const shops = shuffled(['gun', 'garage', 'bank', 'hospital', 'arcade', 'radio', 'police', 'diner']);
-  const two = shops.slice(0, 2);
-  if (!two.includes('gun')) two[Math.floor(Math.random() * 2)] = 'gun';
-  const kinds = [two[0], 'mansion', two[1], 'restroom'];
+  const kinds = ['gun', 'mansion', 'bank', 'restroom'];
   return kinds.map((kind) => {
-    const b = MAP.buildings.find((x) => x.kind === kind);
+    const b = BUILDING_BY_KIND[kind];
     const k = KINDS[kind];
-    return { kind, name: b.name, icon: k.icon, label: k.label, line: k.line, door: b.door, buildingId: b.id };
+    return { kind, name: b.name, icon: k.icon, label: k.label, line: k.line, door: b.door, buildingId: b.id, hold: k.hold };
   });
 }
 
 function makeNpcs() {
   return Array.from({ length: NPC_COUNT }, () => {
     const at = randomWalkable();
-    return { x: at.x, y: at.y, d: 1, path: [], wait: Math.random() * 3, speed: 46 + Math.random() * 30, look: [Math.floor(Math.random() * 6), Math.floor(Math.random() * 10)] };
+    return { x: at.x, y: at.y, d: 1, path: [], wait: Math.random() * 3, speed: 46 + Math.random() * 30, look: [Math.floor(Math.random() * 6), Math.floor(Math.random() * 10)], hp: NPC_HP, state: 0, respawnAt: 0, fleeUntil: 0 };
   });
 }
 
-function makeCars() {
+function laneCar(id) {
+  const horizontal = id % 2 === 0;
+  const laneIdx = horizontal ? Math.floor(Math.random() * 4) : Math.floor(Math.random() * 5);
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const center = horizontal ? laneIdx * MAP.rowStep + 50 : laneIdx * MAP.colStep + 50;
+  return { horizontal, fixed: center + dir * 20, pos: Math.random() * (horizontal ? W : H), dir, laneSpeed: 120 + Math.random() * 60 };
+}
+
+function placeLaneCar(c) {
+  if (c.horizontal) {
+    c.x = c.pos;
+    c.y = c.fixed;
+    c.ang = c.dir > 0 ? 0 : Math.PI;
+  } else {
+    c.x = c.fixed;
+    c.y = c.pos;
+    c.ang = c.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+  }
+}
+
+function makeCars(sim) {
   const cars = [];
   for (let i = 0; i < CAR_COUNT; i++) {
-    const horizontal = i % 2 === 0;
-    const laneIdx = horizontal ? Math.floor(Math.random() * 4) : Math.floor(Math.random() * 5);
-    const dir = Math.random() < 0.5 ? 1 : -1;
-    const center = horizontal ? laneIdx * MAP.rowStep + 50 : laneIdx * MAP.colStep + 50;
-    cars.push({
-      horizontal,
-      fixed: center + dir * 20,
-      pos: Math.random() * (horizontal ? W : H),
-      dir,
-      speed: 120 + Math.random() * 60,
-      color: Math.floor(Math.random() * 6),
-    });
+    const c = { id: sim.nextId++, mode: 'lane', driver: null, hp: CAR_HP, speed: 0, color: Math.floor(Math.random() * 6), parkedAt: 0, respawnAt: 0, lastDriver: null, ...laneCar(i) };
+    placeLaneCar(c);
+    cars.push(c);
   }
   return cars;
+}
+
+function makeGuards(sim) {
+  const guards = [];
+  for (const b of MAP.buildings) {
+    const n = KINDS[b.kind].guards || 0;
+    for (let i = 0; i < n; i++) {
+      const off = [[-72, -6], [72, -6], [0, 46], [-40, 40]][i % 4];
+      const [cx, cy] = nearestWalkable(b.door.x + off[0], b.door.y + off[1]);
+      const hx = cx * CELL + CELL / 2;
+      const hy = cy * CELL + CELL / 2;
+      guards.push({ id: sim.nextId++, bId: b.id, homeX: hx, homeY: hy, x: hx, y: hy, ang: Math.PI / 2, hp: GUARD_HP, alive: true, respawnAt: 0, nextShotAt: 0, shootUntil: 0 });
+    }
+  }
+  return guards;
+}
+
+function makeSpawners() {
+  const spots = [];
+  for (const p of MAP.parks) {
+    spots.push({ x: p.x + p.w / 2 - 70, y: p.y + p.h - 30, type: 'health', value: 40 });
+    spots.push({ x: p.x + p.w / 2 + 70, y: p.y + p.h - 30, type: 'armor', value: 40 });
+  }
+  const diner = BUILDING_BY_KIND.diner;
+  spots.push({ x: diner.door.x + 60, y: diner.door.y, type: 'bat', value: 1 });
+  const garage = BUILDING_BY_KIND.garage;
+  spots.push({ x: garage.door.x - 60, y: garage.door.y, type: 'pistol', value: 30 });
+  return spots.map((s) => ({ ...s, pk: null, respawnAt: 0 }));
 }
 
 function makeMansion(playerCount) {
@@ -336,11 +448,12 @@ function makeMansion(playerCount) {
     const at = mz.cellCenter(Math.floor(cell / mz.COLS), cell % mz.COLS);
     ghosts.push({ x: at.x, y: at.y, cell, next: cell, goal: cell, mode: 'patrol', stunUntil: 0, coolUntil: 0, speed: 104 + g * 6, retarget: 0 });
   }
-  return { layout, collision: mz.buildCollision(layout), ghosts };
+  const collision = mz.buildCollision(layout);
+  const rects = Array.from(new Set(collision.flat()));
+  return { layout, collision, rects, ghosts };
 }
 
 function startCity(io, room) {
-  const questionPool = shuffled(getQuestions('city'));
   const missions = pickMissions();
   const now = Date.now();
   const spawnPoints = shuffled(
@@ -356,47 +469,65 @@ function startCity(io, room) {
     firstFinishAt: null,
     finishedCount: 0,
     order,
+    nextId: 1,
     npcs: makeNpcs(),
-    cars: makeCars(),
+    cars: [],
+    guards: [],
+    cops: [],
+    pickups: [],
+    spawners: makeSpawners(),
     players: new Map(),
-    questionPool,
     tick: 0,
     noHumansSince: null,
     over: false,
     lastTickAt: now,
+    nextCopAt: 0,
   };
+  sim.cars = makeCars(sim);
+  sim.guards = makeGuards(sim);
   order.forEach((id, i) => {
     const p = room.players.get(id);
     p.score = 0;
-    p.streak = 0;
-    p.eliminated = false;
     p.left = false;
-    p.place = null;
-    p.team = null;
     const sp = spawnPoints[i % spawnPoints.length];
     sim.players.set(id, {
       idx: i,
       x: sp.x,
       y: sp.y,
-      face: 1,
+      ang: 0,
       input: { dx: 0, dy: 0 },
       stunUntil: 0,
-      shield: false,
-      boostUntil: 0,
-      blaster: 0,
+      // combat
+      hp: START_HP,
+      armor: 0,
+      cash: 0,
+      weapon: STARTER_ARSENAL ? 'pistol' : 'fists',
+      weapons: { fists: true, bat: STARTER_ARSENAL, pistol: STARTER_ARSENAL, smg: STARTER_ARSENAL, shotgun: STARTER_ARSENAL },
+      ammo: STARTER_ARSENAL ? { pistol: 120, smg: 300, shotgun: 40 } : { pistol: 0, smg: 0, shotgun: 0 },
+      nextAttackAt: 0,
+      attackUntil: 0,
+      hurtUntil: 0,
+      deadUntil: 0,
+      invulnUntil: now + START_COUNTDOWN_MS + INVULN_MS,
+      kills: 0,
+      deaths: 0,
+      lastHurtBy: null,
+      lastHurtAt: 0,
+      wanted: 0,
+      lastCrimeAt: 0,
+      veh: null,
+      // progress
       mission: 0,
       missionsDone: 0,
-      points: 0,
       finishedAt: null,
       finishRank: null,
-      quiz: null,
-      qCursor: i * 7,
-      lockoutUntil: 0,
-      nextZapAt: 0,
+      holdKey: '',
+      holdMs: 0,
+      holdNeed: 0,
+      sideCd: {},
       path: [],
       pathFor: '',
-      botNextZap: 0,
-      speedMul: p.isBot ? BOT_SPEED_MUL[p.botTier] || 0.74 : 1,
+      speedMul: p.isBot ? getTier(p.botTier).speed : 1,
       // bladder and body
       bladder: Math.random() * 12,
       clenchUntil: 0,
@@ -418,15 +549,31 @@ function startCity(io, room) {
       nextShoutAt: 0,
       shoutUntil: 0,
       lastCaughtAt: 0,
+      // bots
       botNextThink: 0,
       botGoal: null,
       botNextFlash: 0,
+      botTarget: null,
+      botStrafeAt: 0,
+      botStrafeDir: 1,
+      botReactAt: 0,
+      botKind: '',
     });
   });
   room.city = sim;
   room.state = 'city';
   room.startsAt = sim.startsAt;
 
+  if (process.env.TEST_START_MANSION === '1') {
+    // test knob: humans begin inside the haunted mansion
+    for (const [id, ps] of sim.players) {
+      const p = room.players.get(id);
+      if (p && !p.isBot) {
+        ps.mission = 1;
+        enterMansion(io, room, sim, id, ps, BUILDING_BY_KIND.mansion);
+      }
+    }
+  }
   io.to(room.code).emit(EVENTS.CITY_START, initPayload(room));
   room.timers.cityTick = setInterval(() => tick(io, room), TICK_MS);
 }
@@ -437,7 +584,9 @@ function initPayload(room) {
   const walls = mz.compactWalls(L);
   return {
     map: sim.map,
-    missions: sim.missions.map((m) => ({ kind: m.kind, name: m.name, icon: m.icon, label: m.label, line: m.line, door: m.door })),
+    missions: sim.missions.map((m) => ({ kind: m.kind, name: m.name, icon: m.icon, label: m.label, line: m.line, door: m.door, hold: m.hold })),
+    kinds: Object.fromEntries(Object.entries(KINDS).map(([k, v]) => [k, { icon: v.icon, act: v.act, side: v.side, hold: v.hold, line: v.line }])),
+    weapons: WEAPON_BY_CODE.map((k) => ({ key: k, label: WEAPONS[k].label, melee: !!WEAPONS[k].melee })),
     players: sim.order.map((id) => {
       const p = room.players.get(id);
       return { playerId: id, name: p.name, avatar: p.avatar, isBot: !!p.isBot, botTier: p.botTier || null };
@@ -457,6 +606,7 @@ function initPayload(room) {
       doors: L.doors.map((d) => ({ letter: d.letter, ...mz.cellCenter(d.r, d.c) })),
       ghostCount: sim.mansion.ghosts.length,
     },
+    guardCount: sim.guards.length,
     startsAt: sim.startsAt,
     endsAt: sim.endsAt,
     serverNow: Date.now(),
@@ -464,36 +614,7 @@ function initPayload(room) {
   };
 }
 
-/* ------------------------------------------------------------------ tick */
-
-function speedOf(ps, now) {
-  if (ps.stunUntil > now || ps.quiz) return 0;
-  let sp = BASE_SPEED * (ps.speedMul || 1) * (ps.boostUntil > now ? BOOST_SPEED_MUL : 1);
-  if (ps.clenchUntil > now) sp *= CLENCH_SPEED_MUL;
-  return sp;
-}
-
-function collidesFor(sim, ps, x, y) {
-  if (ps.world === 1) return mz.collidesWith(sim.mansion.collision, sim.mansion.layout, ps.opened, x, y, mz.PLAYER_R);
-  return collides(x, y, PLAYER_R);
-}
-
-function movePlayer(sim, ps, dx, dy, dt, now) {
-  const sp = speedOf(ps, now);
-  if (!sp || (!dx && !dy)) return;
-  const len = Math.hypot(dx, dy) || 1;
-  const vx = (dx / len) * sp * dt;
-  const vy = (dy / len) * sp * dt;
-  if (!collidesFor(sim, ps, ps.x + vx, ps.y)) ps.x += vx;
-  if (!collidesFor(sim, ps, ps.x, ps.y + vy)) ps.y += vy;
-  if (Math.abs(dx) > 0.15) ps.face = dx > 0 ? 1 : -1;
-}
-
-function nextQuestion(sim, ps) {
-  const q = sim.questionPool[ps.qCursor % sim.questionPool.length];
-  ps.qCursor += 1;
-  return q;
-}
+/* ------------------------------------------------------------- tiny utilities */
 
 function say(io, room, id, kind, chance) {
   const p = room.players.get(id);
@@ -506,313 +627,761 @@ function say(io, room, id, kind, chance) {
   io.to(room.code).emit(EVENTS.BOT_SAY, { playerId: id, text });
 }
 
-function feed(io, room, text) {
-  io.to(room.code).emit(EVENTS.CITY_FEED, { text });
+const feed = (io, room, text) => io.to(room.code).emit(EVENTS.CITY_FEED, { text });
+const fx = (io, room, payload) => io.to(room.code).emit(EVENTS.CITY_FX, payload);
+
+function setCash(room, id, ps, delta) {
+  ps.cash = Math.max(0, ps.cash + delta);
+  const p = room.players.get(id);
+  if (p) p.score = ps.cash;
+}
+
+function nameOf(room, id) {
+  const p = room.players.get(id);
+  return p ? `${p.avatar} ${p.name}` : 'Someone';
+}
+
+function idOfPs(sim, ps) {
+  for (const [id, x] of sim.players) if (x === ps) return id;
+  return null;
 }
 
 function addBladder(ps, amount) {
   ps.bladder = Math.max(0, Math.min(100, ps.bladder + amount));
 }
 
-/* ------------------------------------------------------------------ quiz gates */
+/* ------------------------------------------------------------------ pickups */
 
-// ctx: { kind: 'gate' | 'key' | 'wc', ... }
-function openQuiz(io, room, id, ps, now, ctx) {
-  const sim = room.city;
-  const p = room.players.get(id);
-  const q = nextQuestion(sim, ps);
-  ps.quiz = { q, startedAt: now, endsAt: now + QUIZ_MS, ctx };
-  ps.input = { dx: 0, dy: 0 };
-  let head = '';
-  let mission = null;
-  if (ctx.kind === 'gate') {
-    const m = sim.missions[ps.mission];
-    mission = { name: m.name, icon: m.icon, label: m.label };
-    head = `${m.icon} ${m.name} — answer to unlock ${m.label}`;
-  } else if (ctx.kind === 'key') {
-    head = `🔑 Key ${ctx.letter.toUpperCase()} is locked — answer to win it`;
-    mission = { name: `Key ${ctx.letter.toUpperCase()}`, icon: '🔑', label: `door ${ctx.letter.toUpperCase()}` };
+const PICKUP_CODE = { cash: 0, pistol: 1, smg: 2, shotgun: 3, health: 4, armor: 5, bat: 6 };
+
+function dropPickup(sim, type, x, y, value, ttl) {
+  if (sim.pickups.length > 70) sim.pickups.shift();
+  const pk = { id: sim.nextId++, type, x, y, value, expires: ttl ? Date.now() + ttl : 0 };
+  sim.pickups.push(pk);
+  return pk;
+}
+
+function givePickup(io, room, id, ps, pk, now) {
+  if (pk.type === 'cash') setCash(room, id, ps, pk.value);
+  else if (pk.type === 'health') {
+    if (ps.hp >= START_HP && pk.value) ps.hp = START_HP;
+    ps.hp = Math.min(START_HP, ps.hp + pk.value);
+  } else if (pk.type === 'armor') ps.armor = Math.min(100, ps.armor + pk.value);
+  else if (pk.type === 'bat') {
+    ps.weapons.bat = true;
+    if (ps.weapon === 'fists') ps.weapon = 'bat';
   } else {
-    head = '🚽 The stall is locked — answer to get relief!';
-    mission = { name: 'Public toilet', icon: '🚽', label: 'relief' };
+    ps.weapons[pk.type] = true;
+    ps.ammo[pk.type] = Math.min(AMMO_CAP[pk.type], ps.ammo[pk.type] + pk.value);
+    if (ps.weapon === 'fists' || ps.weapon === 'bat') ps.weapon = pk.type;
   }
-  if (p && p.socketId) {
-    io.to(p.socketId).emit(EVENTS.CITY_QUIZ, { text: q.text, choices: q.choices, endsAt: ps.quiz.endsAt, serverNow: now, kind: ctx.kind, head, mission });
-  }
-  if (p && p.isBot) {
-    const plan = bots.planAnswer(p.botTier, q, QUIZ_MS, { streak: 0 });
-    const delay = Math.min(QUIZ_MS - 1200, plan.delay * 0.8);
-    const questionRef = ps.quiz;
-    setTimeout(() => {
-      if (room.state !== 'city' || ps.quiz !== questionRef) return;
-      resolveAnswer(io, room, id, plan.choiceIndex);
-    }, delay);
-  }
-}
-
-function enterMansion(io, room, id, ps) {
-  const sim = room.city;
-  const L = sim.mansion.layout;
-  const p = room.players.get(id);
-  const s = mz.cellCenter(L.start.r, L.start.c);
-  const m = sim.missions[ps.mission];
-  ps.exitAt = { x: m.door.x, y: m.door.y };
-  ps.world = 1;
-  ps.opened = new Set();
-  ps.keysWon = 0;
-  const a = Math.random() * Math.PI * 2;
-  ps.x = s.x + Math.cos(a) * 20;
-  ps.y = s.y + Math.sin(a) * 20;
-  ps.face = -1;
-  ps.path = [];
-  ps.botGoal = null;
-  ps.lastCaughtAt = 0;
-  feed(io, room, `🏚️ ${p.avatar} ${p.name} entered the Haunted Mansion…`);
-}
-
-function completeMansion(io, room, id, ps, now) {
-  const sim = room.city;
-  const p = room.players.get(id);
-  ps.world = 0;
-  const m = sim.missions[ps.mission];
-  ps.x = m.door.x;
-  ps.y = m.door.y + 6;
-  ps.path = [];
-  ps.pathFor = '';
-  ps.points += MANSION_BONUS;
-  ps.missionsDone += 1;
-  ps.mission += 1;
-  ps.bladder = 0; // sweet relief
-  ps.relieved += 1;
-  p.score = ps.points;
-  io.to(room.code).emit(EVENTS.CITY_FX, { type: 'relief', playerId: id });
-  feed(io, room, `🚽 ${p.avatar} ${p.name} made it out of the mansion — what a relief! +${MANSION_BONUS}`);
-  say(io, room, id, 'right', 0.8);
-  if (p.socketId) io.to(p.socketId).emit(EVENTS.CITY_RESULT, { kind: 'exit', correct: true, gained: MANSION_BONUS, points: ps.points, nextMission: ps.mission, lockoutMs: 0, reward: { kind: 'relief', label: 'sweet relief' } });
+  fx(io, room, { type: 'pickup', playerId: id, what: pk.type, x: pk.x, y: pk.y });
   void now;
 }
 
-function grantReward(io, room, id, ps, now, quizStartedAt) {
-  const sim = room.city;
-  const p = room.players.get(id);
-  const mission = sim.missions[ps.mission];
-  const kind = KINDS[mission.kind];
-  const speedBonus = Math.round(300 * Math.max(0, 1 - (now - quizStartedAt) / QUIZ_MS));
-  let gained = 400 + speedBonus + (kind.cash || 0);
-  let text = '';
-  if (kind.reward === 'mansion') {
-    // the gate opens — the mission itself completes when you come back out through the toilet
-    ps.points += gained;
-    enterMansion(io, room, id, ps);
-    p.score = ps.points;
-    return { gained, finished: false, reward: { kind: 'mansion', label: mission.label }, speedBonus, entered: true };
+/* -------------------------------------------------------------------- combat */
+
+function gatherTargets(sim, room, attId, world, now) {
+  const out = [];
+  for (const [id, ps] of sim.players) {
+    if (id === attId) continue;
+    const p = room.players.get(id);
+    if (!p || p.left || ps.world !== world || ps.deadUntil > now || ps.finishedAt) continue;
+    out.push({ kind: 'player', id, ref: ps, x: ps.x, y: ps.y, r: ps.veh ? 19 : 13 });
   }
-  if (kind.reward === 'blaster') {
-    ps.blaster = 3;
-    text = `${p.avatar} ${p.name} picked up a Blaster 🔫`;
-  } else if (kind.reward === 'car') {
-    ps.boostUntil = now + 25000;
-    text = `${p.avatar} ${p.name} grabbed a Turbo ${mission.kind === 'diner' ? 'Scooter' : 'Car'} 🚗`;
-  } else if (kind.reward === 'shield') {
-    ps.shield = true;
-    text = `${p.avatar} ${p.name} got a Shield 🛡️`;
-  } else if (kind.reward === 'cash') {
-    text = `${p.avatar} ${p.name} completed ${mission.name} ${mission.icon}`;
+  if (world === 0) {
+    for (const n of sim.npcs) if (n.state !== 2) out.push({ kind: 'npc', ref: n, x: n.x, y: n.y, r: 12 });
+    for (const g of sim.guards) if (g.alive) out.push({ kind: 'guard', ref: g, x: g.x, y: g.y, r: 13 });
+    for (const c of sim.cops) if (c.hp > 0) out.push({ kind: 'cop', ref: c, x: c.x, y: c.y, r: 13 });
+  } else {
+    for (const g of sim.mansion.ghosts) out.push({ kind: 'ghost', ref: g, x: g.x, y: g.y, r: 26 });
   }
-  ps.points += gained;
-  ps.missionsDone += 1;
-  ps.mission += 1;
+  return out;
+}
+
+function addWanted(io, room, sim, ps, n, now, cap) {
+  if (!ps) return;
+  const before = ps.wanted;
+  ps.wanted = Math.max(ps.wanted, Math.min(cap || MAX_STARS, Math.max(ps.wanted, 0) + n)); // street crimes alone can't max you out
+  ps.lastCrimeAt = now;
+  if (ps.wanted > before) {
+    const id = idOfPs(sim, ps);
+    fx(io, room, { type: 'wanted', playerId: id, level: ps.wanted });
+    if (before === 0) feed(io, room, `🚨 ${nameOf(room, id)} is WANTED!`);
+  }
+}
+
+function killNpcLike(io, room, sim, tgt, attPs, now) {
+  const { kind, ref } = tgt;
+  if (kind === 'npc') {
+    ref.state = 2;
+    ref.respawnAt = now + 10000;
+    dropPickup(sim, 'cash', ref.x, ref.y, Math.round(rnd(40, 140)), 25000);
+    if (attPs) addWanted(io, room, sim, attPs, 1, now, 2);
+  } else if (kind === 'guard') {
+    ref.alive = false;
+    ref.respawnAt = now + 30000;
+    dropPickup(sim, 'cash', ref.x, ref.y, 180, 25000);
+    if (Math.random() < 0.6) dropPickup(sim, Math.random() < 0.5 ? 'pistol' : 'smg', ref.x + 14, ref.y + 6, 24, 25000);
+  } else if (kind === 'cop') {
+    ref.hp = 0;
+    dropPickup(sim, 'cash', ref.x, ref.y, 120, 25000);
+    dropPickup(sim, 'armor', ref.x + 14, ref.y, 30, 25000);
+    if (attPs) addWanted(io, room, sim, attPs, 2, now, 3);
+  }
+  fx(io, room, { type: 'down', kind, x: Math.round(ref.x), y: Math.round(ref.y) });
+  if (attPs) {
+    attPs.kills += 1;
+    const aid = idOfPs(sim, attPs);
+    say(io, room, aid, 'kill', 0.18);
+  }
+}
+
+function respawnPlayer(io, room, sim, id, ps, now) {
+  const h = BUILDING_BY_KIND.hospital;
+  const [cx, cy] = nearestWalkable(h.door.x + rnd(-60, 60), h.door.y + rnd(0, 30));
+  ps.world = 0;
+  ps.x = cx * CELL + CELL / 2;
+  ps.y = cy * CELL + CELL / 2;
+  ps.hp = START_HP;
+  ps.armor = 0;
+  ps.deadUntil = 0;
+  ps.veh = null;
+  ps.input = { dx: 0, dy: 0 };
+  ps.weapon = ps.weapons.pistol && ps.ammo.pistol > 0 ? 'pistol' : 'fists';
+  for (const k of Object.keys(ps.ammo)) ps.ammo[k] = Math.floor(ps.ammo[k] * 0.5);
+  ps.invulnUntil = now + INVULN_MS;
   ps.path = [];
-  ps.pathFor = '';
-  let finished = false;
-  if (ps.mission >= sim.missions.length) {
-    finished = true;
+  ps.botTarget = null;
+  fx(io, room, { type: 'respawn', playerId: id });
+}
+
+function killPlayer(io, room, sim, id, ps, killer, cause, now) {
+  ps.hp = 0;
+  ps.deadUntil = now + RESPAWN_MS;
+  ps.deaths += 1;
+  ps.wanted = 0;
+  ps.input = { dx: 0, dy: 0 };
+  ps.holdMs = 0;
+  ps.holdKey = '';
+  if (ps.veh) exitCar(io, room, sim, ps, now, true);
+  const drop = Math.round(ps.cash * 0.2);
+  if (drop > 0) {
+    setCash(room, id, ps, -drop);
+    dropPickup(sim, 'cash', ps.x, ps.y, drop, 30000);
+  }
+  const kid = killer ? idOfPs(sim, killer) : null;
+  if (killer && killer !== ps) {
+    killer.kills += 1;
+    setCash(room, kid, killer, 250);
+    say(io, room, kid, 'kill', 0.5);
+  }
+  say(io, room, id, 'die', 0.5);
+  fx(io, room, { type: 'kill', killer: kid, victim: id, weapon: cause });
+  feed(io, room, kid && kid !== id ? `💀 ${nameOf(room, kid)} ${cause === 'car' ? 'ran over' : cause === 'boom' ? 'blew up' : 'took out'} ${nameOf(room, id)}` : `💀 ${nameOf(room, id)} died${cause ? ` (${cause})` : ''}`);
+}
+
+function damagePlayer(io, room, sim, id, ps, dmg, killer, cause, now) {
+  if (ps.deadUntil > now || ps.invulnUntil > now || ps.finishedAt) return false;
+  let d = dmg;
+  if (ps.veh) d *= 0.55;
+  if (ps.armor > 0) {
+    const a = Math.min(ps.armor, d * 0.6);
+    ps.armor -= a;
+    d -= a;
+  }
+  ps.hp -= d;
+  ps.hurtUntil = now + 220;
+  if (killer) {
+    ps.lastHurtBy = idOfPs(sim, killer);
+    ps.lastHurtAt = now;
+  }
+  fx(io, room, { type: 'hit', x: Math.round(ps.x), y: Math.round(ps.y), dmg: Math.round(dmg), k: 0, playerId: id });
+  if (ps.hp <= 0) {
+    killPlayer(io, room, sim, id, ps, killer, cause, now);
+    return true;
+  }
+  say(io, room, id, 'hurt', 0.06);
+  return false;
+}
+
+function hitTarget(io, room, sim, att, tgt, dmg, cause, now) {
+  const attId = att ? idOfPs(sim, att) : null;
+  if (tgt.kind === 'player') {
+    damagePlayer(io, room, sim, tgt.id, tgt.ref, dmg, att, cause, now);
+    return;
+  }
+  if (tgt.kind === 'ghost') {
+    const g = tgt.ref;
+    g.stunUntil = now + GHOST_SCARE_STUN_MS;
+    g.coolUntil = now + GHOST_SCARE_STUN_MS + 2000;
+    g.mode = 'stunned';
+    if (att) att.scared += 1;
+    fx(io, room, { type: 'hit', x: Math.round(g.x), y: Math.round(g.y), dmg: 0, k: 4 });
+    return;
+  }
+  const ref = tgt.ref;
+  const before = tgt.kind === 'npc' ? ref.hp : ref.hp;
+  ref.hp = before - dmg;
+  fx(io, room, { type: 'hit', x: Math.round(ref.x), y: Math.round(ref.y), dmg: Math.round(dmg), k: tgt.kind === 'npc' ? 1 : tgt.kind === 'guard' ? 2 : 3 });
+  if (tgt.kind === 'npc' && ref.state !== 2 && ref.hp > 0) {
+    ref.state = 1;
+    ref.fleeUntil = now + 6000;
+    ref.path = [];
+    if (att) att.lastCrimeAt = now;
+  }
+  if (ref.hp <= 0) killNpcLike(io, room, sim, tgt, att, now);
+  else if (tgt.kind === 'cop' && att) addWanted(io, room, sim, att, 2, now);
+  void attId;
+}
+
+// One attack: melee cone or a hitscan volley. Returns true if it went off.
+function attackNow(io, room, id, ps, now, opt) {
+  const sim = room.city;
+  if (!sim || ps.deadUntil > now || ps.finishedAt || ps.veh || ps.stunUntil > now || now < sim.startsAt || now < ps.nextAttackAt) return false;
+  let key = ps.weapon;
+  let w = WEAPONS[key];
+  if (!w) return false;
+  if (!w.melee && ps.ammo[w.ammoKey] <= 0) {
+    key = ps.weapons.bat ? 'bat' : 'fists';
+    ps.weapon = key;
+    w = WEAPONS[key];
+  }
+  const world = ps.world;
+  const targets = gatherTargets(sim, room, id, world, now);
+  let aim = ps.ang;
+  let picked = null;
+  if (opt && opt.target) {
+    picked = opt.target;
+    aim = Math.atan2(picked.y - ps.y, picked.x - ps.x) + (opt.err || 0);
+  } else {
+    // auto-aim: the closest thing roughly in front of you
+    let bestScore = Infinity;
+    for (const t of targets) {
+      const d = Math.hypot(t.x - ps.x, t.y - ps.y);
+      if (d > w.range + t.r) continue;
+      const a = angDiff(ps.ang, Math.atan2(t.y - ps.y, t.x - ps.x));
+      if (Math.abs(a) > (w.melee ? 1.1 : 0.8)) continue;
+      const score = d + Math.abs(a) * 140;
+      if (score < bestScore) {
+        bestScore = score;
+        picked = t;
+      }
+    }
+    if (picked) aim = Math.atan2(picked.y - ps.y, picked.x - ps.x);
+  }
+  ps.ang = aim;
+  ps.nextAttackAt = now + w.cd;
+  ps.attackUntil = now + 280;
+
+  if (w.melee) {
+    const hits = [];
+    for (const t of targets) {
+      const d = Math.hypot(t.x - ps.x, t.y - ps.y);
+      if (d > w.range + t.r) continue;
+      if (Math.abs(angDiff(aim, Math.atan2(t.y - ps.y, t.x - ps.x))) > w.cone / 2 && d > t.r + 8) continue;
+      hits.push({ t, d });
+    }
+    hits.sort((a, b) => a.d - b.d);
+    fx(io, room, { type: 'melee', playerId: id, w: w.code, hit: hits.length > 0 });
+    for (const h of hits.slice(0, 2)) hitTarget(io, room, sim, ps, h.t, w.dmg, w.label.toLowerCase(), now);
+    return true;
+  }
+
+  ps.ammo[w.ammoKey] -= 1;
+  const pellets = w.pellets || 1;
+  const ends = [];
+  const ox = ps.x + Math.cos(aim) * 14;
+  const oy = ps.y + Math.sin(aim) * 14;
+  for (let i = 0; i < pellets; i++) {
+    const a = aim + (Math.random() - 0.5) * 2 * (w.spread || 0);
+    const wall = wallDistance(sim, world, ox, oy, a, w.range);
+    let best = wall;
+    let hit = null;
+    for (const t of targets) {
+      const dx = t.x - ox;
+      const dy = t.y - oy;
+      const along = dx * Math.cos(a) + dy * Math.sin(a);
+      if (along < 0 || along > best) continue;
+      const perp = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
+      if (perp > t.r) continue;
+      const tt = Math.max(0, along - Math.sqrt(Math.max(0, t.r * t.r - perp * perp)));
+      if (tt < best) {
+        best = tt;
+        hit = t;
+      }
+    }
+    ends.push([Math.round(ox + Math.cos(a) * best), Math.round(oy + Math.sin(a) * best)]);
+    if (hit) hitTarget(io, room, sim, ps, hit, w.dmg, w.label.toLowerCase(), now);
+  }
+  fx(io, room, { type: 'shot', playerId: id, w: w.code, x: Math.round(ox), y: Math.round(oy), ends });
+  if (ps.world === 0 && ps.wanted === 0 && Math.random() < 0.02) addWanted(io, room, sim, ps, 0, now);
+  return true;
+}
+
+// guards and cops fire at players
+function enemyShoot(io, room, sim, shooter, tgt, dmg, acc, now) {
+  const ang = Math.atan2(tgt.y - shooter.y, tgt.x - shooter.x);
+  shooter.ang = ang;
+  const ox = shooter.x + Math.cos(ang) * 14;
+  const oy = shooter.y + Math.sin(ang) * 14;
+  const hit = Math.random() < acc;
+  const a = ang + (hit ? 0 : (Math.random() < 0.5 ? -1 : 1) * rnd(0.08, 0.25));
+  const d = Math.hypot(tgt.x - ox, tgt.y - oy);
+  const wall = wallDistance(sim, 0, ox, oy, a, 560);
+  const end = Math.min(wall, hit ? d : d + 60);
+  fx(io, room, { type: 'shot', playerId: null, w: 2, x: Math.round(ox), y: Math.round(oy), ends: [[Math.round(ox + Math.cos(a) * end), Math.round(oy + Math.sin(a) * end)]] });
+  if (hit && wall >= d - 4) {
+    const id = idOfPs(sim, tgt);
+    damagePlayer(io, room, sim, id, tgt, dmg, null, 'gunfire', now);
+  }
+}
+
+/* ------------------------------------------------------------------- vehicles */
+
+function nearestCar(sim, x, y) {
+  let best = null;
+  let bd = ENTER_CAR_RANGE;
+  for (const c of sim.cars) {
+    if (c.mode !== 'lane' && c.mode !== 'parked') continue;
+    const d = Math.hypot(c.x - x, c.y - y);
+    if (d < bd) {
+      bd = d;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function enterCar(io, room, sim, id, ps, car, now) {
+  car.mode = 'player';
+  car.driver = id;
+  car.lastDriver = id;
+  car.speed = 0;
+  ps.veh = car;
+  ps.holdMs = 0;
+  ps.holdKey = '';
+  addWanted(io, room, sim, ps, 1, now); // grand theft auto!
+  fx(io, room, { type: 'carjack', playerId: id });
+}
+
+function exitCar(io, room, sim, ps, now, silent) {
+  const car = ps.veh;
+  if (!car) return;
+  ps.veh = null;
+  car.driver = null;
+  car.mode = 'parked';
+  car.speed = 0;
+  car.parkedAt = now;
+  const side = car.ang + Math.PI / 2;
+  for (const s of [1, -1]) {
+    const x = car.x + Math.cos(side) * 34 * s;
+    const y = car.y + Math.sin(side) * 34 * s;
+    if (!collides(x, y, PLAYER_R)) {
+      ps.x = x;
+      ps.y = y;
+      return;
+    }
+  }
+  const [cx, cy] = nearestWalkable(car.x, car.y);
+  ps.x = cx * CELL + CELL / 2;
+  ps.y = cy * CELL + CELL / 2;
+  void io;
+  void room;
+  void silent;
+}
+
+function explodeCar(io, room, sim, car, now) {
+  const credit = car.lastDriver && sim.players.get(car.lastDriver) ? sim.players.get(car.lastDriver) : null;
+  fx(io, room, { type: 'boom', x: Math.round(car.x), y: Math.round(car.y) });
+  const driver = car.driver ? sim.players.get(car.driver) : null;
+  if (driver) {
+    driver.veh = null;
+    driver.x = car.x;
+    driver.y = car.y;
+  }
+  car.mode = 'wreck';
+  car.driver = null;
+  car.speed = 0;
+  car.hp = 0;
+  car.respawnAt = now + WRECK_RESPAWN_MS;
+  const near = gatherTargets(sim, room, null, 0, now);
+  // the driver is thrown clear but hurt; everyone close takes blast damage
+  if (driver) damagePlayer(io, room, sim, car.lastDriver, driver, 40, null, 'boom', now);
+  for (const t of near) {
+    const d = Math.hypot(t.x - car.x, t.y - car.y);
+    if (d > 95) continue;
+    if (t.kind === 'player' && t.ref === driver) continue;
+    const dmg = 55 * (1 - d / 120);
+    hitTarget(io, room, sim, credit && credit !== t.ref ? credit : null, t, dmg, 'boom', now);
+  }
+}
+
+function stepDriver(io, room, sim, id, ps, dt, now) {
+  const car = ps.veh;
+  const { dx, dy } = ps.input;
+  const mag = Math.hypot(dx, dy);
+  if (mag > 0.1) {
+    const target = Math.atan2(dy, dx);
+    const turn = clamp(angDiff(car.ang, target), -CAR_TURN * dt, CAR_TURN * dt);
+    car.ang += turn * (0.4 + 0.6 * Math.min(1, Math.abs(car.speed) / 120 + 0.3));
+    car.speed += (CAR_MAX_SPEED * Math.min(1, mag) - car.speed) * Math.min(1, dt * 1.6);
+  } else {
+    car.speed = Math.max(0, car.speed - 240 * dt);
+  }
+  if (ps.stunUntil > now) car.speed = 0;
+  const vx = Math.cos(car.ang) * car.speed * dt;
+  const vy = Math.sin(car.ang) * car.speed * dt;
+  let crashed = false;
+  if (!collides(car.x + vx, car.y + vy, CAR_R)) {
+    car.x += vx;
+    car.y += vy;
+  } else if (!collides(car.x + vx, car.y, CAR_R)) {
+    car.x += vx;
+    crashed = true;
+  } else if (!collides(car.x, car.y + vy, CAR_R)) {
+    car.y += vy;
+    crashed = true;
+  } else crashed = true;
+  if (crashed && car.speed > 90) {
+    car.hp -= car.speed * 0.09;
+    car.speed *= -0.25;
+    fx(io, room, { type: 'crash', x: Math.round(car.x), y: Math.round(car.y) });
+  }
+  ps.x = car.x;
+  ps.y = car.y;
+  ps.ang = car.ang;
+  // roadkill
+  if (Math.abs(car.speed) > 120) {
+    for (const t of gatherTargets(sim, room, id, 0, now)) {
+      if (Math.hypot(t.x - car.x, t.y - car.y) > CAR_R + t.r) continue;
+      const key = `rk${t.kind}${t.kind === 'player' ? t.id : t.ref.id || sim.npcs.indexOf(t.ref)}`;
+      if ((car[key] || 0) > now) continue;
+      car[key] = now + 600;
+      hitTarget(io, room, sim, ps, t, ROADKILL_DMG, 'car', now);
+    }
+  }
+  if (car.hp <= 0) explodeCar(io, room, sim, car, now);
+}
+
+function stepCars(io, room, sim, dt, now) {
+  for (const c of sim.cars) {
+    if (c.mode === 'lane') {
+      c.pos += c.dir * c.laneSpeed * dt;
+      const limit = c.horizontal ? W : H;
+      if (c.pos > limit + 60) c.pos = -60;
+      if (c.pos < -60) c.pos = limit + 60;
+      placeLaneCar(c);
+    } else if (c.mode === 'parked' && now - c.parkedAt > PARKED_TTL_MS) {
+      Object.assign(c, laneCar(sim.cars.indexOf(c)), { mode: 'lane', hp: CAR_HP, speed: 0 });
+      placeLaneCar(c);
+    } else if (c.mode === 'wreck' && now >= c.respawnAt) {
+      Object.assign(c, laneCar(sim.cars.indexOf(c)), { mode: 'lane', hp: CAR_HP, speed: 0, color: Math.floor(Math.random() * 6) });
+      placeLaneCar(c);
+    }
+  }
+}
+
+/* ------------------------------------------------------------ missions + stops */
+
+function completeAct(io, room, sim, id, ps, b, isMission, now) {
+  const k = KINDS[b.kind];
+  const who = nameOf(room, id);
+  if (k.act === 'weapons') {
+    for (const wk of ['pistol', 'smg', 'shotgun']) {
+      ps.weapons[wk] = true;
+      ps.ammo[wk] = Math.min(AMMO_CAP[wk], ps.ammo[wk] + { pistol: 60, smg: 150, shotgun: 20 }[wk]);
+    }
+    ps.weapons.bat = true;
+    ps.armor = Math.min(100, ps.armor + 30);
+    if (ps.weapon === 'fists' || ps.weapon === 'bat') ps.weapon = 'pistol';
+    feed(io, room, `🔫 ${who} stocked up at the Gun Store`);
+    if (isMission) setCash(room, id, ps, 200);
+  } else if (k.act === 'car') {
+    const car = sim.cars.find((c) => c.mode === 'wreck') || sim.cars[Math.floor(Math.random() * sim.cars.length)];
+    if (car.driver) return false;
+    Object.assign(car, { mode: 'parked', x: b.door.x + rnd(-30, 30), y: b.door.y + 66, ang: 0, speed: 0, hp: CAR_HP, parkedAt: now, color: 2 });
+    feed(io, room, `🚗 ${who} got a free car from the Garage`);
+    if (isMission) setCash(room, id, ps, 200);
+  } else if (k.act === 'heist') {
+    setCash(room, id, ps, 1500);
+    addWanted(io, room, sim, ps, 3, now);
+    fx(io, room, { type: 'heist', playerId: id });
+    feed(io, room, `💰 ${who} robbed the bank! +$1500 — the cops are coming!`);
+  } else if (k.act === 'heal') {
+    ps.hp = START_HP;
+    ps.armor = 100;
+    feed(io, room, `🏥 ${who} got patched up`);
+  } else if (k.act === 'cash') {
+    setCash(room, id, ps, k.cash);
+    feed(io, room, `${b.icon} ${who} earned $${k.cash} at the ${b.name}`);
+  } else if (k.act === 'bribe') {
+    if (ps.wanted === 0 || ps.cash < 300) return false;
+    setCash(room, id, ps, -300);
+    ps.wanted = 0;
+    feed(io, room, `🚓 ${who} bribed the police`);
+  } else if (k.act === 'food') {
+    ps.hp = Math.min(START_HP, ps.hp + 35);
+    setCash(room, id, ps, k.cash);
+    feed(io, room, `🍔 ${who} grabbed a burger`);
+  } else if (k.act === 'mansion') {
+    enterMansion(io, room, sim, id, ps, b);
+    return true;
+  } else if (k.act === 'finish') {
     ps.finishedAt = now;
     ps.finishRank = sim.finishedCount;
     sim.finishedCount += 1;
     const bonus = FINISH_BONUS[ps.finishRank] || 0;
-    ps.points += bonus;
-    gained += bonus;
-    io.to(room.code).emit(EVENTS.CITY_FX, { type: 'relief', playerId: id });
+    setCash(room, id, ps, bonus);
+    ps.missionsDone += 1;
+    ps.mission += 1;
+    fx(io, room, { type: 'relief', playerId: id });
     if (!sim.firstFinishAt) {
       sim.firstFinishAt = now;
       sim.endsAt = Math.min(sim.endsAt, now + FINISH_GRACE_MS);
-      feed(io, room, `🏁 ${p.avatar} ${p.name} made it to the Royal Restroom first! ${Math.round(FINISH_GRACE_MS / 1000)}s left for everyone else.`);
-    } else {
-      feed(io, room, `🏁 ${p.avatar} ${p.name} finished #${ps.finishRank + 1}`);
-    }
-  } else {
-    feed(io, room, text);
+      feed(io, room, `🏁 ${who} made it to the Royal Restroom first! ${Math.round(FINISH_GRACE_MS / 1000)}s left for everyone else.`);
+    } else feed(io, room, `🏁 ${who} finished #${ps.finishRank + 1}`);
+    say(io, room, id, 'win', 0.8);
+    return true;
   }
-  p.score = ps.points;
-  return { gained, finished, reward: { kind: kind.reward, label: mission.label }, speedBonus };
+  fx(io, room, { type: 'reward', playerId: id, kind: b.kind });
+  if (isMission) {
+    ps.missionsDone += 1;
+    ps.mission += 1;
+    ps.path = [];
+    ps.pathFor = '';
+  }
+  return true;
 }
 
-function resolveAnswer(io, room, id, choiceIndex) {
-  const sim = room.city;
-  if (!sim || room.state !== 'city') return;
-  const ps = sim.players.get(id);
-  const p = room.players.get(id);
-  if (!ps || !p || !ps.quiz) return;
-  const now = Date.now();
-  const quiz = ps.quiz;
-  ps.quiz = null;
-  const ctx = quiz.ctx || { kind: 'gate' };
-  const correct = Number.isInteger(choiceIndex) && choiceIndex === quiz.q.correctIndex;
-  let result = null;
-  let gained = 0;
-  let already = false;
-  if (correct) {
-    if (ctx.kind === 'gate') {
-      result = grantReward(io, room, id, ps, now, quiz.startedAt);
-      gained = result.gained;
-    } else if (ctx.kind === 'key') {
-      const letter = ctx.letter.toUpperCase();
-      const speedBonus = Math.round(300 * Math.max(0, 1 - (now - quiz.startedAt) / QUIZ_MS));
-      gained = 400 + speedBonus;
-      ps.opened.add(letter);
-      ps.keysWon += 1;
-      ps.points += gained;
-      addBladder(ps, -3);
-      p.score = ps.points;
-      io.to(room.code).emit(EVENTS.CITY_FX, { type: 'key', playerId: id, letter: ctx.letter });
-      feed(io, room, `🔑 ${p.avatar} ${p.name} won key ${letter} in the mansion`);
-      result = { gained, finished: false, reward: { kind: 'key', label: `key ${letter}` } };
-    } else {
-      // public toilet: relief!
-      gained = WC_POINTS;
-      ps.bladder = 0;
-      ps.relieved += 1;
-      ps.wcCd[ctx.wc] = now + WC_COOLDOWN_MS;
-      ps.points += gained;
-      p.score = ps.points;
-      io.to(room.code).emit(EVENTS.CITY_FX, { type: 'relief', playerId: id });
-      feed(io, room, `🚽 ${p.avatar} ${p.name} found a public toilet just in time`);
-      result = { gained, finished: false, reward: { kind: 'relief', label: 'relief' } };
-    }
-    say(io, room, id, 'right', 0.5);
-  } else {
-    ps.lockoutUntil = now + LOCKOUT_MS;
-    addBladder(ps, WRONG_BLADDER);
-    if (ctx.kind === 'wc') ps.wcCd[ctx.wc] = now + 8000;
-    say(io, room, id, 'wrong', 0.5);
-  }
-  if (p.socketId) {
-    io.to(p.socketId).emit(EVENTS.CITY_RESULT, {
-      kind: ctx.kind,
-      correct,
-      already,
-      correctIndex: quiz.q.correctIndex,
-      gained: correct ? gained : 0,
-      reward: result ? result.reward : null,
-      finished: result ? result.finished : false,
-      nextMission: ps.mission,
-      points: ps.points,
-      lockoutMs: correct ? 0 : LOCKOUT_MS,
-      entered: !!(result && result.entered),
-    });
-  }
+function enterMansion(io, room, sim, id, ps, b) {
+  const L = sim.mansion.layout;
+  const s = mz.cellCenter(L.start.r, L.start.c);
+  if (ps.veh) exitCar(io, room, sim, ps, Date.now(), true);
+  ps.exitAt = { x: b.door.x, y: b.door.y };
+  ps.world = 1;
+  ps.opened = new Set();
+  ps.keysWon = 0;
+  const a = Math.random() * TAU;
+  ps.x = s.x + Math.cos(a) * 20;
+  ps.y = s.y + Math.sin(a) * 20;
+  ps.path = [];
+  ps.botGoal = null;
+  ps.lastCaughtAt = 0;
+  ps.wanted = 0;
+  feed(io, room, `🏚️ ${nameOf(room, id)} entered the Haunted Mansion…`);
 }
 
-/* ------------------------------------------------------------ blaster + flashlight */
+function completeMansion(io, room, sim, id, ps) {
+  const m = sim.missions[ps.mission];
+  ps.world = 0;
+  ps.x = m.door.x;
+  ps.y = m.door.y + 6;
+  ps.path = [];
+  ps.pathFor = '';
+  setCash(room, id, ps, MANSION_BONUS);
+  ps.missionsDone += 1;
+  ps.mission += 1;
+  ps.bladder = 0; // sweet relief
+  ps.relieved += 1;
+  fx(io, room, { type: 'relief', playerId: id });
+  feed(io, room, `🚽 ${nameOf(room, id)} made it out of the mansion — what a relief! +$${MANSION_BONUS}`);
+  say(io, room, id, 'relief', 0.8);
+}
 
-function tryZap(io, room, id, now) {
-  const sim = room.city;
-  const ps = sim.players.get(id);
-  if (!ps || ps.blaster <= 0 || ps.quiz || ps.stunUntil > now || now < ps.nextZapAt || ps.world !== 0) return false;
+// what is the player standing at? returns { key, need, act }
+function stopAt(sim, ps, now) {
   let best = null;
-  let bestD = ZAP_RANGE;
-  for (const [otherId, other] of sim.players) {
-    if (otherId === id || other.quiz || other.finishedAt || other.world !== 0) continue;
-    const p2 = room.players.get(otherId);
-    if (!p2 || p2.left) continue;
-    const d = Math.hypot(other.x - ps.x, other.y - ps.y);
-    if (d < bestD) {
-      best = otherId;
-      bestD = d;
+  let bd = DOOR_RADIUS;
+  for (const b of MAP.buildings) {
+    const d = Math.hypot(b.door.x - ps.x, b.door.y - ps.y);
+    if (d < bd) {
+      bd = d;
+      best = b;
     }
   }
-  if (!best) return false;
-  const target = sim.players.get(best);
-  ps.blaster -= 1;
-  ps.nextZapAt = now + ZAP_COOLDOWN_MS;
-  let blockedByShield = false;
-  if (target.shield) {
-    target.shield = false;
-    blockedByShield = true;
-  } else {
-    target.stunUntil = now + STUN_MS;
-    target.input = { dx: 0, dy: 0 };
+  if (best) {
+    const m = sim.missions[ps.mission];
+    if (m && m.buildingId === best.id) return { key: `m${ps.mission}`, need: m.hold, b: best, mission: true };
+    const k = KINDS[best.kind];
+    if (k.side && (ps.sideCd[best.id] || 0) <= now) {
+      if (k.act === 'bribe' && (ps.wanted === 0 || ps.cash < 300)) return null;
+      return { key: `s${best.id}`, need: k.hold, b: best, mission: false };
+    }
   }
-  io.to(room.code).emit(EVENTS.CITY_FX, { type: 'zap', from: id, to: best, blocked: blockedByShield });
-  const from = room.players.get(id);
-  const to = room.players.get(best);
-  feed(io, room, blockedByShield ? `🛡️ ${to.name}'s shield blocked ${from.name}'s zap` : `⚡ ${from.avatar} ${from.name} stunned ${to.avatar} ${to.name}`);
-  say(io, room, id, 'steal', 0.7);
-  return true;
+  if (ps.bladder >= WC_MIN_BLADDER) {
+    for (const w of MAP.wcs) {
+      if ((ps.wcCd[w.id] || 0) > now) continue;
+      if (Math.hypot(w.door.x - ps.x, w.door.y - ps.y) < WC_RADIUS) return { key: `w${w.id}`, need: WC_HOLD_MS, wc: w };
+    }
+  }
+  return null;
 }
 
-// the flashlight scares nearby ghosts (only works inside the mansion)
-function tryFlash(io, room, id, now) {
-  const sim = room.city;
-  const ps = sim.players.get(id);
-  if (!ps || ps.world !== 1 || ps.finishedAt || ps.quiz || ps.stunUntil > now || now < ps.nextFlashAt) return false;
-  ps.nextFlashAt = now + FLASH_COOLDOWN_MS;
-  ps.flashUntil = now + 600;
-  let hit = 0;
-  for (const g of sim.mansion.ghosts) {
-    if (Math.hypot(g.x - ps.x, g.y - ps.y) < FLASH_RANGE) {
-      g.stunUntil = now + GHOST_STUN_MS;
-      g.coolUntil = now + GHOST_STUN_MS + 2500;
-      g.mode = 'stunned';
-      hit += 1;
+/* ------------------------------------------------------------ pedestrians, guards, cops */
+
+function stepNpcs(io, room, sim, dt, now) {
+  for (const n of sim.npcs) {
+    if (n.state === 2) {
+      if (now >= n.respawnAt) {
+        const at = randomWalkable();
+        n.x = at.x;
+        n.y = at.y;
+        n.hp = NPC_HP;
+        n.state = 0;
+        n.path = [];
+        n.wait = 1;
+      }
+      continue;
+    }
+    if (n.state === 1 && now > n.fleeUntil) n.state = 0;
+    if (n.wait > 0 && n.state === 0) {
+      n.wait -= dt;
+      continue;
+    }
+    if (!n.path.length) {
+      const target = randomWalkable();
+      if (n.state === 0 && Math.hypot(target.x - n.x, target.y - n.y) > 500) {
+        n.wait = 0.5;
+        continue;
+      }
+      n.path = findPath(n.x, n.y, target.x, target.y).slice(0, 40);
+      if (!n.path.length) n.wait = 1;
+      continue;
+    }
+    const wp = n.path[0];
+    const dx = wp.x - n.x;
+    const dy = wp.y - n.y;
+    const dist = Math.hypot(dx, dy);
+    const step = (n.state === 1 ? 125 : n.speed) * dt;
+    if (dist <= step) {
+      n.x = wp.x;
+      n.y = wp.y;
+      n.path.shift();
+      if (!n.path.length && n.state === 0) n.wait = 1 + Math.random() * 4;
+    } else {
+      n.x += (dx / dist) * step;
+      n.y += (dy / dist) * step;
+      if (Math.abs(dx) > 1) n.d = dx > 0 ? 1 : -1;
     }
   }
-  ps.scared += hit;
-  io.to(room.code).emit(EVENTS.CITY_FX, { type: 'flash', playerId: id, hit });
-  if (hit) {
+}
+
+function humanTargets(sim, room, now, from, range) {
+  // living players in the city that a guard or cop would shoot at
+  const out = [];
+  for (const [id, ps] of sim.players) {
     const p = room.players.get(id);
-    feed(io, room, `🔦 ${p.avatar} ${p.name} scared off ${hit === 1 ? 'a ghost' : `${hit} ghosts`}!`);
+    if (!p || p.left || ps.world !== 0 || ps.deadUntil > now || ps.finishedAt || ps.invulnUntil > now) continue;
+    const d = Math.hypot(ps.x - from.x, ps.y - from.y);
+    if (d < range) out.push({ id, ps, d });
   }
-  return true;
+  return out.sort((a, b) => a.d - b.d);
 }
 
-// a real shout into the microphone: ghosts nearby get a fright
-function tryShout(io, room, id, now) {
-  const sim = room.city;
-  const ps = sim.players.get(id);
-  if (!ps || ps.finishedAt || ps.quiz || now < ps.nextShoutAt) return false;
-  ps.nextShoutAt = now + SHOUT_COOLDOWN_MS;
-  ps.shoutUntil = now + 900;
-  let hit = 0;
-  if (ps.world === 1) {
-    for (const g of sim.mansion.ghosts) {
-      if (Math.hypot(g.x - ps.x, g.y - ps.y) < SHOUT_RANGE) {
-        g.stunUntil = now + GHOST_SCARE_STUN_MS;
-        g.coolUntil = now + GHOST_SCARE_STUN_MS + 2000;
-        g.mode = 'stunned';
-        hit += 1;
+function moveTowards(ent, tx, ty, speed, dt, r) {
+  const dx = tx - ent.x;
+  const dy = ty - ent.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 2) return;
+  const step = Math.min(d, speed * dt);
+  const nx = ent.x + (dx / d) * step;
+  const ny = ent.y + (dy / d) * step;
+  if (!collides(nx, ent.y, r)) ent.x = nx;
+  if (!collides(ent.x, ny, r)) ent.y = ny;
+}
+
+function stepGuards(io, room, sim, dt, now) {
+  for (const g of sim.guards) {
+    if (!g.alive) {
+      if (now >= g.respawnAt) {
+        g.alive = true;
+        g.hp = GUARD_HP;
+        g.x = g.homeX;
+        g.y = g.homeY;
+      }
+      continue;
+    }
+    const targets = humanTargets(sim, room, now, g, 300);
+    const t = targets.find((x) => segmentClear(sim, 0, g.x, g.y, x.ps.x, x.ps.y));
+    if (t) {
+      g.ang = Math.atan2(t.ps.y - g.y, t.ps.x - g.x);
+      if (t.d > 170) moveTowards(g, t.ps.x, t.ps.y, 85, dt, PLAYER_R);
+      if (t.d < 260 && now >= g.nextShotAt) {
+        g.nextShotAt = now + 950 + Math.random() * 400;
+        g.shootUntil = now + 250;
+        enemyShoot(io, room, sim, g, t.ps, 7, 0.5, now);
+      }
+    } else if (Math.hypot(g.homeX - g.x, g.homeY - g.y) > 8) moveTowards(g, g.homeX, g.homeY, 70, dt, PLAYER_R);
+  }
+}
+
+function stepCops(io, room, sim, dt, now) {
+  // decay stars, then make sure every wanted player has cops on their tail
+  for (const [id, ps] of sim.players) {
+    if (ps.wanted > 0 && now - ps.lastCrimeAt > WANTED_DECAY_MS) {
+      ps.wanted -= 1;
+      ps.lastCrimeAt = now - WANTED_DECAY_MS + 8000;
+      if (ps.wanted === 0) feed(io, room, `✅ ${nameOf(room, id)} lost the cops`);
+    }
+  }
+  if (now >= sim.nextCopAt) {
+    sim.nextCopAt = now + 2500;
+    for (const [id, ps] of sim.players) {
+      if (ps.wanted <= 0 || ps.world !== 0 || ps.deadUntil > now) continue;
+      const want = Math.min(5, ps.wanted + 1);
+      const have = sim.cops.filter((c) => c.hp > 0 && c.target === id).length;
+      if (have >= want) continue;
+      for (let tries = 0; tries < 10; tries++) {
+        const at = randomWalkable();
+        const d = Math.hypot(at.x - ps.x, at.y - ps.y);
+        if (d < 380 || d > 620) continue;
+        sim.cops.push({ id: sim.nextId++, x: at.x, y: at.y, ang: 0, hp: COP_HP, target: id, path: [], pathAt: 0, nextShotAt: now + 1200, shootUntil: 0, gone: 0 });
+        break;
       }
     }
-    ps.scared += hit;
   }
-  io.to(room.code).emit(EVENTS.CITY_FX, { type: 'shout', playerId: id, hit });
-  if (hit) {
-    const p = room.players.get(id);
-    feed(io, room, `📢 ${p.avatar} ${p.name} screamed and ${hit === 1 ? 'a ghost' : `${hit} ghosts`} ran away!`);
+  for (const c of sim.cops) {
+    if (c.hp <= 0) continue;
+    const ps = sim.players.get(c.target);
+    const valid = ps && ps.wanted > 0 && ps.world === 0 && ps.deadUntil <= now;
+    if (!valid) {
+      c.gone = c.gone || now + 6000;
+      if (now > c.gone) c.hp = -1; // clocked off
+      continue;
+    }
+    c.gone = 0;
+    const d = Math.hypot(ps.x - c.x, ps.y - c.y);
+    c.ang = Math.atan2(ps.y - c.y, ps.x - c.x);
+    const clear = d < 300 && segmentClear(sim, 0, c.x, c.y, ps.x, ps.y);
+    if (!clear || d > 200) {
+      if (now >= c.pathAt || !c.path.length) {
+        c.path = findPath(c.x, c.y, ps.x, ps.y);
+        c.pathAt = now + 900;
+      }
+      const wp = c.path[0];
+      if (wp) {
+        if (Math.hypot(wp.x - c.x, wp.y - c.y) < 8) c.path.shift();
+        else moveTowards(c, wp.x, wp.y, 150, dt, PLAYER_R);
+      }
+    }
+    if (clear && d < 280 && now >= c.nextShotAt) {
+      c.nextShotAt = now + 800 + Math.random() * 300;
+      c.shootUntil = now + 250;
+      enemyShoot(io, room, sim, c, ps, 9, 0.55, now);
+    }
   }
-  return true;
+  sim.cops = sim.cops.filter((c) => c.hp > 0);
 }
 
 /* -------------------------------------------------------------- mansion ghosts */
 
-function stepGhosts(io, room, dt, now) {
-  const sim = room.city;
+function stepGhosts(io, room, sim, dt, now) {
   const M = sim.mansion;
   const L = M.layout;
   const inside = [...sim.players.entries()].filter(([id, ps]) => {
     const p = room.players.get(id);
-    return p && !p.left && ps.world === 1 && !ps.finishedAt;
+    return p && !p.left && ps.world === 1 && !ps.finishedAt && ps.deadUntil <= now;
   });
   if (!inside.length) return;
   for (const g of M.ghosts) {
@@ -872,9 +1441,8 @@ function stepGhosts(io, room, dt, now) {
     }
     if (g.mode !== 'flee') {
       for (const [id, ps] of inside) {
-        if (now - ps.lastCaughtAt < GHOST_CATCH_COOLDOWN_MS || ps.stunUntil > now) continue;
+        if (now - ps.lastCaughtAt < GHOST_CATCH_COOLDOWN_MS || ps.stunUntil > now || ps.invulnUntil > now) continue;
         if (Math.hypot(ps.x - g.x, ps.y - g.y) < 34) {
-          const p = room.players.get(id);
           ps.lastCaughtAt = now;
           ps.stunUntil = now + GHOST_SCARE_STUN_MS;
           ps.input = { dx: 0, dy: 0 };
@@ -882,9 +1450,9 @@ function stepGhosts(io, room, dt, now) {
           addBladder(ps, CATCH_BLADDER);
           g.coolUntil = now + 4500;
           g.mode = 'flee';
-          io.to(room.code).emit(EVENTS.CITY_FX, { type: 'caught', playerId: id });
-          feed(io, room, `👻 A ghost scared ${p.avatar} ${p.name}! Bladder +${CATCH_BLADDER}%`);
-          say(io, room, id, 'wrong', 0.5);
+          fx(io, room, { type: 'caught', playerId: id });
+          feed(io, room, `👻 A ghost scared ${nameOf(room, id)}! Bladder +${CATCH_BLADDER}%`);
+          say(io, room, id, 'hurt', 0.5);
           break;
         }
       }
@@ -892,20 +1460,71 @@ function stepGhosts(io, room, dt, now) {
   }
 }
 
+function tryFlash(io, room, id, now) {
+  const sim = room.city;
+  const ps = sim.players.get(id);
+  if (!ps || ps.world !== 1 || ps.finishedAt || ps.deadUntil > now || ps.stunUntil > now || now < ps.nextFlashAt) return false;
+  ps.nextFlashAt = now + FLASH_COOLDOWN_MS;
+  ps.flashUntil = now + 600;
+  let hit = 0;
+  for (const g of sim.mansion.ghosts) {
+    if (Math.hypot(g.x - ps.x, g.y - ps.y) < FLASH_RANGE) {
+      g.stunUntil = now + GHOST_STUN_MS;
+      g.coolUntil = now + GHOST_STUN_MS + 2500;
+      g.mode = 'stunned';
+      hit += 1;
+    }
+  }
+  ps.scared += hit;
+  fx(io, room, { type: 'flash', playerId: id, hit });
+  if (hit) feed(io, room, `🔦 ${nameOf(room, id)} scared off ${hit === 1 ? 'a ghost' : `${hit} ghosts`}!`);
+  return true;
+}
+
+function tryShout(io, room, id, now) {
+  const sim = room.city;
+  const ps = sim.players.get(id);
+  if (!ps || ps.finishedAt || ps.deadUntil > now || now < ps.nextShoutAt) return false;
+  ps.nextShoutAt = now + SHOUT_COOLDOWN_MS;
+  ps.shoutUntil = now + 900;
+  let hit = 0;
+  if (ps.world === 1) {
+    for (const g of sim.mansion.ghosts) {
+      if (Math.hypot(g.x - ps.x, g.y - ps.y) < SHOUT_RANGE) {
+        g.stunUntil = now + GHOST_SCARE_STUN_MS;
+        g.coolUntil = now + GHOST_SCARE_STUN_MS + 2000;
+        g.mode = 'stunned';
+        hit += 1;
+      }
+    }
+    ps.scared += hit;
+  }
+  fx(io, room, { type: 'shout', playerId: id, hit });
+  if (hit) feed(io, room, `📢 ${nameOf(room, id)} screamed and ${hit === 1 ? 'a ghost' : `${hit} ghosts`} ran away!`);
+  return true;
+}
+
 /* --------------------------------------------------------------------- bots */
 
-function botMansionThink(io, room, id, ps, p, now) {
-  const sim = room.city;
+function botMansionThink(io, room, sim, id, ps, p, now) {
   const L = sim.mansion.layout;
-  if (ps.finishedAt || ps.quiz || ps.stunUntil > now) {
+  if (ps.finishedAt || ps.stunUntil > now) {
     ps.input = { dx: 0, dy: 0 };
     return;
   }
-  if (now > ps.botNextFlash && now >= ps.nextFlashAt) {
-    ps.botNextFlash = now + 600;
-    const near = sim.mansion.ghosts.some((g) => g.stunUntil <= now && Math.hypot(g.x - ps.x, g.y - ps.y) < 120);
-    const eager = p.botTier === 'legend' ? 0.95 : p.botTier === 'elite' ? 0.8 : p.botTier === 'veteran' ? 0.55 : 0.3;
-    if (near && Math.random() < eager) tryFlash(io, room, id, now);
+  const tier = getTier(p.botTier);
+  // scare or shoot ghosts that get close
+  const ghost = sim.mansion.ghosts.find((g) => g.stunUntil <= now && Math.hypot(g.x - ps.x, g.y - ps.y) < 130);
+  if (ghost) {
+    if (now > ps.botNextFlash && now >= ps.nextFlashAt) {
+      ps.botNextFlash = now + 600;
+      if (Math.random() < tier.aggression) tryFlash(io, room, id, now);
+    }
+    const w = WEAPONS[ps.weapon];
+    if (w && !w.melee && ps.ammo[w.ammoKey] > 0 && now >= ps.botReactAt) {
+      ps.botReactAt = now + tier.reaction;
+      attackNow(io, room, id, ps, now, { target: { x: ghost.x, y: ghost.y }, err: (Math.random() - 0.5) * (1 - tier.accuracy) * 0.4 });
+    }
   }
   const here = mz.cellAt(ps.x, ps.y);
   const hereIdx = mz.idxOf(here.r, here.c);
@@ -937,6 +1556,7 @@ function botMansionThink(io, room, id, ps, p, now) {
   }
   ps.input = { dx: target.x - ps.x, dy: target.y - ps.y };
   if (Math.hypot(ps.input.dx, ps.input.dy) < 6) ps.input = { dx: 0, dy: 0 };
+  else ps.ang = Math.atan2(ps.input.dy, ps.input.dx);
 }
 
 function nearestWc(ps, now) {
@@ -953,29 +1573,141 @@ function nearestWc(ps, now) {
   return best;
 }
 
-function botThink(io, room, id, ps, p, now) {
-  const sim = room.city;
-  if (ps.world === 1) return botMansionThink(io, room, id, ps, p, now);
-  if (ps.finishedAt || ps.quiz || ps.stunUntil > now) {
+function bestWeaponFor(ps, dist) {
+  const has = (k) => ps.weapons[k] && ps.ammo[k] > 0;
+  if (dist < 130 && has('shotgun')) return 'shotgun';
+  if (dist < 300 && has('smg')) return 'smg';
+  if (has('pistol')) return 'pistol';
+  if (has('smg')) return 'smg';
+  if (has('shotgun') && dist < 220) return 'shotgun';
+  return ps.weapons.bat ? 'bat' : 'fists';
+}
+
+function botThink(io, room, sim, id, ps, p, now) {
+  if (ps.deadUntil > now || ps.finishedAt) {
     ps.input = { dx: 0, dy: 0 };
     return;
   }
+  if (ps.world === 1) return botMansionThink(io, room, sim, id, ps, p, now);
+  if (ps.stunUntil > now) {
+    ps.input = { dx: 0, dy: 0 };
+    return;
+  }
+  const tier = getTier(p.botTier);
+
+  // ---- fight? someone who hurt us, or anyone who wanders too close ----
+  let foe = null;
+  let foeD = Infinity;
+  const sight = tier.sight;
+  for (const [oid, ops] of sim.players) {
+    if (oid === id || ops.world !== 0 || ops.deadUntil > now || ops.finishedAt || ops.invulnUntil > now) continue;
+    const d = Math.hypot(ops.x - ps.x, ops.y - ps.y);
+    const revenge = ps.lastHurtBy === oid && now - ps.lastHurtAt < 7000;
+    if (d < foeD && (revenge ? d < sight * 1.3 : d < sight * 0.32 * tier.aggression + 30) && segmentClear(sim, 0, ps.x, ps.y, ops.x, ops.y)) {
+      foe = { x: ops.x, y: ops.y, kind: 'player', ref: ops };
+      foeD = d;
+    }
+  }
+  for (const g of sim.guards) {
+    if (!g.alive) continue;
+    const d = Math.hypot(g.x - ps.x, g.y - ps.y);
+    if (d < foeD && d < 210 && segmentClear(sim, 0, ps.x, ps.y, g.x, g.y)) {
+      foe = { x: g.x, y: g.y, kind: 'guard', ref: g };
+      foeD = d;
+    }
+  }
+  for (const c of sim.cops) {
+    if (c.hp <= 0 || c.target !== id) continue;
+    const d = Math.hypot(c.x - ps.x, c.y - ps.y);
+    if (d < foeD && d < 300 && segmentClear(sim, 0, ps.x, ps.y, c.x, c.y)) {
+      foe = { x: c.x, y: c.y, kind: 'cop', ref: c };
+      foeD = d;
+    }
+  }
+  if (foe && ps.hp > 22) {
+    const key = bestWeaponFor(ps, foeD);
+    ps.weapon = key;
+    const w = WEAPONS[key];
+    const aim = Math.atan2(foe.y - ps.y, foe.x - ps.x);
+    ps.ang = aim;
+    if (w.melee) {
+      if (foeD > w.range - 8) ps.input = { dx: Math.cos(aim), dy: Math.sin(aim) };
+      else ps.input = { dx: 0, dy: 0 };
+    } else {
+      // keep a fighting distance and strafe a little
+      if (now > ps.botStrafeAt) {
+        ps.botStrafeAt = now + 900 + Math.random() * 900;
+        ps.botStrafeDir = Math.random() < 0.5 ? -1 : 1;
+      }
+      const ideal = key === 'shotgun' ? 90 : 170;
+      let mx = 0;
+      let my = 0;
+      if (foeD > ideal + 40) {
+        mx = Math.cos(aim);
+        my = Math.sin(aim);
+      } else if (foeD < ideal - 50) {
+        mx = -Math.cos(aim);
+        my = -Math.sin(aim);
+      }
+      mx += -Math.sin(aim) * ps.botStrafeDir * 0.7;
+      my += Math.cos(aim) * ps.botStrafeDir * 0.7;
+      ps.input = { dx: mx, dy: my };
+    }
+    if (now >= ps.botReactAt) {
+      const range = w.melee ? w.range : w.range * 0.9;
+      if (foeD < range) {
+        ps.botReactAt = now + tier.reaction * (0.6 + Math.random() * 0.8);
+        attackNow(io, room, id, ps, now, { target: foe, err: (Math.random() - 0.5) * 2 * (1 - tier.accuracy) * 0.35 });
+      }
+    }
+    return;
+  }
+
+  // ---- otherwise: heal, relieve, loot, or follow the missions ----
   const mission = sim.missions[ps.mission];
-  if (!mission) return;
-  // desperate? head for the nearest public toilet first
-  let dest = mission.door;
+  let dest = mission ? mission.door : null;
   let destKey = `m${ps.mission}`;
-  let radius = DOOR_RADIUS - 8;
-  if (ps.bladder > 72) {
+  let radius = DOOR_RADIUS - 10;
+  if (ps.hp < 40 && (ps.sideCd[BUILDING_BY_KIND.hospital.id] || 0) <= now) {
+    dest = BUILDING_BY_KIND.hospital.door;
+    destKey = 'hosp';
+  } else if (ps.bladder > 72) {
     const wc = nearestWc(ps, now);
     if (wc) {
       dest = wc.door;
       destKey = `w${wc.id}`;
-      radius = WC_RADIUS - 10;
+      radius = WC_RADIUS - 12;
+    }
+  } else {
+    // pick up loot lying close by
+    let loot = null;
+    let ld = 170;
+    for (const pk of sim.pickups) {
+      if (pk.type === 'health' && ps.hp > 80) continue;
+      const d = Math.hypot(pk.x - ps.x, pk.y - ps.y);
+      if (d < ld) {
+        ld = d;
+        loot = pk;
+      }
+    }
+    if (loot) {
+      dest = { x: loot.x, y: loot.y };
+      destKey = `l${loot.id}`;
+      radius = 10;
+    } else if (ps.wanted >= 3 && ps.cash >= 300 && (ps.sideCd[BUILDING_BY_KIND.police.id] || 0) <= now) {
+      dest = BUILDING_BY_KIND.police.door;
+      destKey = 'police';
+    } else if (ps.mission >= 1 && ps.weapons.pistol && ps.ammo.pistol + ps.ammo.smg < 40 && (ps.sideCd[BUILDING_BY_KIND.gun.id] || 0) <= now) {
+      dest = BUILDING_BY_KIND.gun.door;
+      destKey = 'gun';
     }
   }
-  const toDoor = Math.hypot(dest.x - ps.x, dest.y - ps.y);
-  if (toDoor < radius) {
+  if (!dest) {
+    ps.input = { dx: 0, dy: 0 };
+    return;
+  }
+  const toDest = Math.hypot(dest.x - ps.x, dest.y - ps.y);
+  if (toDest < radius) {
     ps.input = { dx: 0, dy: 0 };
     return;
   }
@@ -992,58 +1724,13 @@ function botThink(io, room, id, ps, p, now) {
     return;
   }
   ps.input = { dx, dy };
-  if (ps.blaster > 0 && now > ps.botNextZap) {
-    ps.botNextZap = now + 2500 + Math.random() * 2500;
-    if (Math.random() < (p.botTier === 'legend' ? 0.9 : p.botTier === 'elite' ? 0.7 : 0.4)) tryZap(io, room, id, now);
-  }
-}
-
-function stepNpcs(npcs, dt) {
-  for (const n of npcs) {
-    if (n.wait > 0) {
-      n.wait -= dt;
-      continue;
-    }
-    if (!n.path.length) {
-      const target = randomWalkable();
-      if (Math.hypot(target.x - n.x, target.y - n.y) > 500) {
-        n.wait = 0.5;
-        continue;
-      }
-      n.path = findPath(n.x, n.y, target.x, target.y).slice(0, 40);
-      if (!n.path.length) n.wait = 1;
-      continue;
-    }
-    const wp = n.path[0];
-    const dx = wp.x - n.x;
-    const dy = wp.y - n.y;
-    const dist = Math.hypot(dx, dy);
-    const step = n.speed * dt;
-    if (dist <= step) {
-      n.x = wp.x;
-      n.y = wp.y;
-      n.path.shift();
-      if (!n.path.length) n.wait = 1 + Math.random() * 4;
-    } else {
-      n.x += (dx / dist) * step;
-      n.y += (dy / dist) * step;
-      if (Math.abs(dx) > 1) n.d = dx > 0 ? 1 : -1;
-    }
-  }
-}
-function stepCars(cars, dt) {
-  for (const c of cars) {
-    c.pos += c.dir * c.speed * dt;
-    const limit = c.horizontal ? W : H;
-    if (c.pos > limit + 60) c.pos = -60;
-    if (c.pos < -60) c.pos = limit + 60;
-  }
+  ps.ang = Math.atan2(dy, dx);
 }
 
 /* ------------------------------------------------------------------ snapshot */
 
-// flag bits: 1 stunned, 2 shield, 4 boost, 8 in quiz, 32 finished, 64 left, 128 accident, 256 clenching,
-//            512 flashlight, 1024 shouting
+// flag bits: 1 stunned, 4 in a vehicle, 32 finished, 64 hidden, 128 accident (shame), 256 clenching,
+//            512 flashlight, 1024 shouting, 2048 dead, 4096 attacking, 8192 just hurt, 16384 spawn shield
 function snapshot(room) {
   const sim = room.city;
   const now = Date.now();
@@ -1054,9 +1741,7 @@ function snapshot(room) {
       const ps = sim.players.get(id);
       let flags = 0;
       if (ps.stunUntil > now && ps.accidentUntil <= now) flags |= 1;
-      if (ps.shield) flags |= 2;
-      if (ps.boostUntil > now) flags |= 4;
-      if (ps.quiz) flags |= 8;
+      if (ps.veh) flags |= 4;
       if (ps.finishedAt) flags |= 32;
       const pl = room.players.get(id);
       if (pl && pl.left) flags |= 64;
@@ -1064,21 +1749,39 @@ function snapshot(room) {
       if (ps.clenchUntil > now) flags |= 256;
       if (ps.flashUntil > now) flags |= 512;
       if (ps.shoutUntil > now) flags |= 1024;
+      if (ps.deadUntil > now) flags |= 2048;
+      if (ps.attackUntil > now) flags |= 4096;
+      if (ps.hurtUntil > now) flags |= 8192;
+      if (ps.invulnUntil > now) flags |= 16384;
       let keys = 0;
       if (ps.opened.has('A')) keys |= 1;
       if (ps.opened.has('B')) keys |= 2;
       if (ps.opened.has('C')) keys |= 4;
-      return [ps.idx, Math.round(ps.x), Math.round(ps.y), ps.face, flags, ps.mission, ps.points, ps.blaster, Math.round(ps.bladder * 10) / 10, ps.world, keys];
+      const w = WEAPONS[ps.weapon];
+      const ammo = w && !w.melee ? ps.ammo[w.ammoKey] : -1;
+      const hold = ps.holdNeed ? Math.min(100, Math.round((ps.holdMs / ps.holdNeed) * 100)) : 0;
+      let owned = 0;
+      WEAPON_BY_CODE.forEach((k, code) => {
+        const wk = WEAPONS[k];
+        if (ps.weapons[k] && (wk.melee || ps.ammo[wk.ammoKey] > 0)) owned |= 1 << code;
+      });
+      // 0 idx 1 x 2 y 3 angle*100 4 flags 5 mission 6 cash 7 weapon 8 hp 9 armor 10 bladder 11 world 12 keys 13 wanted 14 ammo 15 kills 16 hold% 17 owned-weapons mask
+      return [ps.idx, Math.round(ps.x), Math.round(ps.y), Math.round(ps.ang * 100), flags, ps.mission, ps.cash, w ? w.code : 0, Math.max(0, Math.round(ps.hp)), Math.round(ps.armor), Math.round(ps.bladder * 10) / 10, ps.world, keys, ps.wanted, ammo, ps.kills, hold, owned];
     }),
-    n: sim.npcs.map((n) => [Math.round(n.x), Math.round(n.y), n.d, n.path.length ? 1 : 0]),
-    c: sim.cars.map((c) => [Math.round(c.horizontal ? c.pos : c.fixed), Math.round(c.horizontal ? c.fixed : c.pos), c.horizontal ? 0 : 1, c.dir, c.color]),
+    n: sim.npcs.map((n) => [Math.round(n.x), Math.round(n.y), n.d, n.path.length ? 1 : 0, n.state]),
+    c: sim.cars.map((c) => [Math.round(c.x), Math.round(c.y), Math.round(c.ang * 100), c.color, c.driver ? sim.players.get(c.driver).idx : -1, Math.round((Math.max(0, c.hp) / CAR_HP) * 100), c.mode === 'wreck' ? 3 : c.mode === 'player' ? 1 : c.mode === 'parked' ? 2 : 0]),
+    gd: sim.guards.map((g) => [Math.round(g.x), Math.round(g.y), Math.round(g.ang * 100), Math.round(g.hp), g.alive ? 1 : 0, g.shootUntil > now ? 1 : 0]),
+    cp: sim.cops.map((c) => [Math.round(c.x), Math.round(c.y), Math.round(c.ang * 100), Math.round(c.hp), c.shootUntil > now ? 1 : 0]),
+    pk: sim.pickups.map((k) => [k.id, Math.round(k.x), Math.round(k.y), PICKUP_CODE[k.type], k.value]),
     g: anyInside ? sim.mansion.ghosts.map((g) => [Math.round(g.x), Math.round(g.y), g.mode === 'chase' ? 1 : g.mode === 'stunned' ? 2 : g.mode === 'flee' ? 3 : 0]) : [],
     endsAt: sim.endsAt,
   };
 }
 
-function bodyTick(io, room, id, ps, p, now, dt) {
-  if (ps.finishedAt) return;
+/* ---------------------------------------------------------------------- tick */
+
+function bodyTick(io, room, sim, id, ps, p, now, dt) {
+  if (ps.finishedAt || ps.deadUntil > now) return;
   // the bladder fills; a desperate one leaks farts and finally gives up
   ps.bladder = Math.min(100, ps.bladder + (100 / BLADDER_FILL_S) * dt);
   if (ps.bladder > 48 && now >= ps.nextFartAt && ps.accidentUntil <= now) {
@@ -1086,19 +1789,18 @@ function bodyTick(io, room, id, ps, p, now, dt) {
     ps.farts += 1;
     ps.clenchUntil = now + CLENCH_MS;
     ps.nextFartAt = now + (9000 - 6400 * pressure) * (0.7 + Math.random() * 0.6);
-    io.to(room.code).emit(EVENTS.CITY_FX, { type: 'fart', playerId: id, kind: Math.floor(Math.random() * FART_KINDS), big: pressure > 0.7 && Math.random() < 0.5 });
+    fx(io, room, { type: 'fart', playerId: id, kind: Math.floor(Math.random() * FART_KINDS), big: pressure > 0.7 && Math.random() < 0.5 });
   }
   if (ps.bladder >= 100 && ps.accidentUntil <= now) {
     ps.accidentUntil = now + ACCIDENT_MS;
     ps.stunUntil = Math.max(ps.stunUntil, ps.accidentUntil);
     ps.input = { dx: 0, dy: 0 };
-    ps.points = Math.max(0, ps.points - ACCIDENT_PENALTY);
-    p.score = ps.points;
+    setCash(room, id, ps, -ACCIDENT_PENALTY);
     ps.bladder = ACCIDENT_RESET;
     ps.accidents += 1;
-    io.to(room.code).emit(EVENTS.CITY_FX, { type: 'accident', playerId: id });
-    feed(io, room, `💩 ${p.avatar} ${p.name} couldn't hold it any longer! −${ACCIDENT_PENALTY}`);
-    say(io, room, id, 'wrong', 0.9);
+    fx(io, room, { type: 'accident', playerId: id });
+    feed(io, room, `💩 ${nameOf(room, id)} couldn't hold it any longer! −$${ACCIDENT_PENALTY}`);
+    say(io, room, id, 'accident', 0.9);
   }
 }
 
@@ -1116,43 +1818,111 @@ function tick(io, room) {
       const p = room.players.get(id);
       if (!p || p.left) continue;
       if (!p.isBot && !p.connected) ps.input = { dx: 0, dy: 0 }; // a dropped connection stops walking
-      if (p.isBot) botThink(io, room, id, ps, p, now);
-      if (ps.quiz && now > ps.quiz.endsAt) resolveAnswer(io, room, id, -1);
-      if (!ps.finishedAt) movePlayer(sim, ps, ps.input.dx, ps.input.dy, dt, now);
-      bodyTick(io, room, id, ps, p, now, dt);
 
-      const free = !ps.finishedAt && !ps.quiz && now >= ps.lockoutUntil && ps.stunUntil <= now;
+      // dead? wait, then respawn at the hospital
+      if (ps.deadUntil > 0) {
+        if (now >= ps.deadUntil) respawnPlayer(io, room, sim, id, ps, now);
+        else continue;
+      }
+      if (p.isBot) botThink(io, room, sim, id, ps, p, now);
+
+      if (ps.veh) stepDriver(io, room, sim, id, ps, dt, now);
+      else if (!ps.finishedAt) {
+        // walking (or clenching, or frozen in shame)
+        let sp = ps.stunUntil > now ? 0 : BASE_SPEED * (ps.speedMul || 1);
+        if (ps.clenchUntil > now) sp *= CLENCH_SPEED_MUL;
+        const { dx, dy } = ps.input;
+        if (sp && (dx || dy)) {
+          const len = Math.hypot(dx, dy) || 1;
+          const vx = (dx / len) * sp * dt;
+          const vy = (dy / len) * sp * dt;
+          if (!collidesFor(sim, ps, ps.x + vx, ps.y)) ps.x += vx;
+          if (!collidesFor(sim, ps, ps.x, ps.y + vy)) ps.y += vy;
+          if (!p.isBot && Math.hypot(dx, dy) > 0.15 && ps.attackUntil < now) ps.ang = Math.atan2(dy, dx);
+        }
+      }
+      bodyTick(io, room, sim, id, ps, p, now, dt);
+
+      // loot on the ground
+      if (!ps.veh && ps.world === 0 && !ps.finishedAt) {
+        for (let i = sim.pickups.length - 1; i >= 0; i--) {
+          const pk = sim.pickups[i];
+          if (Math.hypot(pk.x - ps.x, pk.y - ps.y) < 24) {
+            givePickup(io, room, id, ps, pk, now);
+            sim.pickups.splice(i, 1);
+            for (const s of sim.spawners) if (s.pk === pk) s.respawnAt = now + 25000;
+          }
+        }
+      }
+
+      const free = !ps.finishedAt && ps.stunUntil <= now && !ps.veh;
       if (free && ps.world === 0) {
-        // reaching the door of the current mission opens the quiz gate
-        const m = sim.missions[ps.mission];
-        if (m && Math.hypot(m.door.x - ps.x, m.door.y - ps.y) < DOOR_RADIUS) openQuiz(io, room, id, ps, now, { kind: 'gate' });
-        else if (ps.bladder >= WC_MIN_BLADDER) {
-          // a public toilet stall
-          for (const w of MAP.wcs) {
-            if ((ps.wcCd[w.id] || 0) > now) continue;
-            if (Math.hypot(w.door.x - ps.x, w.door.y - ps.y) < WC_RADIUS) {
-              openQuiz(io, room, id, ps, now, { kind: 'wc', wc: w.id });
-              break;
+        const stop = stopAt(sim, ps, now);
+        if (stop) {
+          if (ps.holdKey !== stop.key) {
+            ps.holdKey = stop.key;
+            ps.holdMs = 0;
+          }
+          ps.holdNeed = stop.need;
+          ps.holdMs += dt * 1000;
+          if (ps.holdMs >= stop.need) {
+            ps.holdMs = 0;
+            if (stop.wc) {
+              ps.bladder = 0;
+              ps.relieved += 1;
+              ps.wcCd[stop.wc.id] = now + WC_COOLDOWN_MS;
+              setCash(room, id, ps, 100);
+              fx(io, room, { type: 'relief', playerId: id });
+              feed(io, room, `🚽 ${nameOf(room, id)} found a public toilet just in time`);
+              say(io, room, id, 'relief', 0.6);
+            } else {
+              const done = completeAct(io, room, sim, id, ps, stop.b, stop.mission, now);
+              if (done && !stop.mission) ps.sideCd[stop.b.id] = now + 45000;
             }
           }
+        } else {
+          ps.holdMs = 0;
+          ps.holdKey = '';
+          ps.holdNeed = 0;
         }
       } else if (free && ps.world === 1) {
         const L = sim.mansion.layout;
+        ps.holdNeed = 0;
         for (const k of L.keys) {
           if (ps.opened.has(k.letter.toUpperCase())) continue;
           const c = mz.cellCenter(k.r, k.c);
           if (Math.hypot(c.x - ps.x, c.y - ps.y) < mz.KEY_RADIUS) {
-            openQuiz(io, room, id, ps, now, { kind: 'key', letter: k.letter });
+            ps.opened.add(k.letter.toUpperCase());
+            ps.keysWon += 1;
+            setCash(room, id, ps, KEY_CASH);
+            addBladder(ps, -3);
+            fx(io, room, { type: 'key', playerId: id, letter: k.letter });
+            feed(io, room, `🔑 ${nameOf(room, id)} grabbed key ${k.letter.toUpperCase()} in the mansion`);
             break;
           }
         }
         const t = mz.cellCenter(L.toilet.r, L.toilet.c);
-        if (!ps.quiz && Math.hypot(t.x - ps.x, t.y - ps.y) < mz.TOILET_RADIUS) completeMansion(io, room, id, ps, now);
+        if (Math.hypot(t.x - ps.x, t.y - ps.y) < mz.TOILET_RADIUS) completeMansion(io, room, sim, id, ps);
+      } else {
+        ps.holdMs = 0;
       }
     }
-    stepGhosts(io, room, dt, now);
-    stepNpcs(sim.npcs, dt);
-    stepCars(sim.cars, dt);
+    stepCars(io, room, sim, dt, now);
+    stepGhosts(io, room, sim, dt, now);
+    stepNpcs(io, room, sim, dt, now);
+    stepGuards(io, room, sim, dt, now);
+    stepCops(io, room, sim, dt, now);
+
+    // static pickups respawn; loose ones time out
+    for (const s of sim.spawners) {
+      if (!s.pk || !sim.pickups.includes(s.pk)) {
+        if (s.pk === null || (s.respawnAt && now >= s.respawnAt)) {
+          s.pk = dropPickup(sim, s.type, s.x, s.y, s.value, 0);
+          s.respawnAt = 0;
+        }
+      }
+    }
+    sim.pickups = sim.pickups.filter((k) => !k.expires || k.expires > now);
 
     // end of match
     const humans = [...sim.players.entries()].filter(([id]) => {
@@ -1174,6 +1944,11 @@ function tick(io, room) {
   if (sim.tick % SNAPSHOT_EVERY === 0) io.to(room.code).emit(EVENTS.CITY_STATE, snapshot(room));
 }
 
+function collidesFor(sim, ps, x, y) {
+  if (ps.world === 1) return mz.collidesWith(sim.mansion.collision, sim.mansion.layout, ps.opened, x, y, mz.PLAYER_R);
+  return collides(x, y, PLAYER_R);
+}
+
 function finishCity(io, room) {
   const sim = room.city;
   if (!sim || sim.over) return;
@@ -1182,32 +1957,35 @@ function finishCity(io, room) {
   room.timers.cityTick = null;
   for (const [id, ps] of sim.players) {
     const p = room.players.get(id);
-    if (p) p.score = ps.points;
+    if (p) p.score = ps.cash;
   }
   room.state = 'final';
   const board = serializePlayers(room);
-  const missionsById = {};
-  for (const [id, ps] of sim.players) missionsById[id] = { done: ps.missionsDone, finished: !!ps.finishedAt, rank: ps.finishRank, accidents: ps.accidents };
   const entries = [...sim.players.entries()];
-  const nameOf = (id) => room.players.get(id).name;
+  const nameOfId = (id) => room.players.get(id).name;
   const awards = [];
-  const best = entries.slice().sort((a, b) => b[1].missionsDone - a[1].missionsDone || b[1].points - a[1].points)[0];
-  if (best) awards.push({ key: 'mission', icon: '🎯', title: 'Mission Master', playerId: best[0], name: nameOf(best[0]), detail: `${best[1].missionsDone}/${sim.missions.length} missions` });
+  const gunner = entries.slice().sort((a, b) => b[1].kills - a[1].kills || b[1].cash - a[1].cash)[0];
+  if (gunner && gunner[1].kills > 0) awards.push({ key: 'kills', icon: '🔫', title: 'Top Gun', playerId: gunner[0], name: nameOfId(gunner[0]), detail: `${gunner[1].kills} takedown${gunner[1].kills > 1 ? 's' : ''}` });
+  const boss = entries.slice().sort((a, b) => b[1].missionsDone - a[1].missionsDone || b[1].cash - a[1].cash)[0];
+  if (boss) awards.push({ key: 'mission', icon: '🎯', title: 'Mission Master', playerId: boss[0], name: nameOfId(boss[0]), detail: `${boss[1].missionsDone}/${sim.missions.length} missions` });
+  const bag = entries.slice().sort((a, b) => b[1].deaths - a[1].deaths)[0];
+  if (bag && bag[1].deaths > 1) awards.push({ key: 'bag', icon: '🥊', title: 'Punching Bag', playerId: bag[0], name: nameOfId(bag[0]), detail: `${bag[1].deaths} deaths` });
   const leaky = entries.slice().sort((a, b) => b[1].accidents - a[1].accidents || b[1].farts - a[1].farts)[0];
-  if (leaky && leaky[1].accidents > 0) awards.push({ key: 'leaky', icon: '💩', title: 'Leaky Pants', playerId: leaky[0], name: nameOf(leaky[0]), detail: `${leaky[1].accidents} accident${leaky[1].accidents > 1 ? 's' : ''}` });
+  if (leaky && leaky[1].accidents > 0) awards.push({ key: 'leaky', icon: '💩', title: 'Leaky Pants', playerId: leaky[0], name: nameOfId(leaky[0]), detail: `${leaky[1].accidents} accident${leaky[1].accidents > 1 ? 's' : ''}` });
   else {
     const iron = entries.filter(([, ps]) => ps.finishedAt && ps.accidents === 0).sort((a, b) => a[1].finishRank - b[1].finishRank)[0];
-    if (iron) awards.push({ key: 'iron', icon: '🧊', title: 'Iron Bladder', playerId: iron[0], name: nameOf(iron[0]), detail: 'not a single accident' });
+    if (iron) awards.push({ key: 'iron', icon: '🧊', title: 'Iron Bladder', playerId: iron[0], name: nameOfId(iron[0]), detail: 'not a single accident' });
   }
   const tooter = entries.slice().sort((a, b) => b[1].farts - a[1].farts)[0];
-  if (tooter && tooter[1].farts > 0 && awards.length < 3) awards.push({ key: 'toot', icon: '💨', title: 'Loudest Cheeks', playerId: tooter[0], name: nameOf(tooter[0]), detail: `${tooter[1].farts} toot${tooter[1].farts > 1 ? 's' : ''}` });
-  const magnet = entries.slice().sort((a, b) => b[1].caught - a[1].caught)[0];
-  if (magnet && magnet[1].caught > 0 && awards.length < 3) awards.push({ key: 'magnet', icon: '👻', title: 'Ghost Magnet', playerId: magnet[0], name: nameOf(magnet[0]), detail: `scared ${magnet[1].caught}×` });
-  io.to(room.code).emit(EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3), awards, teams: null, teamMode: 0, city: { missions: missionsById, total: sim.missions.length } });
+  if (tooter && tooter[1].farts > 0) awards.push({ key: 'toot', icon: '💨', title: 'Loudest Cheeks', playerId: tooter[0], name: nameOfId(tooter[0]), detail: `${tooter[1].farts} toot${tooter[1].farts > 1 ? 's' : ''}` });
+  room.awards = awards.slice(0, 4);
+  const stats = {};
+  for (const [id, ps] of entries) stats[id] = { kills: ps.kills, deaths: ps.deaths, missions: ps.missionsDone, accidents: ps.accidents, finished: !!ps.finishedAt };
+  io.to(room.code).emit(EVENTS.GAME_FINAL, { leaderboard: board, podium: board.slice(0, 3), awards: room.awards, stats, total: sim.missions.length });
   db.saveGameResult({
     roomCode: room.code,
     category: 'city',
-    categoryLabel: '🌆 City Mission: We Gotta Go',
+    categoryLabel: '🌆 City Chaos',
     levelKey: null,
     levelLabel: null,
     subject: null,
@@ -1229,18 +2007,46 @@ function setInput(room, playerId, dx, dy) {
   ps.input = len > 1 ? { dx: x / len, dy: y / len } : { dx: x, dy: y };
 }
 
-function answer(io, room, playerId, choiceIndex) {
-  resolveAnswer(io, room, playerId, choiceIndex);
-}
-
-// Space / the action button: the flashlight inside the mansion, the blaster out in the city
-function zap(io, room, playerId) {
+// the fire / punch / flashlight button: the mansion's flashlight when nothing to shoot, otherwise a strike
+function attack(io, room, playerId, ang) {
   const sim = room.city;
-  if (!sim || room.state !== 'city' || Date.now() < sim.startsAt) return;
+  if (!sim || room.state !== 'city') return;
   const ps = sim.players.get(playerId);
   if (!ps) return;
-  if (ps.world === 1) tryFlash(io, room, playerId, Date.now());
-  else tryZap(io, room, playerId, Date.now());
+  const now = Date.now();
+  if (typeof ang === 'number' && Number.isFinite(ang) && !ps.veh) ps.ang = ang;
+  attackNow(io, room, playerId, ps, now, null);
+}
+
+// F: get into / out of a car
+function use(io, room, playerId) {
+  const sim = room.city;
+  if (!sim || room.state !== 'city') return;
+  const ps = sim.players.get(playerId);
+  const now = Date.now();
+  if (!ps || ps.deadUntil > now || ps.finishedAt || ps.stunUntil > now || now < sim.startsAt) return;
+  if (ps.world === 1) {
+    tryFlash(io, room, playerId, now);
+    return;
+  }
+  if (ps.veh) {
+    if (Math.abs(ps.veh.speed) > 80) return;
+    exitCar(io, room, sim, ps, now, false);
+    return;
+  }
+  const car = nearestCar(sim, ps.x, ps.y);
+  if (car) enterCar(io, room, sim, playerId, ps, car, now);
+}
+
+function selectWeapon(room, playerId, code) {
+  const sim = room.city;
+  if (!sim || room.state !== 'city') return;
+  const ps = sim.players.get(playerId);
+  if (!ps) return;
+  const key = WEAPON_BY_CODE[Number(code)];
+  if (!key || !ps.weapons[key]) return;
+  if (WEAPONS[key].ammoKey && ps.ammo[WEAPONS[key].ammoKey] <= 0) return;
+  ps.weapon = key;
 }
 
 function shout(io, room, playerId) {
@@ -1257,4 +2063,4 @@ function stopCity(room) {
   room.city = null;
 }
 
-module.exports = { startCity, initPayload, setInput, answer, zap, shout, finishCity, stopCity, MAP, KINDS, findPath };
+module.exports = { startCity, initPayload, setInput, attack, use, selectWeapon, shout, finishCity, stopCity, MAP, KINDS, WEAPONS, findPath };

@@ -1,12 +1,11 @@
 /*
- * City3D — the Three.js renderer and controls for City Mission.
+ * City — the Three.js renderer and controls for City Chaos.
  *
- * Same contract as the 2D renderer (city2d.js): the server owns the simulation, this module
- * draws it. Everyone is interpolated between snapshots; your own soldier is predicted locally.
- * The view is a third-person chase camera: drag to orbit, wheel / pinch to zoom, WASD moves
- * relative to the camera, tap the ground to walk there.
+ * The server owns the simulation; this module draws it. Everyone is interpolated between snapshots,
+ * your own character is predicted locally. Third-person chase camera: drag to orbit, wheel / pinch to
+ * zoom, WASD moves relative to the camera, Space / click / tap fights, F gets in and out of cars.
  */
-const City3D = (function () {
+const City = (function () {
   'use strict';
 
   const T = THREE;
@@ -24,19 +23,24 @@ const City3D = (function () {
   };
   const PLAYER_R = 11;
   const BASE_SPEED = 170;
-  const BOOST_MUL = 1.75;
+  const CLENCH_MUL = 0.35;
   const DOOR_RADIUS = 46;
   const MATCH_MS = 8 * 60 * 1000;
+  const FIRE_EVERY_MS = 90;
+  const GUARD_HP = 60;
+  const COP_HP = 70;
   const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const mobile = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || Math.min(screen.width, screen.height) < 700;
 
   const SKIN = ['#f5d0b0', '#e6b48a', '#c98f62', '#a86b42', '#7c4a2d', '#f9dcc4'];
   const SHIRT = ['#e63946', '#f4a261', '#2a9d8f', '#4361ee', '#9b5de5', '#f15bb5', '#00bbf9', '#8ac926', '#ff7b00', '#7209b7'];
-  const HAIR = ['#141013', '#2b1d14', '#4a2f1c', '#7a5230', '#9a9a9a', '#8a3b1c', '#d8b25a'];
-  const PANTS = ['#2b3550', '#3a3f4a', '#5b4a36', '#22262e', '#4a5568'];
-  const HELMET = ['#4b5a3a', '#2f3640', '#6b5b3a', '#3d4a5c', '#5a3a3a', '#37474f'];
-  const VEST = ['#2d3a2a', '#252b33', '#4a4130', '#26303f'];
+  const PLAYER_TINT = ['#e63946', '#4361ee', '#2a9d8f', '#f4a261', '#9b5de5', '#f15bb5', '#00bbf9', '#8ac926', '#ff7b00', '#7209b7'];
+  const GUARD_TINT = '#a8742a';
+  const COP_TINT = '#2b4fa8';
   const CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#ecf0f1', '#9b59b6'];
+  const PICKUP_ICON = ['💵', '🔫', '🔫', '🔫', '❤️', '🛡️', '🏏']; // cash pistol smg shotgun health armor bat
+  const PICKUP_COLOR = ['#5ee38f', '#cfd8e3', '#ffb347', '#ff6b6b', '#ff5470', '#5ac8ff', '#d9a05b'];
+  const HIT_COLOR = ['#ff5a5a', '#ffffff', '#ffb347', '#7fb4ff', '#9fe6ff'];
 
   let canvas = null;
   let overlay = null;
@@ -67,16 +71,22 @@ const City3D = (function () {
   let snaps = [];
   let offset = 0;
   let startsAt = 0;
-  let me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0, bladder: 0, world: 0 };
-  const keys = { up: false, down: false, left: false, right: false };
+  let cur = null; // the sample being drawn this frame
+  let me = newMe();
+  const keys = { up: false, down: false, left: false, right: false, rotL: false, rotR: false };
   let joy = { x: 0, y: 0 };
-  let goTo = null;
   let lastSent = { dx: 0, dy: 0, t: 0 };
+  // firing: held keys / buttons / pointer, repeated while held
+  const fire = { key: false, btn: false, ptr: null, last: 0 };
   const fx = [];
   const bubbles = new Map();
 
+  function newMe() {
+    return { x: 0, y: 0, ang: 0, init: false, flags: 0, mission: 0, cash: 0, weapon: 0, hp: 100, armor: 0, bladder: 0, world: 0, keys: 0, wanted: 0, ammo: -1, kills: 0, hold: 0, owned: 1 };
+  }
+
   // camera rig
-  const cam = { yaw: 0, yawT: 0, pitch: 1.04, pitchT: 1.04, dist: 350, distT: 350, x: 0, z: 0, shake: 0 };
+  const cam = { yaw: 0, yawT: 0, pitch: 1.0, pitchT: 1.0, dist: 330, distT: 330, x: 0, z: 0, shake: 0 };
   const camPos = new T.Vector3();
   const focus = { x: 0, z: 0 };
 
@@ -84,6 +94,9 @@ const City3D = (function () {
   let npcObjs = [];
   let carObjs = [];
   let playerObjs = [];
+  let guardObjs = [];
+  let copObjs = [];
+  let pickupObjs = new Map();
   let marker = null;
   let particles = [];
   const labels = [];
@@ -91,7 +104,9 @@ const City3D = (function () {
   let shadowTex = null;
   let glowTex = null;
   let beamTex = null;
+  let charMat = null;
   const paintMats = new Map();
+  const iconTex = new Map();
 
   /* ------------------------------------------------------------- physics */
 
@@ -104,8 +119,8 @@ const City3D = (function () {
   }
 
   function speedOf(flags) {
-    if (flags & 1 || flags & 8 || flags & 32) return 0;
-    return BASE_SPEED * (flags & 4 ? BOOST_MUL : 1);
+    if (flags & (1 | 4 | 32 | 64 | 128 | 2048)) return 0;
+    return BASE_SPEED * (flags & 256 ? CLENCH_MUL : 1);
   }
 
   // controls are relative to the camera: "up" walks away from the viewer
@@ -116,26 +131,13 @@ const City3D = (function () {
       ix = joy.x;
       iy = joy.y;
     }
-    let dx;
-    let dy;
+    let dx = 0;
+    let dy = 0;
     if (ix || iy) {
       const c = Math.cos(cam.yaw);
       const s = Math.sin(cam.yaw);
       dx = c * ix - s * iy;
       dy = s * ix + c * iy;
-    } else if (goTo) {
-      const ex = goTo.x - me.x;
-      const ey = goTo.y - me.y;
-      const d = Math.hypot(ex, ey);
-      if (d < 10) {
-        goTo = null;
-        dx = dy = 0;
-      } else {
-        dx = ex / d;
-        dy = ey / d;
-      }
-    } else {
-      dx = dy = 0;
     }
     const len = Math.hypot(dx, dy);
     if (len > 1) {
@@ -152,12 +154,8 @@ const City3D = (function () {
     if (!sp || (!v.dx && !v.dy) || nowServer() < startsAt) return;
     const vx = v.dx * sp * dt;
     const vy = v.dy * sp * dt;
-    const px = me.x;
-    const py = me.y;
     if (!collides(me.x + vx, me.y, PLAYER_R)) me.x += vx;
     if (!collides(me.x, me.y + vy, PLAYER_R)) me.y += vy;
-    if (Math.abs(v.dx) > 0.15) me.face = v.dx > 0 ? 1 : -1;
-    if (goTo && Math.abs(me.x - px) + Math.abs(me.y - py) < 0.01) goTo = null;
   }
 
   /* -------------------------------------------------------- textures */
@@ -192,7 +190,7 @@ const City3D = (function () {
     beamTex.encoding = T.sRGBEncoding;
   }
 
-  /* ---------------------------------------------------- 3D characters */
+  /* ---------------------------------------------------- shared bits */
 
   const matCache = new Map();
   function pm(hex, rough, metal) {
@@ -208,55 +206,26 @@ const City3D = (function () {
 
   const G = {}; // shared geometries
   function geos() {
-    if (G.torso) return;
-    G.torso = new T.BoxGeometry(14.5, 15, 8.6);
-    G.vest = new T.BoxGeometry(15.6, 11, 9.6);
-    G.pouch = new T.BoxGeometry(3.6, 3.4, 1.8);
-    G.pelvis = new T.BoxGeometry(13.6, 5, 8.2);
-    G.thigh = new T.BoxGeometry(5.6, 10.4, 5.8);
-    G.shin = new T.BoxGeometry(5, 10.2, 5.2);
-    G.boot = new T.BoxGeometry(8.8, 3.8, 5.8);
-    G.uarm = new T.BoxGeometry(4.6, 8.6, 4.6);
-    G.farm = new T.BoxGeometry(4.2, 8.2, 4.2);
-    G.hand = new T.SphereGeometry(2.2, 8, 6);
-    G.head = new T.SphereGeometry(4.7, 14, 12);
-    G.neck = new T.CylinderGeometry(1.9, 2.1, 2.6, 8);
-    G.helmet = new T.SphereGeometry(5.5, 14, 8, 0, TAU, 0, Math.PI * 0.56);
-    G.hair = new T.SphereGeometry(5, 12, 8, 0, TAU, 0, Math.PI * 0.62);
-    G.pack = new T.BoxGeometry(4.6, 11.5, 9.6);
-    G.eye = new T.BoxGeometry(0.9, 1.1, 1);
-    G.shades = new T.BoxGeometry(1.4, 1.7, 8.2);
-    G.gunBody = new T.BoxGeometry(2.6, 15, 3);
-    G.gunBarrel = new T.CylinderGeometry(0.7, 0.7, 8, 6);
-    G.gunMag = new T.BoxGeometry(2, 4.6, 2.4);
-    G.gunScope = new T.BoxGeometry(2, 5, 2);
+    if (G.shadow) return;
     G.shadow = new T.PlaneGeometry(1, 1);
-  }
-
-  function part(geo, mat, parent, x, y, z, shadow) {
-    const m = new T.Mesh(geo, mat);
-    m.position.set(x || 0, y || 0, z || 0);
-    m.castShadow = shadow !== false;
-    parent.add(m);
-    return m;
+    G.tracer = new T.CylinderGeometry(0.7, 0.7, 1, 5);
   }
 
   /* ------------------------------------------- skinned soldier model (shared) */
 
   // Everyone in the city is the rigged Mixamo soldier from soldier.js, tinted per person. Big enough
-  // that the acting (holding it in!) reads clearly from the chase camera.
+  // that the acting (holding it in! punching! swinging a bat!) reads from the chase camera.
   const SOLDIER_SCALE = 40;
 
-  function buildSoldier(look, o) {
+  function buildPerson(o) {
     geos();
-    const npc = !!o.npc;
     const s0 = Soldier.create({
-      scale: SOLDIER_SCALE * (npc ? look.sv * 0.94 : 1),
-      tint: look.shirt,
-      tintMix: npc ? 0.4 : 0.55,
-      castShadow: npc ? q.npcShadows : true,
+      scale: SOLDIER_SCALE * (o.sv || 1),
+      tint: o.tint,
+      tintMix: o.mix == null ? 0.55 : o.mix,
+      castShadow: o.shadow !== false,
       envMats: world && world.envMats,
-      gun: !npc,
+      gun: !!o.gun,
     });
     const k = s0.scale / 27;
     const blob = new T.Mesh(G.shadow, new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
@@ -264,22 +233,18 @@ const City3D = (function () {
     blob.scale.set(32 * k, 32 * k, 1);
     blob.position.y = 0.9;
     s0.root.add(blob);
-    const shield = new T.Mesh(new T.SphereGeometry(23 * k, 20, 14), new T.MeshBasicMaterial({ color: 0x5adcff, transparent: true, opacity: 0.2, depthWrite: false, blending: T.AdditiveBlending }));
-    shield.position.y = 25 * k;
-    shield.visible = false;
-    s0.root.add(shield);
-    return Object.assign(s0, { blob, shield, phase: Math.random() * TAU, h: 0, px: 0, py: 0, seen: false, soldier: !npc });
+    return Object.assign(s0, { blob, phase: Math.random() * TAU, h: 0, px: 0, py: 0, seen: false, lastAtk: -9, atkAlt: 0, hp: 100 });
   }
 
-  function animateSoldier(p, dt, moving, speed, st) {
+  function animatePerson(p, dt, moving, speed, st) {
     Soldier.update(p, dt, Object.assign({ moving, speed, time: nowT }, st));
   }
 
-  // body language from the bladder level and the server's state flags
   const smoothstep = (a0, a1, x) => {
     const k = clamp((x - a0) / (a1 - a0), 0, 1);
     return k * k * (3 - 2 * k);
   };
+  // body language from the bladder level and the server's state flags
   function poseOf(b, flags) {
     const clench = flags & 256 ? 1 : 0;
     const shame = flags & 128 ? 1 : 0;
@@ -294,155 +259,8 @@ const City3D = (function () {
     };
   }
 
-  // a person, 49 units tall, facing +X (his right hand is +Z)
-  function buildPerson(look, o) {
-    geos();
-    if (Soldier.ready()) return buildSoldier(look, o || {});
-    o = o || {};
-    const soldier = !!o.soldier;
-    const skin = pm(look.skin, 0.65);
-    const shirt = pm(look.shirt, 0.8);
-    const pants = pm(soldier ? look.cargo : look.pants, 0.85);
-    const bootM = pm('#1b1b1f', 0.6);
-    const root = new T.Group();
-    const body = new T.Group();
-    root.add(body);
-
-    const blob = new T.Mesh(G.shadow, new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
-    blob.rotation.x = -Math.PI / 2;
-    blob.scale.set(30, 30, 1);
-    blob.position.y = 0.9;
-    root.add(blob);
-
-    part(G.pelvis, pants, body, 0, 23, 0);
-    const legs = [];
-    for (const side of [-1, 1]) {
-      const hip = new T.Group();
-      hip.position.set(0, 23, side * 3.7);
-      body.add(hip);
-      part(G.thigh, pants, hip, 0, -5.2, 0);
-      const knee = new T.Group();
-      knee.position.y = -10.4;
-      hip.add(knee);
-      part(G.shin, pants, knee, 0, -5.1, 0);
-      part(G.boot, bootM, knee, 1.4, -10.4, 0);
-      legs.push({ hip, knee });
-    }
-    const torso = new T.Group();
-    body.add(torso);
-    part(G.torso, shirt, torso, 0, 31.5, 0);
-    if (soldier) {
-      const vest = pm(look.vest, 0.7);
-      part(G.vest, vest, torso, 0.2, 32.6, 0);
-      for (const z of [-2.6, 0, 2.6]) part(G.pouch, pm('#1d2321', 0.8), torso, 5.3, 29.2, z, false);
-      part(G.pack, pm(look.vest, 0.9), torso, -7.4, 31.5, 0);
-    }
-    part(G.neck, skin, torso, 0, 39.7, 0, false);
-    const head = new T.Group();
-    head.position.set(0, 44.4, 0);
-    torso.add(head);
-    const headM = part(G.head, skin, head, 0, 0, 0);
-    headM.scale.set(0.95, 1.05, 0.92);
-    for (const z of [-1.8, 1.8]) part(G.eye, pm('#15151a', 0.4), head, 4.2, 0.4, z, false);
-    if (soldier) {
-      part(G.helmet, pm(look.helmet, 0.55, 0.15), head, 0, 0.6, 0);
-      part(G.shades, pm('#0b0b0f', 0.15, 0.6), head, 4.1, 0.5, 0, false);
-      const strap = part(new T.BoxGeometry(5.4, 0.8, 9.4), pm('#141414', 0.9), head, 0, -1.5, 0, false);
-      strap.scale.set(0.6, 1, 1);
-    } else {
-      const hair = part(G.hair, pm(look.hair, 0.85), head, -0.5, 0.9, 0);
-      hair.rotation.z = 0.12;
-      if (look.cap) part(new T.CylinderGeometry(5.3, 5.5, 2.4, 12), pm(look.shirt, 0.8), head, 0, 3.2, 0);
-    }
-    const arms = [];
-    for (const side of [-1, 1]) {
-      const sh = new T.Group();
-      sh.position.set(0, 38, side * 8.9);
-      torso.add(sh);
-      part(G.uarm, shirt, sh, 0, -4.3, 0);
-      const el = new T.Group();
-      el.position.y = -8.6;
-      sh.add(el);
-      part(G.farm, soldier ? shirt : skin, el, 0, -4.1, 0);
-      part(G.hand, skin, el, 0, -8.4, 0, false);
-      arms.push({ sh, el });
-    }
-    // rifle, held in the right hand and pointing along the forearm
-    const gun = new T.Group();
-    gun.visible = false;
-    arms[1].el.add(gun);
-    const metal = pm('#23262c', 0.45, 0.7);
-    part(G.gunBody, metal, gun, 0, -12, 0);
-    part(G.gunBarrel, pm('#111', 0.4, 0.8), gun, 0, -23, 0);
-    part(G.gunMag, pm('#1a1c20', 0.6, 0.4), gun, 0, -12.5, 0).position.x = 2.4;
-    part(G.gunScope, pm('#2c313a', 0.4, 0.6), gun, 0, -10, 0).position.x = -1.9;
-    const tipM = new T.MeshBasicMaterial({ color: 0xff6a3a, toneMapped: false });
-    const tip = part(new T.SphereGeometry(1.1, 6, 6), tipM, gun, 0, -27.4, 0, false);
-    tip.visible = false;
-
-    const shield = new T.Mesh(new T.SphereGeometry(21, 20, 14), new T.MeshBasicMaterial({ color: 0x5adcff, transparent: true, opacity: 0.2, depthWrite: false, blending: T.AdditiveBlending }));
-    shield.position.y = 24;
-    shield.visible = false;
-    root.add(shield);
-
-    return { root, body, torso, head, legs, arms, gun, tip, shield, blob, phase: Math.random() * TAU, h: 0, hInit: false, px: 0, py: 0, seen: false, soldier };
-  }
-
-  const _tmp = new T.Vector3();
-  function animatePerson(p, dt, moving, speed, st) {
-    if (p.mixer) return animateSoldier(p, dt, moving, speed, st);
-    const speedK = Math.min(1.4, speed / 60);
-    const aim = !!(st && st.aim);
-    const dazed = !!(st && st.stunned);
-    const won = !!(st && st.finished);
-    const thinking = !!(st && st.thinking);
-    if (moving) p.phase += dt * (8.5 + speedK * 4);
-    const ph = p.phase;
-    const amp = moving ? 0.78 : 0;
-    const bob = moving ? Math.abs(Math.cos(ph)) * 1.6 : Math.sin(nowT * 2 + p.phase) * 0.25;
-    p.body.position.y = dazed ? -1 : won ? Math.abs(Math.sin(nowT * 7)) * 5 : bob;
-    for (let i = 0; i < 2; i++) {
-      const s = i === 0 ? 1 : -1;
-      const a = Math.sin(ph) * amp * s;
-      p.legs[i].hip.rotation.z = a;
-      p.legs[i].knee.rotation.z = -Math.max(0, Math.cos(ph) * s) * amp * 1.15 - (moving ? 0.06 : 0);
-    }
-    const [lA, rA] = p.arms;
-    const sw = moving ? Math.sin(ph) * 0.7 : Math.sin(nowT * 1.8 + p.phase) * 0.05;
-    lA.sh.rotation.set(0, 0, -sw);
-    rA.sh.rotation.set(0, 0, sw);
-    lA.el.rotation.z = moving ? -0.55 : -0.15;
-    rA.el.rotation.z = moving ? -0.55 : -0.15;
-    p.torso.rotation.z = moving ? 0.1 : 0;
-    p.torso.rotation.y = moving ? Math.sin(ph) * 0.12 : 0;
-    p.head.rotation.set(0, 0, 0);
-    if (aim) {
-      rA.sh.rotation.set(0, 0.05, 1.42 + (moving ? Math.sin(ph * 2) * 0.03 : 0));
-      rA.el.rotation.z = 0.12;
-      lA.sh.rotation.set(0.5, -0.5, 1.2);
-      lA.el.rotation.z = 0.35;
-      p.torso.rotation.y = -0.15;
-    }
-    if (won) {
-      lA.sh.rotation.set(0, 0, 2.9 + Math.sin(nowT * 9) * 0.25);
-      rA.sh.rotation.set(0, 0, -2.9 + Math.sin(nowT * 9 + 1) * 0.25);
-      lA.sh.rotation.z = -lA.sh.rotation.z;
-    }
-    if (thinking) {
-      rA.sh.rotation.set(0, 0, 2.35);
-      rA.el.rotation.z = 1.1;
-      p.head.rotation.z = 0.12;
-    }
-    if (dazed) {
-      p.torso.rotation.z = Math.sin(nowT * 6) * 0.35 - 0.25;
-      p.body.rotation.z = Math.sin(nowT * 5) * 0.06;
-      lA.sh.rotation.z = -0.5;
-      rA.sh.rotation.z = -0.5;
-      p.head.rotation.z = Math.sin(nowT * 7) * 0.3;
-    } else p.body.rotation.z = 0;
-    p.gun.visible = !!(st && st.armed);
-    p.tip.visible = false;
-  }
+  // a heading in server terms (atan2(dy, dx)) becomes the model's yaw
+  const yawOf = (ang) => -ang;
 
   function buildCar(hex) {
     const g = new T.Group();
@@ -525,7 +343,106 @@ const City3D = (function () {
         wheels.push(w);
       }
     }
-    return { root: g, wheels, lamps, head, h: 0, spin: 0, px: 0, py: 0, seen: false, driver: null };
+    return { root: g, paint, wheels, lamps, head, h: 0, spin: 0, px: 0, py: 0, seen: false, driver: null };
+  }
+
+  /* ------------------------------------------------- icon sprites + tracers */
+
+  function iconTexture(emoji, color) {
+    const key = emoji + color;
+    let t = iconTex.get(key);
+    if (t) return t;
+    const c = document.createElement('canvas');
+    c.width = c.height = 96;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(48, 48, 6, 48, 48, 46);
+    gr.addColorStop(0, 'rgba(10,14,36,0.85)');
+    gr.addColorStop(0.75, 'rgba(10,14,36,0.7)');
+    gr.addColorStop(1, 'rgba(10,14,36,0)');
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(48, 48, 46, 0, TAU);
+    g.fill();
+    g.strokeStyle = color;
+    g.lineWidth = 4;
+    g.beginPath();
+    g.arc(48, 48, 36, 0, TAU);
+    g.stroke();
+    g.font = '44px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(emoji, 48, 52);
+    t = new T.CanvasTexture(c);
+    t.encoding = T.sRGBEncoding;
+    iconTex.set(key, t);
+    return t;
+  }
+
+  const tracers = [];
+  function makeTracers() {
+    tracers.length = 0;
+    for (let i = 0; i < 40; i++) {
+      const m = new T.Mesh(G.tracer, new T.MeshBasicMaterial({ color: 0xffe6a0, transparent: true, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      m.visible = false;
+      scene.add(m);
+      tracers.push({ m, life: 0, max: 0.1 });
+    }
+  }
+
+  const UP = new T.Vector3(0, 1, 0);
+  const _a = new T.Vector3();
+  const _b = new T.Vector3();
+  function tracer(ax, ay, az, bx, by, bz, color, life, width) {
+    const t = tracers.find((x) => x.life <= 0);
+    if (!t) return;
+    _a.set(ax, ay, az);
+    _b.set(bx, by, bz);
+    const d = _b.clone().sub(_a);
+    const len = d.length();
+    if (len < 1) return;
+    t.m.position.copy(_a).lerp(_b, 0.5);
+    t.m.scale.set(width || 1, len, width || 1);
+    t.m.quaternion.setFromUnitVectors(UP, d.normalize());
+    t.m.material.color.set(color || '#ffe6a0');
+    t.max = t.life = life || 0.1;
+    t.m.visible = true;
+  }
+
+  function stepTracers(dt) {
+    for (const t of tracers) {
+      if (t.life <= 0) continue;
+      t.life -= dt;
+      if (t.life <= 0) {
+        t.m.visible = false;
+        continue;
+      }
+      t.m.material.opacity = clamp(t.life / t.max, 0, 1);
+    }
+  }
+
+  // one big soft flash for explosions
+  let flashSprite = null;
+  let flashLife = 0;
+  function bigFlash(x, y, z, size) {
+    if (!flashSprite) {
+      flashSprite = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0xffb060, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false }));
+      scene.add(flashSprite);
+    }
+    flashSprite.position.set(x, y, z);
+    flashSprite.userData.size = size;
+    flashLife = 0.45;
+    flashSprite.visible = true;
+  }
+  function stepFlash(dt) {
+    if (!flashSprite || flashLife <= 0) return;
+    flashLife -= dt;
+    if (flashLife <= 0) {
+      flashSprite.visible = false;
+      return;
+    }
+    const k = flashLife / 0.45;
+    flashSprite.material.opacity = k;
+    flashSprite.scale.setScalar(flashSprite.userData.size * (1.6 - k * 0.6));
   }
 
   /* ---------------------------------------------------- scene setup */
@@ -547,12 +464,19 @@ const City3D = (function () {
     scene = new T.Scene();
     camera = new T.PerspectiveCamera(48, 1, 6, 12000);
     makeAssets();
+    geos();
     world = CityWorld.build(scene, renderer, map, missions, q);
     world.mapW = map.w;
+    charMat = new T.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.9, metalness: 0.2 });
     entityGroup = new T.Group();
     scene.add(entityGroup);
     marker = buildMarker();
     scene.add(marker.group);
+    particles = [];
+    smoke = [];
+    makeParticles();
+    makeSmoke();
+    makeTracers();
     world.setTime(0.05);
     resize();
   }
@@ -703,34 +627,144 @@ const City3D = (function () {
     }
   }
 
+  /* ------------------------------------------------------- combat + body fx */
+
   const TOOT_WORDS = ['PFFT!', 'PRRT!', 'BRAAP!', 'toot!', 'psst…', 'BLURP!', 'PFFFRT!', 'phbbt!'];
 
-  // server body events: farts, accidents, relief
+  function textFx(text, color, x, y, h, life) {
+    fx.push({ kind: 'text', text, color, x, y, h: h == null ? 70 : h, born: nowT, life: life || 1.2 });
+  }
+
+  function posOf(id) {
+    const idx = indexById.get(id);
+    if (idx === undefined) return null;
+    if (idx === meIdx) return { x: me.x, y: me.y, idx, o: playerObjs[idx] };
+    const o = playerObjs[idx];
+    return o && o.pos ? { x: o.pos.x, y: o.pos.y, idx, o } : { x: me.x, y: me.y, idx, o };
+  }
+
+  function strike(o) {
+    if (!o) return;
+    o.lastAtk = nowT;
+    o.atkAlt ^= 1;
+  }
+
+  // server events: gunfire, punches, hits, explosions, body noises
   function fxEvent(e) {
     if (!scene || !e) return;
-    const idx = indexById.get(e.playerId);
-    const o = idx === undefined ? null : playerObjs[idx];
-    const isMe = idx === meIdx;
-    const px = isMe ? me.x : o && o.pos ? o.pos.x : me.x;
-    const pz = isMe ? me.y : o && o.pos ? o.pos.y : me.y;
-    const h = o && o.heading !== undefined ? o.heading : 0;
+    const P = e.playerId ? posOf(e.playerId) : null;
+    const isMe = !!P && P.idx === meIdx;
+    const px = P ? P.x : me.x;
+    const pz = P ? P.y : me.y;
+    const h = P && P.o && P.o.h !== undefined ? -P.o.h : 0; // heading in server terms
     const bx = px - Math.cos(h) * 16;
-    const bz = pz + Math.sin(h) * 16;
-    if (e.type === 'fart') {
-      puff(bx, 30, bz, e.big ? 16 : 9, '#b5cf6a', e.big ? 30 : 22, e.big ? 2.2 : 1.5, 18);
-      if (!reduceMotion) fx.push({ kind: 'text', text: TOOT_WORDS[(e.kind || 0) % TOOT_WORDS.length], color: '#c8e58a', x: px, y: pz, born: nowT, life: 1.2 });
-    } else if (e.type === 'accident') {
-      puff(px, 26, pz, 30, '#8fb04c', 38, 3, 16);
-      puff(px, 40, pz, 12, '#6d7c3a', 30, 3.4, 22);
-      fx.push({ kind: 'text', text: '💩 OOPS!', color: '#e0c56a', x: px, y: pz, born: nowT, life: 2.4 });
-      if (isMe && !reduceMotion) cam.shake = Math.max(cam.shake, 9);
-    } else if (e.type === 'relief') {
-      burst(px, 40, pz, '#ffe27a', 30, 120, 12, 1, 40);
-      puff(px, 20, pz, 8, '#ffffff', 26, 1.4, 30);
-      fx.push({ kind: 'text', text: '😌 AAAH!', color: '#ffe27a', x: px, y: pz, born: nowT, life: 2 });
-    } else if (e.type === 'shout') {
-      fx.push({ kind: 'text', text: '📢 AAAAH!', color: '#bfe6ff', x: px, y: pz, born: nowT, life: 1.4 });
+    const bz = pz - Math.sin(h) * 16;
+    switch (e.type) {
+      case 'shot': {
+        if (P) strike(P.o);
+        const gh = 30;
+        burst(e.x, gh, e.y, '#ffd27a', 4, 40, 16, 0.12, 0);
+        for (const end of e.ends || []) {
+          tracer(e.x, gh, e.y, end[0], gh - 4, end[1], e.w === 4 ? '#ffb347' : '#ffe6a0', 0.1, e.w === 3 ? 0.8 : 1);
+          burst(end[0], 14, end[1], '#ffe9b0', 3, 60, 7, 0.3, 90);
+        }
+        if (isMe && !reduceMotion) cam.shake = Math.max(cam.shake, e.w === 4 ? 6 : e.w === 3 ? 1.6 : 2.6);
+        break;
+      }
+      case 'melee': {
+        if (P) strike(P.o);
+        if (e.hit) {
+          const hx = px + Math.cos(h) * 30;
+          const hz = pz + Math.sin(h) * 30;
+          burst(hx, 30, hz, e.w === 1 ? '#f1c98a' : '#ffd0d0', 8, 90, 10, 0.4, 120);
+          if (isMe && !reduceMotion) cam.shake = Math.max(cam.shake, 3);
+        }
+        break;
+      }
+      case 'hit': {
+        const col = HIT_COLOR[e.k] || '#fff';
+        if (e.dmg > 0) {
+          burst(e.x, 34, e.y, e.k === 0 ? '#ff4d4d' : '#ffd7a0', e.k === 0 ? 10 : 7, 70, 9, 0.5, 130);
+          textFx(String(e.dmg), col, e.x + rand(-6, 6), e.y + rand(-6, 6), 62, 0.9);
+        } else if (e.k === 4) {
+          textFx('BLOCKED', '#9fe6ff', e.x, e.y, 62, 0.8);
+        }
+        if (e.playerId && e.playerId === (players[meIdx] || {}).playerId && !reduceMotion) cam.shake = Math.max(cam.shake, 5 + Math.min(8, e.dmg * 0.2));
+        break;
+      }
+      case 'down': {
+        puff(e.x, 24, e.y, 4, '#8a8f99', 22, 1.2, 12);
+        break;
+      }
+      case 'boom': {
+        burst(e.x, 24, e.y, '#ffb347', 34, 240, 26, 0.9, -10);
+        burst(e.x, 24, e.y, '#ff5a2a', 18, 160, 20, 0.7, 20);
+        puff(e.x, 30, e.y, 16, '#2a2a2e', 44, 3.2, 26);
+        bigFlash(e.x, 28, e.y, 240);
+        const d = Math.hypot(e.x - me.x, e.y - me.y);
+        if (!reduceMotion) cam.shake = Math.max(cam.shake, clamp(26 - d / 30, 0, 26));
+        break;
+      }
+      case 'crash': {
+        burst(e.x, 18, e.y, '#ffd27a', 10, 130, 9, 0.4, 160);
+        puff(e.x, 20, e.y, 3, '#9a9a9a', 22, 1, 12);
+        const d = Math.hypot(e.x - me.x, e.y - me.y);
+        if (!reduceMotion) cam.shake = Math.max(cam.shake, clamp(9 - d / 60, 0, 9));
+        break;
+      }
+      case 'pickup':
+        burst(e.x, 24, e.y, '#8dffb0', 12, 90, 9, 0.7, 30);
+        if (isMe) textFx(e.what === 'cash' ? '+$' : e.what === 'health' ? '❤️ +HP' : e.what === 'armor' ? '🛡️ +ARMOR' : `🔫 ${String(e.what).toUpperCase()}`, '#8dffb0', px, pz, 74, 1.4);
+        break;
+      case 'carjack':
+        textFx('🚗 CARJACK!', '#ffd23f', px, pz, 80, 1.3);
+        break;
+      case 'heist':
+        textFx('💰 HEIST!', '#ffd23f', px, pz, 80, 1.6);
+        burst(px, 50, pz, '#ffd23f', 30, 150, 11, 1, 40);
+        break;
+      case 'reward':
+        textFx(e.kind === 'gun' ? '🔫 ARSENAL!' : e.kind === 'hospital' ? '❤️ PATCHED UP' : '✔ DONE', '#8dffb0', px, pz, 80, 1.5);
+        burst(px, 44, pz, '#8dffb0', 22, 120, 10, 0.9, 40);
+        break;
+      case 'respawn':
+        burst(px, 6, pz, '#9fe6ff', 22, 120, 12, 0.9, -20);
+        break;
+      case 'wanted':
+        if (isMe) textFx(`⭐ WANTED ${'★'.repeat(e.level || 1)}`, '#ff9aa9', px, pz, 86, 1.6);
+        break;
+      case 'fart':
+        puff(bx, 30, bz, e.big ? 16 : 9, '#b5cf6a', e.big ? 30 : 22, e.big ? 2.2 : 1.5, 18);
+        if (!reduceMotion) textFx(TOOT_WORDS[(e.kind || 0) % TOOT_WORDS.length], '#c8e58a', px, pz, 70, 1.2);
+        break;
+      case 'accident':
+        puff(px, 26, pz, 30, '#8fb04c', 38, 3, 16);
+        puff(px, 40, pz, 12, '#6d7c3a', 30, 3.4, 22);
+        textFx('💩 OOPS! −$250', '#e0c56a', px, pz, 80, 2.4);
+        if (isMe && !reduceMotion) cam.shake = Math.max(cam.shake, 9);
+        break;
+      case 'relief':
+        burst(px, 40, pz, '#ffe27a', 30, 120, 12, 1, 40);
+        puff(px, 20, pz, 8, '#ffffff', 26, 1.4, 30);
+        textFx('😌 AAAH!', '#ffe27a', px, pz, 80, 2);
+        break;
+      case 'shout':
+        textFx('📢 AAAAH!', '#bfe6ff', px, pz, 80, 1.4);
+        break;
+      default:
+        break;
     }
+  }
+
+  function say(playerId, text) {
+    const idx = indexById.get(playerId);
+    if (idx === undefined) return;
+    bubbles.set(idx, { text: String(text).slice(0, 34), until: nowT + 3.2 });
+  }
+
+  function floatText(text, color) {
+    textFx(text, color || '#ffe08a', me.x, me.y, 80, 1.6);
+    if (scene && me.init) burst(me.x, 40, me.y, color || '#ffe08a', 26, 90, 9, 0.9, 80);
   }
 
   /* ---------------------------------------------------- start / state */
@@ -746,11 +780,12 @@ const City3D = (function () {
     offset = payload.serverNow - Date.now();
     startsAt = payload.startsAt;
     snaps = [];
-    if (scene) fx.forEach((f) => f.bolt && scene.remove(f.bolt.g));
+    cur = null;
     fx.length = 0;
     bubbles.clear();
-    goTo = null;
-    me = { x: 0, y: 0, face: 1, init: false, flags: 0, mission: 0, points: 0, blaster: 0, bladder: 0, world: 0 };
+    fire.key = fire.btn = false;
+    fire.ptr = null;
+    me = newMe();
     ensureWorld();
     missionBuilding = missions.map((m) => map.buildings.findIndex((b) => b.door.x === m.door.x && b.door.y === m.door.y));
     buildEntities();
@@ -762,31 +797,15 @@ const City3D = (function () {
 
   function buildEntities() {
     while (entityGroup.children.length) entityGroup.remove(entityGroup.children[0]);
-    if (!particles.length) makeParticles();
-    if (!smoke.length) makeSmoke();
     npcObjs = [];
-    for (let i = 0; i < 40; i++) npcObjs.push(null);
     carObjs = [];
+    guardObjs = [];
+    copObjs = [];
+    pickupObjs = new Map();
     playerObjs = players.map(() => null);
     cam.yaw = cam.yawT = 0;
-    cam.pitch = cam.pitchT = 1.04;
-    cam.dist = cam.distT = 350;
-  }
-
-  function personLook(idx, soldier) {
-    const h = (idx + 1) * 2654435761;
-    return {
-      skin: SKIN[(h >>> 3) % SKIN.length],
-      shirt: SHIRT[(h >>> 7) % SHIRT.length],
-      hair: HAIR[(h >>> 11) % HAIR.length],
-      pants: PANTS[(h >>> 13) % PANTS.length],
-      cargo: PANTS[(h >>> 15) % PANTS.length],
-      helmet: HELMET[(h >>> 5) % HELMET.length],
-      vest: VEST[(h >>> 9) % VEST.length],
-      cap: ((h >>> 17) & 3) === 0,
-      sv: 0.93 + ((h >>> 19) & 7) * 0.013,
-      soldier,
-    };
+    cam.pitch = cam.pitchT = 1.0;
+    cam.dist = cam.distT = 330;
   }
 
   function begin() {
@@ -798,80 +817,57 @@ const City3D = (function () {
 
   function stop() {
     running = false;
-    keys.up = keys.down = keys.left = keys.right = false;
+    keys.up = keys.down = keys.left = keys.right = keys.rotL = keys.rotR = false;
+    fire.key = fire.btn = false;
+    fire.ptr = null;
     joy = { x: 0, y: 0 };
   }
 
   function applyState(s) {
     snaps.push(s);
     if (snaps.length > 12) snaps.shift();
-    const mine = s.p.find((e) => e[0] === meIdx);
-    if (!mine) return;
-    const [, sx, sy, face, flags, mission, points, blaster, bladder, world] = mine;
-    me.bladder = bladder || 0;
-    me.world = world || 0;
+    const e = s.p.find((r) => r[0] === meIdx);
+    if (!e) return;
+    const [, sx, sy, ang, flags, mission, cash, weapon, hp, armor, bladder, w, kmask, wanted, ammo, kills, hold, owned] = e;
     me.flags = flags;
     me.mission = mission;
-    me.points = points;
-    me.blaster = blaster;
+    me.cash = cash;
+    me.weapon = weapon;
+    me.hp = hp;
+    me.armor = armor;
+    me.bladder = bladder || 0;
+    me.world = w || 0;
+    me.keys = kmask || 0;
+    me.wanted = wanted || 0;
+    me.ammo = ammo;
+    me.kills = kills || 0;
+    me.hold = hold || 0;
+    me.owned = owned || 1;
     if (!me.init) {
       me.x = sx;
       me.y = sy;
-      me.face = face;
+      me.ang = ang / 100;
       me.init = true;
       cam.x = sx;
       cam.z = sy;
-      return;
+    } else if (flags & 4) {
+      // driving: the car mesh is the truth (see syncEntities)
+    } else {
+      const err = Math.hypot(sx - me.x, sy - me.y);
+      if (err > 90 || flags & (1 | 2048 | 128)) {
+        me.x = sx;
+        me.y = sy;
+      } else if (err > 3) {
+        me.x += (sx - me.x) * 0.25;
+        me.y += (sy - me.y) * 0.25;
+      }
     }
-    const err = Math.hypot(sx - me.x, sy - me.y);
-    if (err > 90 || flags & 8 || flags & 1) {
-      me.x = sx;
-      me.y = sy;
-    } else if (err > 3) {
-      me.x += (sx - me.x) * 0.25;
-      me.y += (sy - me.y) * 0.25;
-    }
-  }
-
-  /* -------------------------------------------------------- effects */
-
-  function makeBolt(color) {
-    const g = new T.Group();
-    const segs = [];
-    const geo = new T.CylinderGeometry(0.9, 0.9, 1, 5);
-    for (let i = 0; i < 9; i++) {
-      const m = new T.Mesh(geo, new T.MeshBasicMaterial({ color, transparent: true, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
-      g.add(m);
-      segs.push(m);
-    }
-    const flashA = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color, transparent: true, blending: T.AdditiveBlending, depthWrite: false }));
-    const flashB = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color, transparent: true, blending: T.AdditiveBlending, depthWrite: false }));
-    g.add(flashA, flashB);
-    scene.add(g);
-    return { g, segs, flashA, flashB };
-  }
-
-  function zapFx(fromId, toId, blockedByShield) {
-    if (!scene) return;
-    const from = indexById.get(fromId);
-    const to = indexById.get(toId);
-    const color = blockedByShield ? 0x5adcff : 0xffe14d;
-    fx.push({ kind: 'zap', from, to, born: nowT, life: 0.5, blocked: !!blockedByShield, bolt: makeBolt(color), color, jit: 0 });
-    if (to === meIdx && !reduceMotion) cam.shake = Math.max(cam.shake, blockedByShield ? 4 : 11);
-  }
-
-  function say(playerId, text) {
-    const idx = indexById.get(playerId);
-    if (idx === undefined) return;
-    bubbles.set(idx, { text: String(text).slice(0, 34), until: nowT + 3.2 });
-  }
-
-  function floatText(text, color) {
-    fx.push({ kind: 'text', text, color: color || '#ffe08a', x: me.x, y: me.y, born: nowT, life: 1.6 });
-    if (scene && me.init) burst(me.x, 40, me.y, color || '#ffe08a', 26, 90, 9, 0.9, 80);
+    hooks.onState && hooks.onState(me, s);
   }
 
   /* -------------------------------------------------- snapshot lookup */
+
+  const lerpAng = (a, b, k) => a + angDiff(a, b) * k;
 
   function sample(t) {
     if (!snaps.length) return null;
@@ -889,16 +885,29 @@ const City3D = (function () {
     return {
       p: b.p.map((e, i) => {
         const o = a.p[i] || e;
-        return { idx: e[0], x: l(o[1], e[1]), y: l(o[2], e[2]), face: e[3], flags: e[4], mission: e[5], points: e[6], blaster: e[7], bladder: e[8] || 0 };
+        const jump = Math.hypot(e[1] - o[1], e[2] - o[2]) > 150; // respawn / teleport: no sliding across the map
+        return { idx: e[0], x: jump ? e[1] : l(o[1], e[1]), y: jump ? e[2] : l(o[2], e[2]), ang: lerpAng(o[3] / 100, e[3] / 100, k), flags: e[4], mission: e[5], cash: e[6], weapon: e[7], hp: e[8], armor: e[9], bladder: e[10] || 0, world: e[11] || 0, wanted: e[13] || 0 };
       }),
       n: b.n.map((e, i) => {
         const o = a.n[i] || e;
-        return { x: l(o[0], e[0]), y: l(o[1], e[1]), d: e[2], walk: e[3], look: npcLooks[i] || [0, 0] };
+        const jump = Math.hypot(e[0] - o[0], e[1] - o[1]) > 150;
+        return { x: jump ? e[0] : l(o[0], e[0]), y: jump ? e[1] : l(o[1], e[1]), d: e[2], walk: e[3], state: e[4], look: npcLooks[i] || [0, 0] };
       }),
       c: b.c.map((e, i) => {
         const o = a.c[i] || e;
-        return { x: l(o[0], e[0]), y: l(o[1], e[1]), vertical: e[2] === 1, dir: e[3], color: e[4] };
+        const jump = Math.hypot(e[0] - o[0], e[1] - o[1]) > 150;
+        return { x: jump ? e[0] : l(o[0], e[0]), y: jump ? e[1] : l(o[1], e[1]), ang: lerpAng(o[2] / 100, e[2] / 100, k), color: e[3], driver: e[4], hp: e[5], mode: e[6] };
       }),
+      gd: (b.gd || []).map((e, i) => {
+        const o = (a.gd || [])[i] || e;
+        return { x: l(o[0], e[0]), y: l(o[1], e[1]), ang: lerpAng(o[2] / 100, e[2] / 100, k), hp: e[3], alive: e[4], shooting: e[5] };
+      }),
+      cp: (b.cp || []).map((e, i) => {
+        const o = (a.cp || [])[i] || e;
+        const jump = Math.hypot(e[0] - o[0], e[1] - o[1]) > 150;
+        return { x: jump ? e[0] : l(o[0], e[0]), y: jump ? e[1] : l(o[1], e[1]), ang: lerpAng(o[2] / 100, e[2] / 100, k), hp: e[3], shooting: e[4] };
+      }),
+      pk: b.pk || [],
       endsAt: b.endsAt,
     };
   }
@@ -918,175 +927,214 @@ const City3D = (function () {
     const d = Math.hypot(dx, dy);
     obj.px = x;
     obj.py = y;
-    if (d > 0.08) {
-      const target = Math.atan2(-dy, dx);
-      obj.h += angDiff(obj.h, target) * Math.min(1, dt * 12);
-    }
+    if (d > 0.08 && !obj.holdYaw) obj.h += angDiff(obj.h, yawOf(Math.atan2(dy, dx))) * Math.min(1, dt * 12);
     return { moved: d, speed: dt > 0 ? d / dt : 0 };
+  }
+
+  function turnTo(obj, ang, dt, rate) {
+    obj.h += angDiff(obj.h, yawOf(ang)) * Math.min(1, dt * (rate || 14));
+  }
+
+  function makeNpc(i, n) {
+    const look = n.look;
+    const o = buildPerson({ tint: SHIRT[look[1] % SHIRT.length], mix: 0.4, sv: 0.94 * (0.93 + ((look[0] * 7 + look[1] + i) % 8) * 0.013), shadow: q.npcShadows });
+    entityGroup.add(o.root);
+    return o;
+  }
+
+  function smokeCar(c, dt) {
+    if (c.mode === 3) {
+      if (Math.random() < dt * 14) puff(c.x, 28, c.y, 1, '#1f1f22', 34, 2.4, 26);
+      if (Math.random() < dt * 5) puff(c.x + rand(-8, 8), 20, c.y + rand(-8, 8), 1, '#ff7a2a', 18, 0.7, 30);
+    } else if (c.hp < 25) {
+      if (Math.random() < dt * 12) puff(c.x, 24, c.y, 1, '#3a3a3e', 26, 1.8, 22);
+      if (Math.random() < dt * 4) puff(c.x + rand(-6, 6), 18, c.y + rand(-6, 6), 1, '#ff8a3a', 14, 0.6, 26);
+    } else if (c.hp < 55) {
+      if (Math.random() < dt * 8) puff(c.x + Math.cos(c.ang) * 18, 22, c.y + Math.sin(c.ang) * 18, 1, '#b8b8bc', 20, 1.6, 20);
+    }
   }
 
   function syncEntities(s, dt) {
     labels.length = 0;
-    const withShadow = q.npcShadows;
+    cur = s;
+    const shadows = q.npcShadows;
 
-    // pedestrians
-    for (let i = 0; i < s.n.length; i++) {
-      const n = s.n[i];
-      let o = npcObjs[i];
-      if (!o) {
-        const look = personLook(n.look[0] * 7 + n.look[1] + 100 + i, false);
-        look.skin = SKIN[n.look[0] % SKIN.length];
-        look.shirt = SHIRT[n.look[1] % SHIRT.length];
-        look.hair = HAIR[(n.look[0] + n.look[1]) % HAIR.length];
-        o = npcObjs[i] = buildPerson(look, { soldier: false, npc: true });
-        if (!withShadow) o.root.traverse((m) => (m.castShadow = false));
-        entityGroup.add(o.root);
-      }
-      const f = facing(o, n.x, n.y, dt, n.d > 0 ? 0 : Math.PI);
-      const moving = !!n.walk && f.moved > 0.02;
-      o.root.position.set(n.x, 4.4 * 0, n.y);
-      o.root.rotation.y = o.h;
-      animatePerson(o, dt, moving, f.speed, null);
-    }
-
-    // traffic
+    // traffic, parked and wrecked cars, and the ones people are driving
+    let myCar = null;
     for (let i = 0; i < s.c.length; i++) {
       const c = s.c[i];
       let o = carObjs[i];
       if (!o) {
         o = carObjs[i] = buildCar(CAR_COLORS[c.color % CAR_COLORS.length]);
+        o.wreck = false;
         entityGroup.add(o.root);
       }
-      const heading = c.vertical ? (c.dir > 0 ? -Math.PI / 2 : Math.PI / 2) : c.dir > 0 ? 0 : Math.PI;
-      const f = facing(o, c.x, c.y, dt, heading);
-      o.h = heading;
+      if (c.mode === 3 && !o.wreck) {
+        o.wreck = true;
+        o.root.traverse((m) => {
+          if (m.isMesh && m.material === o.paint) m.material = charMat;
+        });
+      } else if (c.mode !== 3 && o.wreck) {
+        o.wreck = false;
+        o.root.traverse((m) => {
+          if (m.isMesh && m.material === charMat) m.material = o.paint;
+        });
+      }
+      const f = facing(o, c.x, c.y, dt, yawOf(c.ang));
+      o.h = yawOf(c.ang);
       o.root.position.set(c.x, 0, c.y);
       o.root.rotation.y = o.h;
       o.spin += f.moved / 6.4;
       for (const w of o.wheels) w.rotation.z = -o.spin;
-      const op = world.night * 0.9;
+      const op = c.mode === 3 ? 0 : world.night * 0.9;
       for (const l of o.lamps) l.material.opacity = op;
       o.head.emissiveIntensity = 0.4 + world.night * 3;
+      o.pos = { x: c.x, y: c.y };
+      smokeCar(c, dt);
+      if (c.driver === meIdx) myCar = c;
+      if (c.driver >= 0 && c.mode === 1 && f.moved > 0.5 && Math.random() < dt * 14) burst(c.x - Math.cos(c.ang) * 30, 4, c.y - Math.sin(c.ang) * 30, '#cfc9bd', 1, 28, 14, 0.6, -10);
+    }
+    // driving: the camera follows the rendered car
+    if (myCar && me.flags & 4) {
+      me.x = myCar.x;
+      me.y = myCar.y;
+      me.ang = myCar.ang;
+    }
+
+    // pedestrians
+    for (let i = 0; i < s.n.length; i++) {
+      const n = s.n[i];
+      let o = npcObjs[i];
+      if (!o) o = npcObjs[i] = makeNpc(i, n);
+      const f = facing(o, n.x, n.y, dt, n.d > 0 ? 0 : Math.PI);
+      const dead = n.state === 2;
+      const moving = !!n.walk && f.moved > 0.02 && !dead;
+      o.root.position.set(n.x, 0, n.y);
+      o.root.rotation.y = o.h;
+      animatePerson(o, dt, moving, n.state === 1 ? 130 : f.speed, { dead, weapon: 0, atkAge: 99, stunned: false });
+      if (!shadows) o.blob.visible = !dead;
+    }
+
+    // guards and cops
+    syncArmed(s.gd, guardObjs, GUARD_TINT, GUARD_HP, dt, 3, true);
+    syncArmed(s.cp, copObjs, COP_TINT, COP_HP, dt, 2, false);
+
+    // loot
+    const seen = new Set();
+    for (const [id, x, y, code] of s.pk) {
+      seen.add(id);
+      let o = pickupObjs.get(id);
+      if (!o) {
+        const sp = new T.Sprite(new T.SpriteMaterial({ map: iconTexture(PICKUP_ICON[code] || '💵', PICKUP_COLOR[code] || '#fff'), transparent: true, depthWrite: false, toneMapped: false }));
+        sp.scale.set(26, 26, 1);
+        entityGroup.add(sp);
+        o = { sp, ph: Math.random() * TAU };
+        pickupObjs.set(id, o);
+      }
+      o.sp.position.set(x, 20 + Math.sin(nowT * 3 + o.ph) * 3, y);
+    }
+    for (const [id, o] of pickupObjs) {
+      if (!seen.has(id)) {
+        entityGroup.remove(o.sp);
+        o.sp.material.dispose();
+        pickupObjs.delete(id);
+      }
     }
 
     // players
     for (const e of s.p) {
-      if (e.flags & 64) {
-        const o = playerObjs[e.idx];
-        if (o) o.root.visible = false;
-        continue;
-      }
       const info = players[e.idx];
       if (!info) continue;
       const isMe = e.idx === meIdx;
+      let o = playerObjs[e.idx];
+      if (e.flags & 64 || e.world === 1) {
+        if (o) o.root.visible = false;
+        continue;
+      }
+      const flags = isMe ? me.flags : e.flags;
       const x = isMe ? me.x : e.x;
       const y = isMe ? me.y : e.y;
-      const flags = isMe ? me.flags : e.flags;
-      const blaster = isMe ? me.blaster : e.blaster;
-      const bladderLevel = isMe ? me.bladder : e.bladder;
-      let o = playerObjs[e.idx];
       if (!o) {
-        const look = personLook(e.idx, true);
-        const person = buildPerson(look, { soldier: true });
-        const car = buildCar(isMe ? '#ffd23f' : CAR_COLORS[e.idx % CAR_COLORS.length]);
-        car.root.visible = false;
-        const root = new T.Group();
-        root.add(person.root, car.root);
-        entityGroup.add(root);
-        o = playerObjs[e.idx] = { root, person, car, look, h: 0, seen: false, px: 0, py: 0, iX: 0, iY: 0, spin: 0 };
+        o = playerObjs[e.idx] = buildPerson({ tint: PLAYER_TINT[e.idx % PLAYER_TINT.length], mix: 0.55, gun: true });
+        o.isMe = isMe;
+        entityGroup.add(o.root);
       }
-      o.root.visible = true;
-      const f = facing(o, x, y, dt, isMe && me.face < 0 ? Math.PI : 0);
+      const inCar = !!(flags & 4);
+      o.root.visible = !inCar;
+      o.pos = { x, y };
+      if (inCar) {
+        labels.push({ x, z: y, h: 62, info, isMe, idx: e.idx, flags, hp: e.hp, armor: e.armor, wanted: e.wanted, dead: false });
+        continue;
+      }
+      const dead = !!(flags & 2048);
+      const f = facing(o, x, y, dt, yawOf(e.ang));
+      // a strike seen only through the flags (bots) still animates
+      if (flags & 4096 && nowT - o.lastAtk > 0.35) strike(o);
+      const attacking = nowT - o.lastAtk < 0.4;
+      // face where you aim; otherwise where you walk
+      if (isMe) {
+        o.holdYaw = true;
+        turnTo(o, me.ang, dt, 16);
+      } else if (attacking || f.moved < 0.05) {
+        o.holdYaw = true;
+        turnTo(o, e.ang, dt, 14);
+      } else o.holdYaw = false;
       let moving = f.moved > 0.03;
       if (isMe) {
         const v = inputVector();
-        moving = (!!(v.dx || v.dy) && !(flags & 9)) || f.moved > 0.2;
+        moving = (!!(v.dx || v.dy) && speedOf(flags) > 0) || f.moved > 0.2;
       }
-      const inCar = !!(flags & 4);
       o.root.position.set(x, 0, y);
       o.root.rotation.y = o.h;
-      o.person.root.visible = !inCar;
-      o.car.root.visible = inCar;
-      if (inCar) {
-        o.spin += f.moved / 6.4;
-        for (const w of o.car.wheels) w.rotation.z = -o.spin;
-        const op = world.night * 0.9;
-        for (const l of o.car.lamps) l.material.opacity = op;
-        o.car.head.emissiveIntensity = 0.4 + world.night * 3;
-        if (moving && Math.random() < dt * 22) burst(x - Math.cos(-o.h) * 30, 4, y + Math.sin(-o.h) * 30, '#cfc9bd', 1, 28, 14, 0.6, -10);
-      } else {
-        animatePerson(o.person, dt, moving, f.speed, Object.assign({ armed: blaster > 0, aim: blaster > 0 && !moving, stunned: !!(flags & 1), finished: !!(flags & 32), thinking: !!(flags & 8) }, poseOf(bladderLevel, flags)));
-        if (isMe && moving && Math.random() < dt * 9) burst(x, 2, y, '#d9d2c2', 1, 18, 9, 0.5, -10);
-      }
-      o.person.shield.visible = !!(flags & 2);
-      if (flags & 2) {
-        o.person.shield.material.opacity = 0.16 + 0.07 * Math.sin(nowT * 5);
-        o.person.shield.scale.setScalar(1 + 0.03 * Math.sin(nowT * 6));
-      }
-      labels.push({ x, z: y, h: inCar ? 60 : 88, info, isMe, idx: e.idx, flags, bladder: bladderLevel });
-      o.pos = { x, y };
-      o.heading = o.h;
+      const bl = isMe ? me.bladder : e.bladder;
+      const weapon = isMe ? me.weapon : e.weapon;
+      animatePerson(
+        o,
+        dt,
+        moving && !dead,
+        f.speed,
+        Object.assign(
+          {
+            weapon,
+            atkAge: nowT - o.lastAtk,
+            atkAlt: o.atkAlt,
+            dead,
+            hurt: !!(flags & 8192),
+            ghost: !!(flags & 16384),
+            stunned: !!(flags & 1),
+            armed: weapon >= 2,
+          },
+          poseOf(bl, flags)
+        )
+      );
+      if (isMe && moving && !dead && Math.random() < dt * 9) burst(x, 2, y, '#d9d2c2', 1, 18, 9, 0.5, -10);
+      labels.push({ x, z: y, h: dead ? 30 : 88, info, isMe, idx: e.idx, flags, hp: e.hp, armor: e.armor, wanted: e.wanted, dead });
     }
   }
 
-  function drawZaps(s) {
-    for (let i = fx.length - 1; i >= 0; i--) {
-      const f = fx[i];
-      const k = (nowT - f.born) / f.life;
-      if (k >= 1) {
-        if (f.bolt) {
-          scene.remove(f.bolt.g);
-          f.bolt.segs.forEach((m) => m.material.dispose());
-        }
-        fx.splice(i, 1);
-        continue;
+  function syncArmed(list, objs, tint, maxHp, dt, weapon, isGuard) {
+    for (let i = 0; i < list.length; i++) {
+      const g = list[i];
+      let o = objs[i];
+      if (!o) {
+        o = objs[i] = buildPerson({ tint, mix: 0.62, gun: true, sv: 0.98 });
+        entityGroup.add(o.root);
       }
-      if (f.kind !== 'zap') continue;
-      const A = playerObjs[f.from];
-      const B = playerObjs[f.to];
-      if (!A || !B || !A.pos || !B.pos) continue;
-      const a = new T.Vector3(A.pos.x, 32, A.pos.y);
-      const b = new T.Vector3(B.pos.x, 30, B.pos.y);
-      // the muzzle: a little ahead of the shooter
-      const dir = b.clone().sub(a).setY(0).normalize();
-      a.addScaledVector(dir, 16);
-      const pts = [a.clone()];
-      const N = f.bolt.segs.length;
-      const jit = 5 + (1 - k) * 4;
-      for (let n = 1; n < N; n++) {
-        const u = n / N;
-        const p = a.clone().lerp(b, u);
-        p.x += (Math.random() - 0.5) * jit * 2;
-        p.y += (Math.random() - 0.5) * jit * 1.2;
-        p.z += (Math.random() - 0.5) * jit * 2;
-        pts.push(p);
-      }
-      pts.push(b.clone());
-      const up = new T.Vector3(0, 1, 0);
-      for (let n = 0; n < N; n++) {
-        const p0 = pts[n];
-        const p1 = pts[n + 1];
-        const seg = f.bolt.segs[n];
-        const d = p1.clone().sub(p0);
-        const len = d.length();
-        seg.position.copy(p0).lerp(p1, 0.5);
-        seg.scale.set(1 + (1 - k) * 1.2, len, 1 + (1 - k) * 1.2);
-        seg.quaternion.setFromUnitVectors(up, d.normalize());
-        seg.material.opacity = 1 - k;
-      }
-      f.bolt.flashA.position.copy(a);
-      f.bolt.flashB.position.copy(b);
-      f.bolt.flashA.scale.setScalar(26 * (1 - k) + 6);
-      f.bolt.flashB.scale.setScalar(38 * (1 - k) + 8);
-      f.bolt.flashA.material.opacity = f.bolt.flashB.material.opacity = 1 - k;
-      if (!f.hit) {
-        f.hit = true;
-        burst(b.x, 28, b.z, f.blocked ? '#7fe6ff' : '#ffe14d', 22, 110, 10, 0.6, 140);
-      }
-      // the shooter raises the rifle briefly
-      if (A.person) A.person.tip.visible = k < 0.4;
+      const alive = isGuard ? !!g.alive : g.hp > 0;
+      if (g.shooting && nowT - o.lastAtk > 0.32) strike(o);
+      const f = facing(o, g.x, g.y, dt, yawOf(g.ang));
+      const moving = f.moved > 0.03 && alive;
+      if (g.shooting || f.moved < 0.05) {
+        o.holdYaw = true;
+        turnTo(o, g.ang, dt, 12);
+      } else o.holdYaw = false;
+      o.root.position.set(g.x, 0, g.y);
+      o.root.rotation.y = o.h;
+      animatePerson(o, dt, moving, f.speed, { weapon, atkAge: nowT - o.lastAtk, atkAlt: 0, dead: !alive, hurt: false });
+      o.root.visible = alive || o.deadK > 0.02;
+      if (alive) labels.push({ x: g.x, z: g.y, h: 84, info: null, npcHp: g.hp / maxHp, isCop: !isGuard, isGuard });
     }
-    void s;
+    for (let i = list.length; i < objs.length; i++) if (objs[i]) objs[i].root.visible = false;
   }
 
   /* --------------------------------------------------------- camera */
@@ -1104,7 +1152,8 @@ const City3D = (function () {
     cam.pitch += (cam.pitchT - cam.pitch) * Math.min(1, dt * 8);
     cam.dist += (cam.distT - cam.dist) * Math.min(1, dt * 8);
     const portraitBoost = aspect < 0.9 ? 1 + (0.9 - aspect) * 0.9 : 1;
-    const d = cam.dist * portraitBoost;
+    const inCar = !!(me.flags & 4);
+    const d = (cam.dist + (inCar ? 90 : 0)) * portraitBoost;
     const fx_ = Math.sin(cam.yaw);
     const fz_ = -Math.cos(cam.yaw);
     const cp = Math.cos(cam.pitch);
@@ -1118,6 +1167,9 @@ const City3D = (function () {
     }
     camera.position.copy(camPos);
     camera.lookAt(cam.x + fx_ * 26, 20, cam.z + fz_ * 26);
+    // a desperate bladder makes the world sway
+    const sway = clamp((me.bladder - 70) / 30, 0, 1);
+    if (sway > 0 && !reduceMotion) camera.rotation.z += Math.sin(nowT * 3.1) * 0.018 * sway;
     focus.x = cam.x;
     focus.z = cam.z;
   }
@@ -1136,6 +1188,19 @@ const City3D = (function () {
     return { x: sx, y: sy, behind, z: _v.z };
   }
 
+  // where a screen point lands on the ground
+  const raycaster = new T.Raycaster();
+  function groundPoint(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const ndc = new T.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const o = raycaster.ray.origin;
+    const d = raycaster.ray.direction;
+    if (d.y >= -1e-4) return null;
+    const t = -o.y / d.y;
+    return { x: o.x + d.x * t, y: o.z + d.z * t };
+  }
+
   /* --------------------------------------------------------- overlay */
 
   function rr(c, x, y, w, h, r) {
@@ -1152,6 +1217,14 @@ const City3D = (function () {
     c.closePath();
   }
 
+  function bar(x, y, w, h, k, fill, back) {
+    octx.fillStyle = back || 'rgba(0,0,0,0.55)';
+    rr(octx, x - 1, y - 1, w + 2, h + 2, 3);
+    octx.fill();
+    octx.fillStyle = fill;
+    octx.fillRect(x, y, Math.max(0, w * clamp(k, 0, 1)), h);
+  }
+
   function drawOverlay() {
     octx.setTransform(dpr, 0, 0, dpr, 0, 0);
     octx.clearRect(0, 0, W, H);
@@ -1161,36 +1234,53 @@ const City3D = (function () {
       if (p.behind || p.x < -80 || p.x > W + 80 || p.y < -60 || p.y > H + 60) continue;
       const dist = Math.hypot(camPos.x - L.x, camPos.y, camPos.z - L.z);
       const sc = clamp(360 / dist, 0.8, 1.2);
+      if (!L.info) {
+        // guards and cops: a health bar over the head
+        const w = 34 * sc;
+        bar(p.x - w / 2, p.y - 4, w, 5 * sc, L.npcHp, L.isCop ? '#5a8bff' : '#ffb347');
+        continue;
+      }
       const fs = 12.5 * sc;
       octx.font = `700 ${fs}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
       const name = L.info.name.length > 9 ? L.info.name.slice(0, 8) + '…' : L.info.name;
       const label = `${L.info.avatar} ${name}`;
       const w = octx.measureText(label).width + 14;
+      const top = p.y - fs - 6;
+      octx.globalAlpha = L.dead ? 0.55 : 1;
       octx.fillStyle = L.isMe ? 'rgba(255,210,63,0.94)' : 'rgba(10,14,36,0.78)';
-      rr(octx, p.x - w / 2, p.y - fs - 6, w, fs + 10, 9);
+      rr(octx, p.x - w / 2, top, w, fs + 10, 9);
       octx.fill();
       octx.fillStyle = L.isMe ? '#2a1b00' : '#fff';
       octx.fillText(label, p.x, p.y - 3);
+      if (!L.dead) {
+        const bw = Math.max(46, w) * (L.isMe ? 0.9 : 1);
+        bar(p.x - bw / 2, top - 8 * sc, bw, 5 * sc, L.hp / 100, L.hp > 50 ? '#3ee08f' : L.hp > 25 ? '#ffb703' : '#ff5470');
+        if (L.armor > 0) bar(p.x - bw / 2, top - 14 * sc, bw, 3 * sc, L.armor / 100, '#5ac8ff');
+      } else {
+        octx.font = `${20 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
+        octx.fillText('💀', p.x, top - 6);
+      }
+      octx.globalAlpha = 1;
+      if (L.wanted > 0 && !L.isMe) {
+        octx.font = `${12 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
+        octx.fillText('⭐'.repeat(Math.min(5, L.wanted)), p.x, top - (L.armor > 0 ? 20 : 14) * sc);
+      }
       if (L.flags & 1) {
         octx.font = `${16 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
         for (let k = 0; k < 3; k++) {
           const a = nowT * 5 + k * 2.1;
-          octx.fillText('⭐', p.x + Math.cos(a) * 18, p.y - fs - 14 + Math.sin(a) * 5);
+          octx.fillText('⭐', p.x + Math.cos(a) * 18, p.y - fs - 24 + Math.sin(a) * 5);
         }
-      }
-      if (L.flags & 8) {
-        octx.font = `${20 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
-        octx.fillText('💭', p.x + 26, p.y - fs - 10);
       }
       if (L.flags & 32) {
         octx.font = `${24 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
-        octx.fillText('🏁', p.x, p.y - fs - 16);
+        octx.fillText('🏁', p.x, top - 20);
       }
       const b = bubbles.get(L.idx);
       if (b && b.until > nowT) {
         octx.font = `700 ${12.5 * sc}px system-ui, "Apple Color Emoji", sans-serif`;
         const bw = Math.min(230, octx.measureText(b.text).width + 18);
-        const by = p.y - fs - 34 * sc - (L.flags & 8 ? 16 : 0);
+        const by = top - 34 * sc;
         octx.fillStyle = '#fff';
         rr(octx, p.x - bw / 2, by - 15, bw, 26, 10);
         octx.fill();
@@ -1214,7 +1304,6 @@ const City3D = (function () {
         octx.fillText(target.icon, p.x, p.y + bob);
         const dist = Math.round(Math.hypot(target.door.x - me.x, target.door.y - me.y) / 10);
         octx.font = '800 12px system-ui, sans-serif';
-        octx.fillStyle = 'rgba(0,0,0,0.6)';
         octx.strokeStyle = 'rgba(0,0,0,0.7)';
         octx.lineWidth = 3;
         octx.strokeText(`${dist} m`, p.x, p.y + 18 + bob);
@@ -1222,13 +1311,44 @@ const City3D = (function () {
         octx.fillText(`${dist} m`, p.x, p.y + 18 + bob);
       }
     }
-    for (const f of fx) {
-      if (f.kind !== 'text') continue;
+    // "F" prompt over the nearest free car
+    if (cur && !(me.flags & (4 | 2048 | 32))) {
+      let best = null;
+      let bd = 66;
+      for (const c of cur.c) {
+        if (c.mode === 3 || c.driver >= 0) continue;
+        const d = Math.hypot(c.x - me.x, c.y - me.y);
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      if (best) {
+        const p = project(best.x, 46, best.y);
+        if (!p.behind) {
+          octx.font = '800 13px system-ui, "Apple Color Emoji", sans-serif';
+          const txt = mobile ? '🚗 tap 🚗' : '🚗 press F';
+          const w = octx.measureText(txt).width + 16;
+          octx.fillStyle = 'rgba(10,14,36,0.85)';
+          rr(octx, p.x - w / 2, p.y - 15, w, 24, 9);
+          octx.fill();
+          octx.fillStyle = '#ffd23f';
+          octx.fillText(txt, p.x, p.y + 2);
+        }
+      }
+    }
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const f = fx[i];
       const k = (nowT - f.born) / f.life;
-      const p = project(f.x, 70 + k * 40, f.y);
+      if (k >= 1) {
+        fx.splice(i, 1);
+        continue;
+      }
+      const p = project(f.x, f.h + k * 40, f.y);
       if (p.behind) continue;
-      octx.globalAlpha = 1 - k;
-      octx.font = '800 21px system-ui, sans-serif';
+      octx.globalAlpha = 1 - k * k;
+      const big = /^\d+$/.test(f.text);
+      octx.font = `800 ${big ? 19 : 21}px system-ui, "Apple Color Emoji", sans-serif`;
       octx.strokeStyle = 'rgba(0,0,0,0.65)';
       octx.lineWidth = 4;
       octx.strokeText(f.text, p.x, p.y);
@@ -1238,7 +1358,7 @@ const City3D = (function () {
     }
   }
 
-  function drawMinimap(s, target) {
+  function drawMinimap() {
     if (!mctx || !map) return;
     const mw = mini.width;
     const mh = mini.height;
@@ -1254,6 +1374,7 @@ const City3D = (function () {
       mctx.fillStyle = b.color;
       mctx.fillRect(b.x * k, b.y * k, b.w * k, b.h * k);
     }
+    const target = missions[me.mission];
     if (target) {
       const pulse = 3 + Math.sin(nowT * 5) * 1.5;
       mctx.strokeStyle = '#ffd23f';
@@ -1266,13 +1387,26 @@ const City3D = (function () {
       mctx.arc(target.door.x * k, target.door.y * k, 2.5, 0, TAU);
       mctx.fill();
     }
-    for (const e of s.p) {
-      if (e.flags & 64) continue;
-      const isMe = e.idx === meIdx;
-      mctx.fillStyle = isMe ? '#ffffff' : players[e.idx] && players[e.idx].isBot ? '#ff8a8a' : '#7fd4ff';
+    const dot = (x, y, r, col) => {
+      mctx.fillStyle = col;
       mctx.beginPath();
-      mctx.arc((isMe ? me.x : e.x) * k, (isMe ? me.y : e.y) * k, isMe ? 4 : 3, 0, TAU);
+      mctx.arc(x * k, y * k, r, 0, TAU);
       mctx.fill();
+    };
+    if (cur) {
+      for (const c of cur.c) {
+        if (c.mode === 3) continue;
+        mctx.fillStyle = c.driver >= 0 ? '#ffe066' : 'rgba(255,255,255,0.45)';
+        mctx.fillRect(c.x * k - 1.5, c.y * k - 1.5, 3, 3);
+      }
+      for (const g of cur.gd) if (g.alive) dot(g.x, g.y, 2, '#ff9d3a');
+      const flash = Math.sin(nowT * 10) > 0;
+      for (const c of cur.cp) if (c.hp > 0) dot(c.x, c.y, 2.6, flash ? '#4d7dff' : '#ff4d5e');
+      for (const e of cur.p) {
+        if (e.flags & 64 || e.world === 1 || e.flags & 2048) continue;
+        const isMe = e.idx === meIdx;
+        dot(isMe ? me.x : e.x, isMe ? me.y : e.y, isMe ? 4 : 3, isMe ? '#ffffff' : players[e.idx] && players[e.idx].isBot ? '#ff8a8a' : '#7fd4ff');
+      }
     }
     // where the camera is looking
     if (me.init) {
@@ -1287,8 +1421,6 @@ const City3D = (function () {
       mctx.fill();
     }
   }
-
-  /* ------------------------------------------------------------- loop */
 
   let frameAvg = 1 / 60;
   let slowFrames = 0;
@@ -1313,6 +1445,8 @@ const City3D = (function () {
     }
   }
 
+  /* ------------------------------------------------------------- loop */
+
   function frame(dt) {
     const s = sample(nowServer() - 110);
     if (!s || !world) return;
@@ -1325,15 +1459,30 @@ const City3D = (function () {
     world.update(nowT, dt, focus, camPos, target ? missionBuilding[me.mission] : -1);
     stepParticles(dt);
     stepSmoke(dt);
-    drawZaps(s);
+    stepTracers(dt);
+    stepFlash(dt);
     renderer.render(scene, camera);
     drawOverlay();
-    drawMinimap(s, target);
+    drawMinimap();
     if (hooks.gps) {
       const sp = target ? project(target.door.x, 20, target.door.y) : { x: 0, y: 0 };
       hooks.gps(target, sp, { x: me.x, y: me.y });
     }
     adaptQuality(dt);
+  }
+
+  const firing = () => fire.key || fire.btn || !!fire.ptr;
+
+  function sendFire() {
+    if (!firing() || me.flags & (4 | 2048 | 32) || nowServer() < startsAt) return;
+    const nowMs = performance.now();
+    if (nowMs - fire.last < FIRE_EVERY_MS) return;
+    fire.last = nowMs;
+    if (fire.ptr) {
+      const g = groundPoint(fire.ptr.x, fire.ptr.y);
+      if (g) me.ang = Math.atan2(g.y - me.y, g.x - me.x);
+    }
+    hooks.attack && hooks.attack(Math.round(me.ang * 1000) / 1000);
   }
 
   function loop(now) {
@@ -1345,11 +1494,14 @@ const City3D = (function () {
     if (map && me.init) {
       const v = inputVector();
       stepMe(dt, v);
+      // face where you walk, unless you are fighting (then the aim holds, so you can strafe)
+      if ((v.dx || v.dy) && !firing() && !(me.flags & 4)) me.ang = Math.atan2(v.dy, v.dx);
       const nowMs = performance.now();
       if (Math.abs(v.dx - lastSent.dx) > 0.02 || Math.abs(v.dy - lastSent.dy) > 0.02 || nowMs - lastSent.t > 250) {
         lastSent = { dx: v.dx, dy: v.dy, t: nowMs };
         hooks.sendInput && hooks.sendInput(v.dx, v.dy);
       }
+      sendFire();
     }
     if (keys.rotL) cam.yawT -= dt * 1.8;
     if (keys.rotR) cam.yawT += dt * 1.8;
@@ -1383,30 +1535,42 @@ const City3D = (function () {
 
   /* --------------------------------------------------------- controls */
 
-  const raycaster = new T.Raycaster();
-  function groundPoint(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const ndc = new T.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-    raycaster.setFromCamera(ndc, camera);
-    const o = raycaster.ray.origin;
-    const d = raycaster.ray.direction;
-    if (d.y >= -1e-4) return null;
-    const t = -o.y / d.y;
-    return { x: o.x + d.x * t, y: o.z + d.z * t };
+  function cycleWeapon() {
+    const owned = me.owned || 1;
+    for (let i = 1; i <= 5; i++) {
+      const code = (me.weapon + i) % 5;
+      if (owned & (1 << code)) {
+        hooks.weapon && hooks.weapon(code);
+        me.weapon = code;
+        return code;
+      }
+    }
+    return me.weapon;
   }
 
   function bindControls(joyEl, knobEl) {
     const KEYMAP = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
+    const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '').toUpperCase());
     window.addEventListener('keydown', (e) => {
-      if (!running || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '').toUpperCase())) return;
+      if (!running || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (KEYMAP[e.key]) {
         keys[KEYMAP[e.key]] = true;
-        goTo = null;
         e.preventDefault();
       } else if (e.key === 'q' || e.key === 'Q') keys.rotL = true;
       else if (e.key === 'e' || e.key === 'E') keys.rotR = true;
-      else if (e.key === ' ' || e.key === 'Enter') {
-        hooks.zap && hooks.zap();
+      else if (e.key === ' ' || e.key === 'j' || e.key === 'J') {
+        fire.key = true;
+        e.preventDefault();
+      } else if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
+        hooks.use && hooks.use();
+      } else if (e.key >= '1' && e.key <= '5') {
+        const code = Number(e.key) - 1;
+        if ((me.owned || 1) & (1 << code)) {
+          hooks.weapon && hooks.weapon(code);
+          me.weapon = code;
+        }
+      } else if ((e.key === 'Tab' || e.key === 'r' || e.key === 'R') && !e.repeat) {
+        cycleWeapon();
         e.preventDefault();
       } else if (e.key === '+' || e.key === '=') cam.distT = clamp(cam.distT - 40, 190, 560);
       else if (e.key === '-' || e.key === '_') cam.distT = clamp(cam.distT + 40, 190, 560);
@@ -1415,9 +1579,12 @@ const City3D = (function () {
       if (KEYMAP[e.key]) keys[KEYMAP[e.key]] = false;
       else if (e.key === 'q' || e.key === 'Q') keys.rotL = false;
       else if (e.key === 'e' || e.key === 'E') keys.rotR = false;
+      else if (e.key === ' ' || e.key === 'j' || e.key === 'J') fire.key = false;
     });
     window.addEventListener('blur', () => {
       keys.up = keys.down = keys.left = keys.right = keys.rotL = keys.rotR = false;
+      fire.key = fire.btn = false;
+      fire.ptr = null;
     });
 
     let joyId = null;
@@ -1434,7 +1601,6 @@ const City3D = (function () {
       knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
       joy = { x: dx / R, y: dy / R };
       if (Math.hypot(joy.x, joy.y) < 0.18) joy = { x: 0, y: 0 };
-      goTo = null;
     }
     joyEl.addEventListener('pointerdown', (e) => {
       joyId = e.pointerId;
@@ -1454,7 +1620,7 @@ const City3D = (function () {
     joyEl.addEventListener('pointerup', endJoy);
     joyEl.addEventListener('pointercancel', endJoy);
 
-    // drag = orbit the camera, tap = walk there, wheel / two fingers = zoom
+    // drag = orbit the camera, tap = shoot / punch that way, press and hold = keep firing there, wheel / two fingers = zoom
     const pointers = new Map();
     let drag = null;
     let pinch = 0;
@@ -1462,9 +1628,16 @@ const City3D = (function () {
       if (!map || !running) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       canvas.setPointerCapture(e.pointerId);
-      if (pointers.size === 1) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, t: performance.now() };
-      else {
+      if (pointers.size === 1) {
+        const d0 = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, t: performance.now(), hold: 0 };
+        drag = d0;
+        // press and hold without moving keeps firing at that spot
+        d0.hold = setTimeout(() => {
+          if (drag === d0 && !d0.moved) fire.ptr = { x: d0.x, y: d0.y, id: d0.id };
+        }, 220);
+      } else {
         drag = null;
+        fire.ptr = null;
         const [a, b] = Array.from(pointers.values());
         pinch = Math.hypot(a.x - b.x, a.y - b.y);
       }
@@ -1480,7 +1653,11 @@ const City3D = (function () {
         return;
       }
       if (!drag || drag.id !== e.pointerId) return;
-      if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
+      if (fire.ptr && fire.ptr.id === e.pointerId) {
+        fire.ptr.x = e.clientX;
+        fire.ptr.y = e.clientY;
+      }
+      if (!drag.moved && !fire.ptr && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 12) drag.moved = true;
       if (drag.moved) {
         cam.yawT -= (e.clientX - drag.x) * 0.006;
         cam.pitchT = clamp(cam.pitchT + (e.clientY - drag.y) * 0.004, 0.55, 1.2);
@@ -1490,10 +1667,17 @@ const City3D = (function () {
     });
     const up = (e) => {
       pointers.delete(e.pointerId);
+      if (fire.ptr && fire.ptr.id === e.pointerId) fire.ptr = null;
       if (drag && drag.id === e.pointerId) {
-        if (!drag.moved && performance.now() - drag.t < 450) {
-          const pt = groundPoint(e.clientX, e.clientY);
-          if (pt) goTo = pt;
+        clearTimeout(drag.hold);
+        // a quick tap: one shot / punch toward the tapped spot
+        if (!drag.moved && performance.now() - drag.t < 300 && e.type === 'pointerup' && running && !(me.flags & (4 | 2048 | 32))) {
+          const g = groundPoint(e.clientX, e.clientY);
+          if (g && me.init) {
+            me.ang = Math.atan2(g.y - me.y, g.x - me.x);
+            fire.last = performance.now();
+            hooks.attack && hooks.attack(Math.round(me.ang * 1000) / 1000);
+          }
         }
         drag = null;
       }
@@ -1501,6 +1685,7 @@ const City3D = (function () {
     };
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener(
       'wheel',
       (e) => {
@@ -1543,5 +1728,22 @@ const City3D = (function () {
     });
   }
 
-  return { mount, start, stop, applyState, zapFx, say, floatText, fx: fxEvent, resume() { if (map && !running) begin(); }, get running() { return running; }, get me() { return me; }, get camYaw() { return cam.yaw; }, get cam() { return cam; }, get missions() { return missions; }, walkTo(x, y) { goTo = { x, y }; }, reduceMotion };
+  return {
+    mount,
+    start,
+    stop,
+    applyState,
+    fx: fxEvent,
+    say,
+    floatText,
+    resume() { if (map && !running) begin(); },
+    setFire(on) { fire.btn = !!on; },
+    cycleWeapon,
+    get running() { return running; },
+    get view() { return cur; },
+    get me() { return me; },
+    get cam() { return cam; },
+    get missions() { return missions; },
+    reduceMotion,
+  };
 })();

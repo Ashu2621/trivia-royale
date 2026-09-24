@@ -1,13 +1,18 @@
 {
-  "name": "Trivia Royale",
-  "short_name": "Trivia Royale",
-  "description": "Live multiplayer trivia — join with a code, no login.",
+  "name": "City Chaos: We Gotta Go",
+  "short_name": "City Chaos",
+  "description": "Free-roam 3D multiplayer city brawl \u2014 fight, drive, rob the bank, survive the haunted mansion.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#3d1fb0",
-  "theme_color": "#3d1fb0",
+  "background_color": "#12002e",
+  "theme_color": "#12002e",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

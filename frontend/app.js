@@ -1,25 +1,20 @@
 (function () {
-  const SESSION_KEY = 'triviaRoyaleSession';
-  const THEME_KEY = 'triviaRoyaleTheme';
-  const AUTO_STAGE_KEY = 'triviaRoyaleAutoStage';
-  const TIER_KEY = 'triviaRoyaleBotTier';
-  const QUESTION_DURATION_MS = 15000;
-  const RING_C = 119.38; // circumference of the timer ring (r = 19)
-  const MIN_QUESTIONS_TO_START = 4;
+  const SESSION_KEY = 'cityChaosSession';
+  const TIER_KEY = 'cityChaosBotTier';
   const MAX_PLAYERS = 10;
+  const QUICK_BOTS = 3;
 
   const el = (id) => document.getElementById(id);
 
   const refs = {
     toast: el('toast'),
     feed: el('feed'),
-    comboBurst: el('comboBurst'),
     muteBtn: el('muteBtn'),
+    backBtn: el('backBtn'),
     nameInput: el('nameInput'),
     avatarPicker: el('avatarPicker'),
-    categorySelect: el('categorySelect'),
-    createBtn: el('createBtn'),
     quickBtn: el('quickBtn'),
+    createBtn: el('createBtn'),
     joinCodeInput: el('joinCodeInput'),
     joinBtn: el('joinBtn'),
 
@@ -31,9 +26,8 @@
     lobbyCode: el('lobbyCode'),
     copyCodeBtn: el('copyCodeBtn'),
     lobbyQr: el('lobbyQr'),
-    lobbyCategory: el('lobbyCategory'),
-    lobbyPlayers: el('lobbyPlayers'),
     squadCount: el('squadCount'),
+    lobbyPlayers: el('lobbyPlayers'),
     botControls: el('botControls'),
     botTierPills: el('botTierPills'),
     addBotBtn: el('addBotBtn'),
@@ -42,217 +36,111 @@
     lobbyWaitingMsg: el('lobbyWaitingMsg'),
     lobbyNeedMoreMsg: el('lobbyNeedMoreMsg'),
 
-    customPanel: el('customPanel'),
-    customHostControls: el('customHostControls'),
-    levelSelect: el('levelSelect'),
-    studyCategorySelect: el('studyCategorySelect'),
-    studySubcategorySelect: el('studySubcategorySelect'),
-    generateBtn: el('generateBtn'),
-    generatingStatus: el('generatingStatus'),
-    aiDisabledHint: el('aiDisabledHint'),
-    manualQText: el('manualQText'),
-    manualOpt0: el('manualOpt0'),
-    manualOpt1: el('manualOpt1'),
-    manualOpt2: el('manualOpt2'),
-    manualOpt3: el('manualOpt3'),
-    addQuestionBtn: el('addQuestionBtn'),
-    questionPoolCount: el('questionPoolCount'),
-    questionPoolList: el('questionPoolList'),
-    needMoreQuestionsMsg: el('needMoreQuestionsMsg'),
+    finalTitle: el('finalTitle'),
+    finalSub: el('finalSub'),
+    podium: el('podium'),
+    awards: el('awards'),
+    finalPlayers: el('finalPlayers'),
+    playAgainBtn: el('playAgainBtn'),
+    finalWaitingMsg: el('finalWaitingMsg'),
 
-    powerBadge: el('powerBadge'),
-    qProgress: el('qProgress'),
-    streakChip: el('streakChip'),
-    timerRing: el('timerRing'),
-    ringFg: el('ringFg'),
-    qTimer: el('qTimer'),
-    timerFill: el('timerFill'),
-    frozenNotice: el('frozenNotice'),
-    questionCard: el('questionCard'),
-    questionText: el('questionText'),
-    choicesGrid: el('choicesGrid'),
-    lifelineBtn: el('lifelineBtn'),
-    lifelineCount: el('lifelineCount'),
-    pollBtn: el('pollBtn'),
-    pollCount: el('pollCount'),
-    arenaCanvas: el('arenaCanvas'),
-    arenaLevel: el('arenaLevel'),
-    aliveChip: el('aliveChip'),
-    aliveCount: el('aliveCount'),
-    mapBtn: el('mapBtn'),
-    stageBanner: el('stageBanner'),
-    levelMap: el('levelMap'),
-    spectatorMsg: el('spectatorMsg'),
-    backBtn: el('backBtn'),
-    voiceBtn: el('voiceBtn'),
-    cityBtn: el('cityBtn'),
-    micBtnCity: el('micBtnCity'),
-    micBtnMaze: el('micBtnMaze'),
-    mazeTimer: el('mazeTimer'),
-    cityBladder: el('cityBladder'),
-    cbFace: el('cbFace'),
-    cbFill: el('cbFill'),
-    cbPct: el('cbPct'),
-    mazeCanvas: el('mazeCanvas'),
-    mazeMini: el('mazeMini'),
-    mazeJoy: el('mazeJoy'),
-    mazeKnob: el('mazeKnob'),
-    flashBtn: el('flashBtn'),
-    mazeObj: el('mazeObj'),
-    mazeBoard: el('mazeBoard'),
-    bladder: el('bladder'),
-    blFace: el('blFace'),
-    blFill: el('blFill'),
-    blPct: el('blPct'),
-    mazeLock: el('mazeLock'),
-    mazeHint: el('mazeHint'),
-    mazeQuiz: el('mazeQuiz'),
-    mqHead: el('mqHead'),
-    mqBar: el('mqBar'),
-    mqQ: el('mqQ'),
-    mqChoices: el('mqChoices'),
-    mqResult: el('mqResult'),
-    viewMaze: el('view-maze'),
     cityCanvas: el('cityCanvas'),
     miniMap: el('miniMap'),
     joy: el('joy'),
     joyKnob: el('joyKnob'),
     cityMission: el('cityMission'),
-    cityTimer: el('cityTimer'),
     cityBoard: el('cityBoard'),
-    cityItems: el('cityItems'),
+    cityTimer: el('cityTimer'),
+    cityWanted: el('cityWanted'),
+    cityBladder: el('cityBladder'),
+    cbFace: el('cbFace'),
+    cbFill: el('cbFill'),
+    cbPct: el('cbPct'),
     cityGps: el('cityGps'),
     gpsArrow: el('gpsArrow'),
     gpsDist: el('gpsDist'),
-    cityLock: el('cityLock'),
+    holdWrap: el('holdWrap'),
+    holdLabel: el('holdLabel'),
+    holdFill: el('holdFill'),
+    hpFill: el('hpFill'),
+    hpNum: el('hpNum'),
+    arFill: el('arFill'),
+    arNum: el('arNum'),
+    cashNum: el('cashNum'),
+    weaponChip: el('weaponChip'),
+    hurtFlash: el('hurtFlash'),
+    wasted: el('wasted'),
+    wastedSub: el('wastedSub'),
     cityHint: el('cityHint'),
-    zapBtn: el('zapBtn'),
-    zapCount: el('zapCount'),
-    cityQuiz: el('cityQuiz'),
-    cqHead: el('cqHead'),
-    cqBar: el('cqBar'),
-    cqQ: el('cqQ'),
-    cqChoices: el('cqChoices'),
-    cqResult: el('cqResult'),
-    dailyBtn: el('dailyBtn'),
-    dailyChip: el('dailyChip'),
-    teamControls: el('teamControls'),
-    teamPills: el('teamPills'),
-    teamHint: el('teamHint'),
-    lobbyModeMsg: el('lobbyModeMsg'),
-    teamStrip: el('teamStrip'),
-    reactionBar: el('reactionBar'),
-    awards: el('awards'),
-    aiLangSelect: el('aiLangSelect'),
-    notesBox: el('notesBox'),
-    notesText: el('notesText'),
-    notesFile: el('notesFile'),
-    notesChip: el('notesChip'),
+    micBtnCity: el('micBtnCity'),
+    weaponBtn: el('weaponBtn'),
+    useBtn: el('useBtn'),
+    fireBtn: el('fireBtn'),
+
+    mazeCanvas: el('mazeCanvas'),
+    mazeMini: el('mazeMini'),
+    mazeJoy: el('mazeJoy'),
+    mazeKnob: el('mazeKnob'),
+    mazeObj: el('mazeObj'),
+    mazeBoard: el('mazeBoard'),
+    mazeTimer: el('mazeTimer'),
+    bladder: el('bladder'),
+    blFace: el('blFace'),
+    blFill: el('blFill'),
+    blPct: el('blPct'),
+    mhpFill: el('mhpFill'),
+    mhpNum: el('mhpNum'),
+    mcashNum: el('mcashNum'),
+    mazeHurt: el('mazeHurt'),
+    micBtnMaze: el('micBtnMaze'),
+    mazeHint: el('mazeHint'),
+    flashBtn: el('flashBtn'),
+    mazeFireBtn: el('mazeFireBtn'),
+    viewMaze: el('view-maze'),
+
     leaveModal: el('leaveModal'),
     leaveTitle: el('leaveTitle'),
     leaveDesc: el('leaveDesc'),
     leaveConfirmBtn: el('leaveConfirmBtn'),
     leaveStayBtn: el('leaveStayBtn'),
-    audienceCanvas: el('audienceCanvas'),
-    autoStageToggle: el('autoStageToggle'),
-    answerLockedMsg: el('answerLockedMsg'),
-    frozenLockedMsg: el('frozenLockedMsg'),
-    revealBanner: el('revealBanner'),
-    miniLeaderboard: el('miniLeaderboard'),
-    liveBoard: el('liveBoard'),
-    powerWaitingBanner: el('powerWaitingBanner'),
-    powerResultBanner: el('powerResultBanner'),
-
-    powerModal: el('powerModal'),
-    powerModalTitle: el('powerModalTitle'),
-    powerModalDesc: el('powerModalDesc'),
-    powerOpponents: el('powerOpponents'),
-    powerSkipBtn: el('powerSkipBtn'),
-    powerCountdown: el('powerCountdown'),
-
-    podium: el('podium'),
-    finalTitle: el('finalTitle'),
-    finalSub: el('finalSub'),
-    finalPlayers: el('finalPlayers'),
-    playAgainBtn: el('playAgainBtn'),
-    finalWaitingMsg: el('finalWaitingMsg'),
-
     howToPlayBtn: el('howToPlayBtn'),
     howToPlayModal: el('howToPlayModal'),
     closeHowToPlay: el('closeHowToPlay'),
-
     hallOfFameBtn: el('hallOfFameBtn'),
     hallOfFameModal: el('hallOfFameModal'),
+    closeHallOfFame: el('closeHallOfFame'),
+    periodPills: el('periodPills'),
     hallOfFameList: el('hallOfFameList'),
     hallOfFameEmpty: el('hallOfFameEmpty'),
     hallOfFameUnavailable: el('hallOfFameUnavailable'),
-    closeHallOfFame: el('closeHallOfFame'),
-    periodPills: el('periodPills'),
-    lbCategorySelect: el('lbCategorySelect'),
-    lbSubjectSelect: el('lbSubjectSelect'),
-
-    themeBtn: el('themeBtn'),
-    themeModal: el('themeModal'),
-    themeSwatchGrid: el('themeSwatchGrid'),
-    closeThemeModal: el('closeThemeModal'),
   };
 
+  const WEAPON_LABEL = ['🥊 Fists', '🏏 Bat', '🔫 Pistol', '🔫 SMG', '🔫 Shotgun'];
+  const WEAPON_ICON = ['👊', '🏏', '🔫', '🔫', '🔫'];
+
   let mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
+  let selectedAvatar = null;
   let players = [];
-  let currentCategory = null;
-  let currentQuestion = null;
-  let selectedChoice = null;
-  let answerLocked = false;
-  let selectedAvatar = '🦊';
   let activeView = 'home';
-  let clockOffset = 0;
-  let questionRAF = null;
-  let powerRAF = null;
-  let toastTimer = null;
-  let powerResultTimer = null;
-  let comboTimer = null;
-  let countdownTimer = null;
-  let pendingActiveType = null;
-  let iAmFrozenThisQuestion = false;
-  let lifelineUsedThisQuestion = false;
-  let myLifelines = 0;
-  let myPolls = 0;
-  let tensionOn = false;
-  let revealTimer = null;
-  let userTheme = 'candy';
-  let stageActive = false;
   let historyArmed = false;
-  let quickBotsWanted = 1;
-  let myWorld = 0;
-  let lastSnap = null;
-  let lastBladder = 0;
-  let speakingIds = new Set();
-  let mazeInfo = null;
-  let mazeMeIdx = -1;
-  let mazeMounted = false;
-  let mazeLockTimer = null;
-  let mazeQuizRAF = 0;
-  let flashCooling = false;
-  let cityInfo = null;
-  let cityMeIdx = -1;
-  let cityOffset = 0;
-  let quizRAF = null;
-  let lockTimer = null;
-  let teamMode = 0;
-  let notesPayload = null;
-  let dailyDate = null;
-  const DAILY_KEY = 'triviaRoyaleDaily';
-  const TEAM_COLORS = ['#e63946', '#3a7bd5', '#2ecc71', '#f5c542'];
-  const TEAM_NAMES = ['Red', 'Blue', 'Green', 'Gold'];
-  const REACTIONS = ['👏', '😮', '🔥', '😂', '💀', '❤️', '🎉', '😎'];
-  let currentPool = [];
-  let answered = new Set();
-  let lastTickSecond = null;
+  let toastTimer = null;
+  let countdownTimer = null;
   let quickPending = false;
   let wakeLock = null;
   let lbPeriod = 'all';
-  let lbCategory = '';
-  let lbSubject = '';
+
+  // the match
+  let cityInfo = null;
+  let cityOffset = 0;
+  let cityMeIdx = -1;
+  let lastSnap = null;
+  let myWorld = 0;
+  let mazeMounted = false;
+  let speakingIds = new Set();
+  let flashCooling = false;
+  let lastBladder = 0;
+  let lastFace = '';
+  const prev = { dead: false, hp: 100, hurt: false, world: 0, wanted: 0, siren: 0, heart: 0, key: '' };
 
   function safeGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -261,117 +149,7 @@
     try { localStorage.setItem(key, value); } catch (e) { /* storage blocked (private mode) */ }
   }
 
-  // ---- Themes ----
-  const THEMES = [
-    { key: 'candy', label: 'Candy Blast', tag: 'Sugar rush & jelly buttons', colors: ['#4b2bd4', '#ff4d9d', '#ffd23f'], meta: '#3d1fb0' },
-    { key: 'battle', label: 'Battle Zone', tag: 'Last squad standing', colors: ['#10160c', '#f2a900', '#ff6b1a'], meta: '#10160c' },
-    { key: 'vice', label: 'Neon City', tag: 'Sunset drive, neon lights', colors: ['#12002e', '#ff2e93', '#2ee6ff'], meta: '#12002e' },
-    { key: 'hotseat', label: 'Hot Seat', tag: 'Game-show studio & live audience', colors: ['#0c2278', '#f5c542', '#3ee08f'], meta: '#050d3a' },
-    { key: 'midnight', label: 'Midnight', tag: 'Calm & classic', colors: ['#100e26', '#7c5cff', '#ffb84d'], meta: '#100e26' },
-    { key: 'light', label: 'Daylight', tag: 'Bright & clean', colors: ['#f2f3fb', '#7c5cff', '#e08a1e'], meta: '#f2f3fb' },
-  ];
-
-  // Theme-flavoured wording so each look feels like its own game.
-  const COPY = {
-    candy: {
-      ready: 'Get ready', go: 'GO!',
-      correct: ['Sweet!', 'Tasty!', 'Delicious!', 'Divine!', 'SUGAR CRUSH!'],
-      wrong: 'Oh no, sour!', timeout: "Time's up!", frozen: 'Frozen in jelly',
-      combo: ['', 'Combo x2', 'Combo x3', 'Combo x4', 'Combo x5'],
-      final: 'Sweet Victory!', finalLose: 'Sugar Rush Over',
-    },
-    battle: {
-      ready: 'Deploying', go: 'DROP!',
-      correct: ['HIT', 'ENEMY DOWN', 'DOUBLE KILL', 'TRIPLE KILL', 'UNSTOPPABLE'],
-      wrong: 'MISSED', timeout: 'ZONE CLOSED', frozen: 'Suppressed',
-      combo: ['', 'x2 streak', 'x3 streak', 'x4 streak', 'x5 streak'],
-      final: 'WINNER WINNER', finalLose: 'Squad Wiped',
-    },
-    vice: {
-      ready: 'Get ready', go: 'GO!',
-      correct: ['NICE', 'SMOOTH', 'MISSION COMPLETE', 'RESPECT +', 'LEGENDARY'],
-      wrong: 'BUSTED', timeout: 'TOO SLOW', frozen: 'Cooled down',
-      combo: ['', 'x2 streak', 'x3 streak', 'x4 streak', 'x5 streak'],
-      final: 'MISSION COMPLETE', finalLose: 'Wasted',
-    },
-    midnight: {
-      ready: 'Get ready', go: 'GO!',
-      correct: ['Correct!', 'Nice!', 'On fire!', 'Unstoppable!', 'Genius!'],
-      wrong: 'Wrong answer', timeout: "Time's up", frozen: 'Frozen',
-      combo: ['', 'x2 streak', 'x3 streak', 'x4 streak', 'x5 streak'],
-      final: 'Final Results', finalLose: 'Final Results',
-    },
-  };
-  COPY.hotseat = {
-    ready: 'Hot Seat', go: 'Khel shuru!',
-    correct: ['Sahi jawab!', 'Shandaar!', 'Kya baat hai!', 'Lajawab!', 'Crorepati!'],
-    wrong: 'Galat jawab', timeout: 'Time khatam', frozen: 'Freeze',
-    combo: ['', 'x2 streak', 'x3 streak', 'x4 streak', 'x5 streak'],
-    final: 'Hot Seat Champion', finalLose: 'Game Over',
-  };
-  COPY.light = COPY.midnight;
-
-  function currentTheme() {
-    const t = document.documentElement.getAttribute('data-theme');
-    return THEMES.some((x) => x.key === t) ? t : 'candy';
-  }
-  function copy() {
-    return COPY[currentTheme()] || COPY.midnight;
-  }
-
-  function setVisualTheme(key) {
-    const theme = THEMES.find((t) => t.key === key) || THEMES[0];
-    document.documentElement.setAttribute('data-theme', theme.key);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme.meta);
-    Engine.setTheme(theme.key);
-  }
-
-  function autoStageEnabled() {
-    return safeGet(AUTO_STAGE_KEY) !== '0';
-  }
-
-  // When a quiz starts, the whole screen becomes the Hot Seat studio; the player's own theme returns in the lobby.
-  function enterStage() {
-    if (stageActive || !autoStageEnabled() || userTheme === 'hotseat') return;
-    stageActive = true;
-    setVisualTheme('hotseat');
-  }
-  function leaveStage() {
-    if (!stageActive) return;
-    stageActive = false;
-    setVisualTheme(userTheme);
-  }
-
-  function applyTheme(key) {
-    const theme = THEMES.find((t) => t.key === key) || THEMES[0];
-    userTheme = theme.key;
-    safeSet(THEME_KEY, theme.key);
-    if (!(stageActive && autoStageEnabled())) setVisualTheme(theme.key);
-    renderThemeSwatches();
-  }
-
-  function renderThemeSwatches() {
-    const active = userTheme;
-    refs.themeSwatchGrid.innerHTML = '';
-    THEMES.forEach((t) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'theme-swatch' + (t.key === active ? ' active' : '');
-      btn.innerHTML =
-        `<div class="theme-swatch-preview">${t.colors.map((c) => `<span style="background:${c}"></span>`).join('')}</div>` +
-        `<div class="theme-swatch-name">${t.label}</div><div class="theme-swatch-tag">${t.tag}</div>`;
-      btn.onclick = () => {
-        SoundFX.click();
-        applyTheme(t.key);
-        Engine.burst(btn, { kind: 'star', count: 14 });
-      };
-      refs.themeSwatchGrid.appendChild(btn);
-    });
-  }
-
-  // sessionStorage (not localStorage): reconnect-on-refresh should be per-tab,
-  // not shared across every tab someone happens to have this game open in.
+  // sessionStorage (not localStorage): reconnect-on-refresh should be per-tab.
   function saveSession() {
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(mySession)); } catch (e) { /* ignore */ }
   }
@@ -406,34 +184,51 @@
     item.className = 'feed-item';
     item.innerHTML = html;
     refs.feed.appendChild(item);
-    while (refs.feed.children.length > 4) refs.feed.removeChild(refs.feed.firstChild);
-    setTimeout(() => item.remove(), 3000);
+    while (refs.feed.children.length > 5) refs.feed.removeChild(refs.feed.firstChild);
+    setTimeout(() => item.remove(), 4200);
   }
+
+  function vibrate(pattern) {
+    // Browsers block vibration until the user has tapped the page once.
+    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(pattern);
+  }
+
+  async function acquireWakeLock() {
+    try {
+      if ('wakeLock' in navigator && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } catch (e) { wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && (activeView === 'city' || activeView === 'maze')) acquireWakeLock();
+  });
+
+  function updateTopbarHeight() {
+    const tb = document.querySelector('.topbar');
+    if (tb) document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
+  }
+  updateTopbarHeight();
+  window.addEventListener('resize', updateTopbarHeight);
 
   function showView(id) {
     activeView = id;
     document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
     el('view-' + id).classList.remove('hidden');
     window.scrollTo(0, 0);
-    if (id === 'question') {
-      acquireWakeLock();
-      Audience.start();
-    } else {
-      Audience.stop();
-      SoundFX.tension(false);
-      tensionOn = false;
-    }
-    if (id === 'lobby' || id === 'home') leaveStage();
     document.body.classList.toggle('in-city', id === 'city' || id === 'maze');
     if (id !== 'city' && City.running) City.stop();
     if (id !== 'maze' && mazeMounted && Maze3D.running) Maze3D.stop();
     if (id === 'home' && VoiceChat.active) VoiceChat.disable();
+    if (id === 'city' || id === 'maze') acquireWakeLock();
     refs.backBtn.classList.toggle('hidden', id === 'home');
     if (id !== 'home' && !historyArmed) {
       historyArmed = true;
-      try { history.pushState({ trivia: 1 }, ''); } catch (e) { /* ignore */ }
+      try { history.pushState({ chaos: 1 }, ''); } catch (e) { /* ignore */ }
     }
     if (id === 'home') historyArmed = false;
+    updateTopbarHeight();
   }
 
   function me() {
@@ -444,41 +239,8 @@
     return !!(m && m.isCreator);
   }
 
-  function vibrate(pattern) {
-    // Browsers block vibration until the user has tapped the page once.
-    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(pattern);
-  }
-
-  // Keep phones/tablets awake during a game so the screen doesn't dim mid-question.
-  async function acquireWakeLock() {
-    try {
-      if ('wakeLock' in navigator && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
-      }
-    } catch (e) { wakeLock = null; }
-  }
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && (activeView === 'question')) acquireWakeLock();
-  });
-
-  function animateNumber(node, from, to, ms) {
-    if (Engine.reduceMotion || from === to) { node.textContent = to; return; }
-    const start = performance.now();
-    function step(now) {
-      const k = Math.min(1, (now - start) / ms);
-      const eased = 1 - Math.pow(1 - k, 3);
-      node.textContent = Math.round(from + (to - from) * eased);
-      if (k < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-
-  // ---- Meta (avatars + categories + study levels + bot tiers) ----
+  // ---- Meta (avatars + bot tiers) ----
   let AVATARS = ['🦊', '🐼', '🐸', '🐵', '🦄', '🐯', '🐨', '🐙', '🦉', '🐢', '🐷', '🦁'];
-  let CATEGORIES = [{ key: 'general', label: 'General Knowledge', emoji: '🌍' }];
-  let LEVELS = [];
-  let AI_ENABLED = false;
   let BOT_TIERS = [
     { key: 'rookie', label: 'Rookie', emoji: '🍬' },
     { key: 'veteran', label: 'Veteran', emoji: '⚔️' },
@@ -505,56 +267,6 @@
     });
   }
 
-  function renderLevelSelect() {
-    refs.levelSelect.innerHTML = '';
-    let lastGroup = null;
-    let groupEl = refs.levelSelect;
-    LEVELS.forEach((l) => {
-      if (l.group !== lastGroup) {
-        groupEl = document.createElement('optgroup');
-        groupEl.label = l.group;
-        refs.levelSelect.appendChild(groupEl);
-        lastGroup = l.group;
-      }
-      const opt = document.createElement('option');
-      opt.value = l.key;
-      opt.textContent = l.label;
-      groupEl.appendChild(opt);
-    });
-    renderStudyCategorySelect();
-  }
-
-  function currentLevelData() {
-    return LEVELS.find((l) => l.key === refs.levelSelect.value) || LEVELS[0];
-  }
-
-  function renderStudyCategorySelect() {
-    const level = currentLevelData();
-    refs.studyCategorySelect.innerHTML = '';
-    (level ? level.categories : []).forEach((c) => {
-      const opt = document.createElement('option');
-      opt.value = c.label;
-      opt.textContent = c.label;
-      refs.studyCategorySelect.appendChild(opt);
-    });
-    renderStudySubcategorySelect();
-  }
-
-  function renderStudySubcategorySelect() {
-    const level = currentLevelData();
-    const category = level && level.categories.find((c) => c.label === refs.studyCategorySelect.value);
-    refs.studySubcategorySelect.innerHTML = '';
-    (category ? category.subcategories : ['General (mixed topics)']).forEach((s) => {
-      const opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = s;
-      refs.studySubcategorySelect.appendChild(opt);
-    });
-  }
-
-  refs.levelSelect.addEventListener('change', renderStudyCategorySelect);
-  refs.studyCategorySelect.addEventListener('change', renderStudySubcategorySelect);
-
   function renderAvatarPicker() {
     refs.avatarPicker.innerHTML = '';
     AVATARS.forEach((a) => {
@@ -572,71 +284,38 @@
     });
   }
 
-  function renderCategorySelect() {
-    refs.categorySelect.innerHTML = '';
-    CATEGORIES.forEach((c) => {
-      const opt = document.createElement('option');
-      opt.value = c.key;
-      opt.textContent = `${c.emoji} ${c.label}`;
-      refs.categorySelect.appendChild(opt);
-    });
-  }
-
-  function categoryLabel(key) {
-    const c = CATEGORIES.find((c) => c.key === key);
-    return c ? `${c.emoji} ${c.label}` : '';
-  }
-
   fetch('/api/meta')
     .then((r) => r.json())
     .then((meta) => {
       if (Array.isArray(meta.avatars) && meta.avatars.length) AVATARS = meta.avatars;
-      if (Array.isArray(meta.categories) && meta.categories.length) CATEGORIES = meta.categories;
-      if (Array.isArray(meta.levels) && meta.levels.length) LEVELS = meta.levels;
       if (Array.isArray(meta.botTiers) && meta.botTiers.length) BOT_TIERS = meta.botTiers;
-      AI_ENABLED = !!meta.aiEnabled;
-      dailyDate = meta.daily || null;
-      renderDailyChip();
       const saved = loadSession();
       selectedAvatar = (saved && saved.avatar) || AVATARS[Math.floor(Math.random() * AVATARS.length)];
       renderAvatarPicker();
-      renderCategorySelect();
-      renderLevelSelect();
       renderBotTierPills();
-      if (activeView === 'lobby') {
-        renderLobbyControls();
-        renderCustomPanel();
-      }
     })
     .catch(() => {
       selectedAvatar = AVATARS[0];
       renderAvatarPicker();
-      renderCategorySelect();
       renderBotTierPills();
     });
 
   // ---- Player lists ----
+  const money = (n) => `$${Number(n || 0).toLocaleString('en-US')}`;
+
   function renderPlayerRows(container, list, showScore, allowBotRemove) {
     container.innerHTML = '';
     list.forEach((p, i) => {
       const row = document.createElement('div');
-      row.className = 'player-row' + (p.connected ? '' : ' disconnected') + (p.eliminated ? ' out' : '');
+      row.className = 'player-row' + (p.connected ? '' : ' disconnected');
       row.style.animationDelay = `${Math.min(i, 8) * 40}ms`;
 
       const identity = document.createElement('div');
       identity.className = 'pidentity';
-
       const avatar = document.createElement('span');
       avatar.className = 'pavatar';
       avatar.textContent = p.avatar || '🙂';
       identity.appendChild(avatar);
-      if (teamMode && p.team !== null && p.team !== undefined) {
-        const dot = document.createElement('span');
-        dot.className = 'team-dot';
-        dot.style.background = TEAM_COLORS[p.team % TEAM_COLORS.length];
-        dot.title = `Team ${TEAM_NAMES[p.team]}`;
-        identity.appendChild(dot);
-      }
 
       const left = document.createElement('div');
       left.className = 'pname';
@@ -653,12 +332,6 @@
         tag.textContent = '👑 host';
         left.appendChild(tag);
       }
-      if (p.eliminated) {
-        const tag = document.createElement('span');
-        tag.className = 'tier-badge out-badge';
-        tag.textContent = p.place ? `OUT #${p.place}` : 'OUT';
-        left.appendChild(tag);
-      }
       if (p.isBot && p.botTier) {
         const tag = document.createElement('span');
         tag.className = 'tier-badge';
@@ -671,7 +344,7 @@
       if (showScore) {
         const right = document.createElement('div');
         right.className = 'pscore';
-        right.textContent = p.score;
+        right.textContent = money(p.score);
         row.appendChild(right);
       }
       if (allowBotRemove && p.isBot && amHost()) {
@@ -690,77 +363,14 @@
     });
   }
 
-  let rankChanges = {}; // playerId -> +n (climbed) / -n (dropped), shown once after a reveal
-
-  function renderLiveBoard() {
-    renderTeamStrip();
-    refs.liveBoard.innerHTML = '';
-    players.forEach((p, i) => {
-      const row = document.createElement('div');
-      row.className = 'lb-row' + (p.playerId === mySession.playerId ? ' me' : '') + (answered.has(p.playerId) ? ' answered' : '') + (p.eliminated ? ' out' : '');
-      const change = rankChanges[p.playerId] || 0;
-      const arrow = change > 0 ? `<span class="rank-up">▲${change}</span>` : change < 0 ? `<span class="rank-down">▼${-change}</span>` : '';
-      row.innerHTML =
-        `<span class="lb-rank">${i + 1}</span>` +
-        `<span class="lb-avatar">${escapeHtml(p.avatar || '')}</span>` +
-        `<span class="lb-name">${p.eliminated ? '☠ ' : ''}${teamMode && p.team !== null && p.team !== undefined ? `<i class="team-dot" style="background:${TEAM_COLORS[p.team % TEAM_COLORS.length]}"></i>` : ''}${escapeHtml(p.name)}${arrow}</span>` +
-        `<span class="lb-check">✓</span>` +
-        `<span class="lb-score">${p.score}</span>`;
-      refs.liveBoard.appendChild(row);
-    });
-  }
-
-  function renderTeamStrip() {
-    if (!teamMode || !players.some((p) => p.team !== null && p.team !== undefined)) {
-      refs.teamStrip.classList.add('hidden');
-      return;
-    }
-    const totals = {};
-    players.forEach((p) => {
-      if (p.team === null || p.team === undefined) return;
-      const t = totals[p.team] || (totals[p.team] = { score: 0, alive: 0 });
-      t.score += p.score;
-      if (!p.eliminated) t.alive += 1;
-    });
-    refs.teamStrip.innerHTML = Object.entries(totals)
-      .sort((a, b) => b[1].score - a[1].score)
-      .map(([team, t]) => `<span class="team-chip${t.alive ? '' : ' out'}" style="--tc:${TEAM_COLORS[team % TEAM_COLORS.length]}"><i></i>Team ${TEAM_NAMES[team]} <b>${t.score}</b></span>`)
-      .join('');
-    refs.teamStrip.classList.remove('hidden');
-  }
-
-  function renderTeamControls() {
-    const openWorld = currentCategory === 'city' || currentCategory === 'haunted';
-    const host = amHost() && !openWorld;
-    refs.teamControls.classList.toggle('hidden', !host);
-    refs.lobbyModeMsg.classList.toggle('hidden', host || !teamMode || openWorld);
-    refs.lobbyModeMsg.textContent = teamMode ? `🤝 Team mode — ${teamMode} teams` : '';
-    if (!host) return;
-    refs.teamPills.innerHTML = '';
-    [[0, '🧍', 'Solo'], [2, '🟥🟦', '2 Teams'], [3, '🟥🟦🟩', '3 Teams'], [4, '🟥🟦🟩🟨', '4 Teams']].forEach(([n, emoji, label]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'tier-pill' + (n === teamMode ? ' active' : '');
-      btn.innerHTML = `<span class="tier-emoji" style="font-size:${n ? '0.85rem' : '1.4rem'}">${emoji}</span><span>${label}</span>`;
-      btn.onclick = () => { SoundFX.click(); socket.emit(EVENTS.TEAM_SET, { teams: n }); };
-      refs.teamPills.appendChild(btn);
-    });
-    refs.teamHint.textContent =
-      teamMode === 0 ? 'Everyone plays for themselves.'
-        : teamMode === 2 ? '2 teams: combined score wins. Nobody is cut.'
-          : `${teamMode} teams: after each level the lowest-scoring team is knocked out together.`;
-  }
-
   function renderLobbyControls() {
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     refs.squadCount.textContent = `${players.length}/${MAX_PLAYERS}`;
-    renderTeamControls();
     const connectedCount = players.filter((p) => p.connected).length;
-    const needsMoreQuestions = currentCategory === 'custom' && currentPool.length < MIN_QUESTIONS_TO_START;
     if (amHost()) {
       refs.botControls.classList.remove('hidden');
       refs.startBtn.classList.remove('hidden');
-      refs.startBtn.disabled = connectedCount < 2 || needsMoreQuestions;
+      refs.startBtn.disabled = connectedCount < 2;
       refs.lobbyWaitingMsg.classList.add('hidden');
       refs.lobbyNeedMoreMsg.classList.toggle('hidden', connectedCount >= 2);
       refs.soloHint.classList.toggle('hidden', players.length >= 2);
@@ -770,46 +380,6 @@
       refs.lobbyWaitingMsg.classList.remove('hidden');
       refs.lobbyNeedMoreMsg.classList.add('hidden');
     }
-  }
-
-  function renderCustomPanel() {
-    const isCustom = currentCategory === 'custom';
-    refs.customPanel.classList.toggle('hidden', !isCustom);
-    if (!isCustom) return;
-    refs.customHostControls.classList.toggle('hidden', !amHost());
-    refs.generateBtn.classList.toggle('hidden', !AI_ENABLED);
-    refs.notesBox.classList.toggle('hidden', !AI_ENABLED);
-    refs.aiLangSelect.closest('.field').classList.toggle('hidden', !AI_ENABLED);
-    refs.aiDisabledHint.classList.toggle('hidden', AI_ENABLED);
-    refs.questionPoolCount.textContent = `${currentPool.length} question${currentPool.length === 1 ? '' : 's'} ready`;
-    refs.needMoreQuestionsMsg.classList.toggle('hidden', currentPool.length >= MIN_QUESTIONS_TO_START);
-
-    refs.questionPoolList.innerHTML = '';
-    currentPool.forEach((q, i) => {
-      const row = document.createElement('div');
-      row.className = 'pool-question-row';
-      const idx = document.createElement('span');
-      idx.className = 'pool-q-index';
-      idx.textContent = `${i + 1}.`;
-      const text = document.createElement('span');
-      text.className = 'pool-q-text';
-      text.textContent = q.text;
-      row.appendChild(idx);
-      row.appendChild(text);
-      if (amHost()) {
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'pool-q-remove';
-        removeBtn.setAttribute('aria-label', 'Remove question');
-        removeBtn.textContent = '✕';
-        removeBtn.onclick = () => {
-          SoundFX.click();
-          socket.emit(EVENTS.QUESTION_REMOVE, { index: i });
-        };
-        row.appendChild(removeBtn);
-      }
-      refs.questionPoolList.appendChild(row);
-    });
   }
 
   function renderLobbyQr(roomCode) {
@@ -828,199 +398,17 @@
 
   function showLobby() {
     showView('lobby');
-    refs.lobbyCategory.textContent = categoryLabel(currentCategory);
     renderLobbyQr(mySession.roomCode);
     renderPlayerRows(refs.lobbyPlayers, players, false, true);
     renderBotTierPills();
     renderLobbyControls();
-    renderCustomPanel();
   }
 
-  // ---- Arena: the match map (rooms = levels, tables = players) ----
-  let arenaReady = false;
-  let iAmEliminated = false;
-  let lockedIds = [];
-  let questionStartLocal = 0;
-  let stageInfo = null;
-  let lastAlive = -1;
-  let bannerTimer = null;
-  let transitionTimers = [];
-
-  Arena.mount(refs.arenaCanvas, {
-    siren: () => SoundFX.siren(),
-    eliminated: (id, place) => {
-      SoundFX.eliminated();
-      Engine.flash('rgba(255,50,70,0.3)');
-      const p = players.find((x) => x.playerId === id);
-      if (p) VoiceHost.speak(`${p.name} is out`, { queue: true });
-      if (p) pushFeed(`☠ ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} eliminated · #${place}`);
-      if (id === mySession.playerId) {
-        Audience.setMood('gasp', 2200);
-        vibrate([60, 40, 60]);
-      }
-      updateAlive();
-    },
-    tableTap: (id) => {
-      // a spectator taps a contender's table to cheer for them
-      if (!iAmEliminated || id === mySession.playerId) return false;
-      const target = players.find((x) => x.playerId === id);
-      if (!target) return false;
-      socket.emit(EVENTS.FAN_SET, { targetId: id });
-      pushFeed(`❤️ You're cheering for ${escapeHtml(target.avatar || '')} ${escapeHtml(target.name)}`);
-      SoundFX.click();
-      return true;
-    },
-    arrive: () => SoundFX.step(),
-    land: () => SoundFX.step(),
-    arrivedAll: () => {
-      updateAlive();
-      renderLevelMap(false);
-      renderLiveBoard();
-    },
-  });
-
-  function updateAlive() {
-    const n = arenaReady ? Arena.aliveCount() : players.filter((p) => !p.eliminated).length;
-    if (n === lastAlive) return;
-    lastAlive = n;
-    refs.aliveCount.textContent = n;
-    refs.aliveChip.classList.remove('pop');
-    void refs.aliveChip.offsetWidth;
-    refs.aliveChip.classList.add('pop');
-  }
-
-  function stageQuestionCount(info, i, total) {
-    return total ? Math.max(1, Math.min(info.per, total - i * info.per)) : info.per;
-  }
-
-  // The level map strip: every level, its sub-levels (questions) and where the match is now.
-  function renderLevelMap(revealed) {
-    const info = stageInfo;
-    if (!info) {
-      refs.levelMap.innerHTML = '';
-      return;
-    }
-    const total = currentQuestion ? currentQuestion.totalQuestions : 0;
-    refs.arenaLevel.textContent = `Level ${info.index + 1}/${info.count} · ${info.names[info.index]}`;
-    let html = '';
-    for (let i = 0; i < info.count; i++) {
-      const state = i < info.index ? 'done' : i === info.index ? 'current' : 'locked';
-      const dotsN = stageQuestionCount(info, i, total);
-      let dots = '';
-      for (let d = 0; d < dotsN; d++) {
-        const on = i < info.index || (i === info.index && (d < info.sub || (revealed && d === info.sub)));
-        const now = i === info.index && !revealed && d === info.sub;
-        dots += `<i class="${on ? 'on' : now ? 'now' : ''}"></i>`;
-      }
-      const sub = state === 'done' ? '✓' : state === 'current' ? `${arenaAlive()} in` : '🔒';
-      html += `<div class="lm-node ${state}"><span class="lm-name">${escapeHtml(info.names[i])}</span><span class="lm-dots">${dots}</span><span class="lm-alive">${sub}</span></div>`;
-      if (i < info.count - 1) html += '<span class="lm-arrow">›</span>';
-    }
-    refs.levelMap.innerHTML = html;
-  }
-
-  function arenaAlive() {
-    return arenaReady ? Arena.aliveCount() : players.filter((p) => !p.eliminated).length;
-  }
-
-  function showStageBanner(text, kind, ms) {
-    refs.stageBanner.textContent = text;
-    refs.stageBanner.className = 'stage-banner' + (kind ? ' ' + kind : '');
-    replayAnimation(refs.stageBanner);
-    clearTimeout(bannerTimer);
-    bannerTimer = setTimeout(() => refs.stageBanner.classList.add('hidden'), ms || 3000);
-  }
-
-  function startArena(info, total, opts) {
-    Arena.setMe(mySession.playerId);
-    Arena.startMatch(players, { count: info.count, per: info.per, names: info.names, total }, { ...(opts || {}), teamMode });
-    arenaReady = true;
-    lastAlive = -1;
-    updateAlive();
-  }
-
-  function resetArenaState() {
-    transitionTimers.forEach(clearTimeout);
-    transitionTimers = [];
-    arenaReady = false;
-    iAmEliminated = false;
-    stageInfo = null;
-    lastAlive = -1;
-    Arena.stop();
-    refs.stageBanner.classList.add('hidden');
-    refs.spectatorMsg.classList.add('hidden');
-  }
-
-  // Blank the question panel while the arena does something else (countdown, level change).
-  function idleQuestionPanel(text) {
-    refs.questionText.textContent = text;
-    refs.choicesGrid.classList.remove('locked', 'suspense');
-    refs.choicesGrid.querySelectorAll('.choice').forEach((btn) => {
-      btn.querySelector('.choice-label').textContent = '';
-      btn.disabled = true;
-      btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated', 'polled');
-    });
-    refs.revealBanner.classList.add('hidden');
-    refs.powerWaitingBanner.classList.add('hidden');
-    refs.powerResultBanner.classList.add('hidden');
-    refs.answerLockedMsg.classList.add('hidden');
-    refs.miniLeaderboard.classList.add('hidden');
-    refs.lifelineBtn.disabled = true;
-    refs.pollBtn.disabled = true;
-    refs.qTimer.textContent = '–';
-    refs.timerFill.style.width = '100%';
-    refs.ringFg.style.strokeDashoffset = '0';
-    refs.qProgress.textContent = '';
-    refs.powerBadge.classList.add('hidden');
-    refs.streakChip.classList.add('hidden');
-  }
-
-  REACTIONS.forEach((emoji) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'reaction-btn';
-    b.textContent = emoji;
-    b.setAttribute('aria-label', `React ${emoji}`);
-    b.onclick = () => {
-      socket.emit(EVENTS.REACTION_SEND, { emoji });
-      b.classList.remove('sent');
-      void b.offsetWidth;
-      b.classList.add('sent');
-    };
-    refs.reactionBar.appendChild(b);
-  });
-
-  refs.mapBtn.addEventListener('click', () => { SoundFX.click(); Arena.toggleOverview(); });
-
-  // On laptops the studio lives in the right-hand column so it sits on-screen next to the question.
-  const wideMq = window.matchMedia('(min-width: 1024px)');
-  function placeStudio() {
-    const studio = el('studio');
-    const target = wideMq.matches ? el('studioSideSlot') : el('studioMainSlot');
-    if (studio && target && studio.parentElement !== target) {
-      target.appendChild(studio);
-      setTimeout(() => Arena.resize(), 60);
-    }
-  }
-  if (wideMq.addEventListener) wideMq.addEventListener('change', placeStudio);
-  else if (wideMq.addListener) wideMq.addListener(placeStudio);
-  placeStudio();
-
-  function showPoll(poll) {
-    refs.choicesGrid.querySelectorAll('.choice').forEach((b, i) => {
-      const pct = poll[i] || 0;
-      b.classList.add('polled');
-      b.querySelector('.poll').innerHTML = `<span class="poll-bar"><i style="--pct:0%"></i></span><span>${pct}%</span>`;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const bar = b.querySelector('.poll-bar i');
-        if (bar) bar.style.setProperty('--pct', pct + '%');
-      }));
-    });
-  }
-
-  // ---- Question screen ----
-  function powerBadgeLabel(type) {
-    return type === 'freeze' ? '🥶 FREEZE ROUND' : '⚡ STEAL ROUND';
+  // ---- Countdown ----
+  function hideCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    refs.countdownOverlay.classList.add('hidden');
   }
 
   function replayAnimation(node) {
@@ -1029,184 +417,13 @@
     node.style.animation = '';
   }
 
-  function updateStreakChip() {
-    const m = me();
-    const streak = m ? m.streak || 0 : 0;
-    if (streak >= 2) {
-      refs.streakChip.textContent = `🔥 ${streak} streak`;
-      refs.streakChip.classList.remove('hidden');
-    } else {
-      refs.streakChip.classList.add('hidden');
-    }
-  }
-
-  function updateLifelineButton() {
-    refs.lifelineCount.textContent = myLifelines;
-    refs.pollCount.textContent = myPolls;
-    const blocked = answerLocked || iAmFrozenThisQuestion || lifelineUsedThisQuestion || iAmEliminated;
-    refs.lifelineBtn.disabled = myLifelines <= 0 || blocked;
-    refs.pollBtn.disabled = myPolls <= 0 || blocked;
-  }
-
-  function syncMyStats() {
-    const m = me();
-    myLifelines = m ? m.lifelines || 0 : 0;
-    myPolls = m ? m.polls || 0 : 0;
-  }
-
-  function renderQuestion() {
-    refs.qProgress.textContent = `Question ${currentQuestion.questionIndex + 1}/${currentQuestion.totalQuestions}`;
-    if (currentQuestion.powerRoundType) {
-      refs.powerBadge.textContent = powerBadgeLabel(currentQuestion.powerRoundType);
-      refs.powerBadge.className = 'power-badge' + (currentQuestion.powerRoundType === 'freeze' ? ' freeze' : '');
-    } else {
-      refs.powerBadge.classList.add('hidden');
-    }
-    refs.questionText.textContent = currentQuestion.text;
-    replayAnimation(refs.questionCard);
-
-    iAmFrozenThisQuestion = currentQuestion.frozenPlayerId === mySession.playerId;
-    lifelineUsedThisQuestion = false;
-    answerLocked = false;
-    const meNow = me();
-    iAmEliminated = !!(meNow && meNow.eliminated);
-    refs.spectatorMsg.classList.toggle('hidden', !iAmEliminated);
-    const frozenPlayer = players.find((p) => p.playerId === currentQuestion.frozenPlayerId);
-    if (currentQuestion.frozenPlayerId && frozenPlayer) {
-      refs.frozenNotice.textContent = iAmFrozenThisQuestion
-        ? "🥶 You're frozen this round — sit this one out."
-        : `🥶 ${frozenPlayer.name} is frozen this round.`;
-      refs.frozenNotice.classList.remove('hidden');
-    } else {
-      refs.frozenNotice.classList.add('hidden');
-    }
-
-    refs.choicesGrid.classList.remove('locked');
-    refs.choicesGrid.querySelectorAll('.choice').forEach((btn, i) => {
-      btn.querySelector('.choice-label').textContent = currentQuestion.choices[i];
-      btn.disabled = iAmFrozenThisQuestion || iAmEliminated;
-      btn.classList.remove('selected', 'correct', 'wrong', 'dim', 'eliminated', 'polled');
-      btn.querySelector('.poll').innerHTML = '';
-      btn.onclick = iAmFrozenThisQuestion || iAmEliminated ? null : () => selectChoice(i);
-      replayAnimation(btn);
-    });
-
-    refs.answerLockedMsg.classList.add('hidden');
-    refs.frozenLockedMsg.classList.toggle('hidden', !iAmFrozenThisQuestion);
-    refs.revealBanner.classList.add('hidden');
-    refs.miniLeaderboard.classList.add('hidden');
-    refs.powerWaitingBanner.classList.add('hidden');
-    refs.powerResultBanner.classList.add('hidden');
-    refs.powerModal.classList.add('hidden');
-    updateStreakChip();
-    updateLifelineButton();
-    renderLiveBoard();
-
-    if (currentQuestion.stage) {
-      stageInfo = currentQuestion.stage;
-      if (!arenaReady) startArena(stageInfo, currentQuestion.totalQuestions, { stage: stageInfo.index });
-      Arena.startQuestion(stageInfo);
-      lockedIds = [];
-      questionStartLocal = Date.now();
-      transitionTimers.forEach(clearTimeout);
-      transitionTimers = [];
-      renderLevelMap(false);
-      updateAlive();
-    }
-  }
-
-  // Tapping an answer locks it in instantly on-screen and sends it at the same moment —
-  // no waiting on the server round-trip before the UI reacts.
-  function selectChoice(i) {
-    if (answerLocked || iAmFrozenThisQuestion || iAmEliminated || activeView !== 'question') return;
-    const btn = refs.choicesGrid.querySelectorAll('.choice')[i];
-    if (!btn || btn.classList.contains('eliminated')) return;
-    answerLocked = true;
-    selectedChoice = i;
-    socket.emit(EVENTS.ANSWER_SUBMIT, { choiceIndex: i });
-
-    refs.choicesGrid.classList.add('locked');
-    refs.choicesGrid.querySelectorAll('.choice').forEach((b, idx) => {
-      b.disabled = true;
-      b.classList.toggle('selected', idx === i);
-    });
-    refs.answerLockedMsg.classList.remove('hidden');
-    updateLifelineButton();
-    lockedIds.push(mySession.playerId);
-    Arena.lock(mySession.playerId, lockedIds.length, Date.now() - questionStartLocal);
-    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
-    SoundFX.lock();
-    vibrate(18);
-    Engine.burst(btn, { kind: 'spark', count: 16, power: 0.8 });
-    Engine.shockwave(btn);
-  }
-
-  function useLifeline(type) {
-    const kind = type === 'poll' ? 'poll' : 'fifty';
-    const left = kind === 'poll' ? myPolls : myLifelines;
-    if (answerLocked || iAmFrozenThisQuestion || iAmEliminated || lifelineUsedThisQuestion || left <= 0) return;
-    SoundFX.click();
-    lifelineUsedThisQuestion = true;
-    updateLifelineButton();
-    socket.emit(EVENTS.LIFELINE_USE, { type: kind });
-  }
-
-  function startQuestionCountdown(endsAt, serverNow) {
-    clockOffset = serverNow - Date.now();
-    lastTickSecond = null;
-    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
-    if (questionRAF) cancelAnimationFrame(questionRAF);
-    function tick() {
-      const now = Date.now() + clockOffset;
-      const remaining = Math.max(0, endsAt - now);
-      const secs = Math.ceil(remaining / 1000);
-      refs.qTimer.textContent = secs;
-      const pct = Math.max(0, Math.min(1, remaining / QUESTION_DURATION_MS));
-      refs.timerFill.style.width = pct * 100 + '%';
-      refs.ringFg.style.strokeDashoffset = String(RING_C * (1 - pct));
-      const urgent = remaining < 5000;
-      refs.timerFill.classList.toggle('urgent', urgent);
-      refs.timerRing.classList.toggle('urgent', urgent);
-      if (urgent && remaining > 0 && secs !== lastTickSecond && !answerLocked) {
-        lastTickSecond = secs;
-        SoundFX.tick();
-      }
-      if (urgent && remaining > 0 && !answerLocked && !tensionOn) {
-        tensionOn = true;
-        SoundFX.tension(true);
-        Audience.setMood('tense', remaining + 200);
-      }
-      if (remaining > 0) questionRAF = requestAnimationFrame(tick);
-    }
-    tick();
-  }
-
-  function startPowerCountdown(endsAt) {
-    if (powerRAF) cancelAnimationFrame(powerRAF);
-    function tick() {
-      const now = Date.now() + clockOffset;
-      const remaining = Math.max(0, endsAt - now);
-      refs.powerCountdown.textContent = Math.ceil(remaining / 1000);
-      if (remaining > 0) powerRAF = requestAnimationFrame(tick);
-    }
-    tick();
-  }
-
-  // ---- Countdown overlay (3-2-1-GO before the first question) ----
-  function hideCountdown() {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-    refs.countdownOverlay.classList.add('hidden');
-  }
-
   function runCountdown(startsAt, serverNow) {
     clearInterval(countdownTimer);
     const offset = serverNow - Date.now();
-    refs.cdReady.textContent = copy().ready;
-    refs.cdSquad.innerHTML = players.map((p, i) => `<span style="animation-delay:${i * 70}ms">${escapeHtml(p.avatar || '🙂')}</span>`).join('');
-    refs.countdownOverlay.classList.toggle('over-arena', activeView === 'question');
+    if (startsAt - (Date.now() + offset) < 300) return;
+    refs.cdReady.textContent = 'Get ready';
+    refs.cdSquad.innerHTML = '';
     refs.countdownOverlay.classList.remove('hidden');
-    acquireWakeLock();
     let shown = null;
     function update() {
       const remaining = startsAt - (Date.now() + offset);
@@ -1214,20 +431,18 @@
       if (label !== shown) {
         shown = label;
         const isGo = label === 'GO';
-        refs.cdNum.textContent = isGo ? copy().go : label;
+        refs.cdNum.textContent = isGo ? 'GO!' : label;
         refs.cdNum.classList.toggle('go', isGo);
         replayAnimation(refs.cdNum);
         if (isGo) {
           SoundFX.go();
-          Engine.flash('rgba(255,255,255,0.45)');
-          Engine.burst({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, { kind: 'spark', count: 40, power: 1.4 });
-          Engine.shockwave({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+          Engine.flash('rgba(255,255,255,0.35)');
         } else {
           SoundFX.count();
           vibrate(20);
         }
       }
-      if (remaining < -1500) hideCountdown();
+      if (remaining < -1200) hideCountdown();
     }
     update();
     countdownTimer = setInterval(update, 80);
@@ -1241,13 +456,8 @@
   }
 
   function updateFinalControls() {
-    if (amHost()) {
-      refs.playAgainBtn.classList.remove('hidden');
-      refs.finalWaitingMsg.classList.add('hidden');
-    } else {
-      refs.playAgainBtn.classList.add('hidden');
-      refs.finalWaitingMsg.classList.remove('hidden');
-    }
+    refs.playAgainBtn.classList.toggle('hidden', !amHost());
+    refs.finalWaitingMsg.classList.toggle('hidden', amHost());
   }
 
   function renderAwards(awards) {
@@ -1259,7 +469,7 @@
     awards.forEach((a, i) => {
       const card = document.createElement('div');
       card.className = 'award' + (a.playerId === mySession.playerId ? ' mine' : '');
-      card.style.animationDelay = `${1.2 + i * 0.18}s`;
+      card.style.animationDelay = `${1.0 + i * 0.18}s`;
       card.innerHTML = `<span class="award-ico">${a.icon}</span><span class="award-txt"><b>${escapeHtml(a.title)}</b><small>${escapeHtml(a.name)} · ${escapeHtml(a.detail)}</small></span>`;
       refs.awards.appendChild(card);
     });
@@ -1269,117 +479,41 @@
   function renderFinal(data) {
     refs.podium.innerHTML = '';
     renderAwards(data.awards);
-    if (data.teams && data.teams.length) {
-      data.teams.slice(0, 3).forEach((t, i) => {
-        const slot = document.createElement('div');
-        slot.className = `podium-slot rank-${i + 1}`;
-        slot.style.borderColor = TEAM_COLORS[t.team % TEAM_COLORS.length];
-        const faces = t.members.map((id) => (data.leaderboard.find((p) => p.playerId === id) || {}).avatar || '').slice(0, 4).join(' ');
-        slot.innerHTML =
-          `<div class="medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>` +
-          `<div class="pavatar" style="font-size:1.2rem">${escapeHtml(faces)}</div>` +
-          `<div class="pname" style="color:${TEAM_COLORS[t.team % TEAM_COLORS.length]}">Team ${escapeHtml(t.name)}</div>` +
-          `<div class="pscore">${t.score} pts</div>`;
-        refs.podium.appendChild(slot);
-      });
-    }
-    (data.teams && data.teams.length ? [] : data.podium).forEach((p, i) => {
+    (data.podium || []).forEach((p, i) => {
       const slot = document.createElement('div');
       slot.className = `podium-slot rank-${i + 1}`;
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
       slot.innerHTML =
-        `<div class="medal">${medal}</div>` +
+        `<div class="medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>` +
         `<div class="pavatar">${escapeHtml(p.avatar || '')}</div>` +
         `<div class="pname">${escapeHtml(p.name)}</div>` +
-        `<div class="pscore">${p.score} pts</div>`;
+        `<div class="pscore">${money(p.score)}</div>`;
       refs.podium.appendChild(slot);
     });
     renderPlayerRows(refs.finalPlayers, data.leaderboard, true);
 
-    const myIndex = data.leaderboard.findIndex((p) => p.playerId === mySession.playerId);
-    const myTeam = myIndex >= 0 ? data.leaderboard[myIndex].team : null;
-    const won = data.teams && data.teams.length && myTeam !== null && myTeam !== undefined ? data.teams[0].team === myTeam : myIndex === 0;
-    refs.finalTitle.textContent = won ? copy().final : copy().finalLose;
+    const board = data.leaderboard;
+    const myIndex = board.findIndex((p) => p.playerId === mySession.playerId);
+    const won = myIndex === 0;
+    refs.finalTitle.textContent = won ? '👑 King of the City!' : 'Final Results';
     replayAnimation(refs.finalTitle);
-    if (data.teams && data.teams.length && myIndex >= 0) {
-      const mine = data.teams.findIndex((t) => t.team === myTeam);
-      refs.finalSub.textContent = won
-        ? `Team ${data.teams[0].name} wins with ${data.teams[0].score} points — great teamwork!`
-        : `Your team finished ${ordinal(mine + 1)}. Team ${data.teams[0].name} won with ${data.teams[0].score} points.`;
-    } else if (myIndex >= 0 && data.leaderboard[myIndex].eliminated) {
-      const mine = data.leaderboard[myIndex];
-      refs.finalSub.textContent = mine.place
-        ? `You were knocked out in ${ordinal(mine.place)} place with ${mine.score} points — ${escapeHtml(data.leaderboard[0].name)} won.`
-        : `You left the match — ${escapeHtml(data.leaderboard[0].name)} won.`;
-    } else if (myIndex >= 0) {
-      const myScore = data.leaderboard[myIndex].score;
-      refs.finalSub.textContent = won
-        ? `You took first place with ${myScore} points!`
-        : `You finished ${ordinal(myIndex + 1)} with ${myScore} points — ${escapeHtml(data.leaderboard[0].name)} took the crown.`;
-    } else {
-      refs.finalSub.textContent = '';
-    }
-    if (data.maze) {
-      const mz = data.maze;
-      refs.finalTitle.textContent = mz.won ? '🚽 We Made It!' : mz.outcome === 'bladder' ? '💦 Too Late…' : 'Game Over';
-      refs.finalSub.textContent = mz.won
-        ? `The whole team reached the toilet with ${100 - mz.bladder}% of the bladder to spare. Sweet relief!`
-        : mz.outcome === 'bladder'
-          ? `The bladder hit 100% — ${mz.finished} made it in time, ${mz.keys}/${mz.totalKeys} keys were won. Better luck next time!`
-          : 'The match ended.';
-      if (mz.won) SoundFX.flush();
-      else SoundFX.toot();
-    }
+    const st = data.stats && data.stats[mySession.playerId];
+    const extra = st ? ` · ☠ ${st.kills} takedown${st.kills === 1 ? '' : 's'} · 💀 ${st.deaths} death${st.deaths === 1 ? '' : 's'} · 🎯 ${st.missions}/${data.total || 4} missions${st.accidents ? ` · 💩 ${st.accidents} accident${st.accidents === 1 ? '' : 's'}` : ''}` : '';
+    if (myIndex >= 0) {
+      const myScore = board[myIndex].score;
+      refs.finalSub.textContent = (won
+        ? `You finished first with ${money(myScore)}!`
+        : `You finished ${ordinal(myIndex + 1)} with ${money(myScore)} — ${board[0].name} took the crown with ${money(board[0].score)}.`) + extra;
+    } else refs.finalSub.textContent = '';
     updateFinalControls();
   }
 
   function applyRoomState(roomState) {
     players = roomState.players;
-    teamMode = roomState.teamMode || 0;
-    currentCategory = roomState.category;
-    currentPool = roomState.customPool ? roomState.customPool.questions : [];
-    syncMyStats();
     hideCountdown();
     if (roomState.state === 'lobby') {
       showLobby();
     } else if (roomState.state === 'city' && roomState.city) {
       startCityView(roomState.city);
-    } else if (roomState.state === 'starting') {
-      enterStage();
-      showView('question');
-      idleQuestionPanel('Get ready…');
-      if (roomState.stagePlan) {
-        stageInfo = { index: 0, sub: 0, count: roomState.stagePlan.count, per: roomState.stagePlan.per, names: roomState.stagePlan.names };
-        startArena(stageInfo, roomState.totalQuestions, { stage: 0 });
-        renderLevelMap(false);
-      }
-      runCountdown(roomState.startsAt, roomState.serverNow);
-    } else if (roomState.state === 'question' && roomState.question) {
-      currentQuestion = {
-        ...roomState.question,
-        questionIndex: roomState.questionIndex,
-        totalQuestions: roomState.totalQuestions,
-        stage: roomState.stage,
-        frozenPlayerId: null,
-      };
-      selectedChoice = null;
-      answered = new Set();
-      enterStage();
-      showView('question');
-      renderQuestion();
-      startQuestionCountdown(roomState.question.questionEndsAt, roomState.question.serverNow);
-    } else if (roomState.state === 'reveal' || roomState.state === 'steal_prompt' || roomState.state === 'freeze_prompt' || roomState.state === 'transition') {
-      enterStage();
-      showView('question');
-      idleQuestionPanel('Reconnected — syncing with the game…');
-      if (roomState.stage) {
-        stageInfo = roomState.stage;
-        currentQuestion = { totalQuestions: roomState.totalQuestions };
-        startArena(stageInfo, roomState.totalQuestions, { stage: stageInfo.index });
-        Arena.setFans(roomState.fans);
-        renderLevelMap(false);
-      }
-      renderLiveBoard();
     } else if (roomState.state === 'final' && roomState.final) {
       showView('final');
       renderFinal(roomState.final);
@@ -1410,15 +544,15 @@
     saveSession();
     applyRoomState(data.roomState);
     if (quickPending && data.isCreator) {
-      const tiers = quickBotsWanted > 1 ? ['veteran', 'elite', 'rookie'] : [selectedTier];
-      for (let i = 0; i < quickBotsWanted; i++) socket.emit(EVENTS.BOT_ADD, { difficulty: tiers[i % tiers.length] });
+      const tiers = [selectedTier, 'veteran', 'rookie'];
+      for (let i = 0; i < QUICK_BOTS; i++) socket.emit(EVENTS.BOT_ADD, { difficulty: tiers[i % tiers.length] });
     }
   });
 
   socket.on(EVENTS.ROOM_ERROR, ({ code, message }) => {
     quickPending = false;
     showToast(message || 'Something went wrong.');
-    SoundFX.wrong();
+    SoundFX.wrong && SoundFX.wrong();
     Engine.shake(refs.toast);
     if (code === 'ROOM_NOT_FOUND') {
       clearSession();
@@ -1428,392 +562,38 @@
 
   socket.on(EVENTS.PLAYER_LIST_UPDATE, ({ players: p }) => {
     players = p;
-    if (quickPending && players.filter((x) => x.isBot).length >= quickBotsWanted && activeView === 'lobby') {
+    if (quickPending && players.filter((x) => x.isBot).length >= QUICK_BOTS && activeView === 'lobby') {
       quickPending = false;
       socket.emit(EVENTS.GAME_START);
     }
     if (activeView === 'lobby') {
       renderPlayerRows(refs.lobbyPlayers, players, false, true);
       renderLobbyControls();
-      renderCustomPanel();
-    } else if (activeView === 'question') {
-      renderLiveBoard();
     } else if (activeView === 'final') {
       renderPlayerRows(refs.finalPlayers, players, true);
       updateFinalControls();
     }
   });
 
-  socket.on(EVENTS.QUESTIONS_GENERATING, ({ level, subject }) => {
-    refs.generateBtn.disabled = true;
-    refs.generatingStatus.textContent = `🤖 Generating questions on "${subject}" for ${level}…`;
-    refs.generatingStatus.classList.remove('hidden');
-  });
-
-  socket.on(EVENTS.QUESTION_POOL_UPDATE, ({ questions }) => {
-    const before = currentPool.length;
-    currentPool = questions || [];
-    refs.generateBtn.disabled = false;
-    refs.generatingStatus.classList.add('hidden');
-    renderCustomPanel();
-    renderLobbyControls();
-    if (currentPool.length > before) {
-      SoundFX.correct();
-      Engine.burst(refs.questionPoolCount, { kind: 'star', count: 16 });
-    }
-  });
-
-  socket.on(EVENTS.GAME_STARTING, ({ startsAt, serverNow, players: p, stagePlan, totalQuestions, teamMode: tm }) => {
-    if (p) players = p;
-    teamMode = tm || 0;
-    syncMyStats();
-    answered = new Set();
-    rankChanges = {};
-    resetArenaState();
-    enterStage();
-    showView('question');
-    idleQuestionPanel('Get ready…');
-    if (stagePlan) {
-      stageInfo = { index: 0, sub: 0, count: stagePlan.count, per: stagePlan.per, names: stagePlan.names };
-      currentQuestion = { totalQuestions };
-      startArena(stageInfo, totalQuestions, { stage: 0, drop: true });
-      renderLevelMap(false);
-    }
-    SoundFX.whoosh();
-    runCountdown(startsAt, serverNow);
-  });
-
-  socket.on(EVENTS.QUESTION_START, (payload) => {
-    hideCountdown();
-    if (payload.players) players = payload.players;
-    syncMyStats();
-    currentQuestion = payload;
-    selectedChoice = null;
-    answered = new Set();
-    enterStage();
-    showView('question');
-    renderQuestion();
-    startQuestionCountdown(payload.questionEndsAt, payload.serverNow);
-    VoiceHost.speak(`Question ${payload.questionIndex + 1}. ${payload.text}`);
-  });
-
-  socket.on(EVENTS.ANSWER_ACK, ({ choiceIndex }) => {
-    // Already shown instantly on tap; this just re-asserts the locked state after a reconnect.
-    if (!answerLocked) {
-      answerLocked = true;
-      selectedChoice = choiceIndex;
-      refs.choicesGrid.classList.add('locked');
-      refs.choicesGrid.querySelectorAll('.choice').forEach((btn, i) => {
-        btn.disabled = true;
-        btn.classList.toggle('selected', i === choiceIndex);
-      });
-      refs.answerLockedMsg.classList.remove('hidden');
-      updateLifelineButton();
-    }
-  });
-
-  socket.on(EVENTS.ANSWER_PROGRESS, ({ playerId, elapsedMs }) => {
-    answered.add(playerId);
-    renderLiveBoard();
-    const firstLock = lockedIds.length === 0;
-    if (!lockedIds.includes(playerId)) lockedIds.push(playerId);
-    Arena.lock(playerId, lockedIds.indexOf(playerId) + 1, elapsedMs);
-    if (playerId !== mySession.playerId) {
-      SoundFX.buzz();
-      const p = players.find((x) => x.playerId === playerId);
-      if (p && firstLock) pushFeed(`⚡ ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} is fastest — ${(elapsedMs / 1000).toFixed(1)}s`);
-    }
-  });
-
-  socket.on(EVENTS.LIFELINE_RESULT, ({ type, removed, poll, lifelines, polls }) => {
-    myLifelines = lifelines;
-    myPolls = polls;
-    SoundFX.lifeline();
-    vibrate(25);
-    if (type === 'poll' && poll) {
-      showPoll(poll);
-      Audience.setMood('tense', 2500);
-      Engine.floatText(refs.pollBtn, 'Audience says…', { cls: 'gold' });
-    } else {
-      const buttons = refs.choicesGrid.querySelectorAll('.choice');
-      (removed || []).forEach((idx) => {
-        const b = buttons[idx];
-        if (!b) return;
-        Engine.burst(b, { kind: 'spark', count: 14, colors: ['#ffffff', '#ffd23f'] });
-        b.classList.add('eliminated');
-        b.disabled = true;
-      });
-      Engine.floatText(refs.lifelineBtn, '50/50', { cls: 'gold' });
-    }
-    updateLifelineButton();
-  });
-
-  socket.on(EVENTS.QUESTION_REVEAL, (data) => {
-    const { leaderboard } = data;
-    if (questionRAF) cancelAnimationFrame(questionRAF);
-    refs.timerRing.classList.remove('urgent');
-    if (tensionOn) { SoundFX.tension(false); tensionOn = false; }
-
-    // Work out who climbed/dropped before replacing the list.
-    const oldRank = {};
-    players.forEach((p, i) => { oldRank[p.playerId] = i; });
-    rankChanges = {};
-    leaderboard.forEach((p, i) => {
-      if (oldRank[p.playerId] !== undefined && oldRank[p.playerId] !== i) rankChanges[p.playerId] = oldRank[p.playerId] - i;
-    });
-    players = leaderboard;
-    syncMyStats();
-
-    // A beat of suspense — drumroll — before the answer is revealed.
-    refs.choicesGrid.querySelectorAll('.choice').forEach((b) => { b.disabled = true; });
-    refs.choicesGrid.classList.add('suspense');
-    const suspense = Engine.reduceMotion ? 0 : 800;
-    if (suspense) SoundFX.drumroll(0.8);
-    clearTimeout(revealTimer);
-    revealTimer = setTimeout(() => applyReveal(data), suspense);
-  });
-
-  function applyReveal({ correctIndex, deltas, bonuses, assisted, choices, streaks, leaderboard }) {
-    refs.choicesGrid.classList.remove('suspense');
-    refs.choicesGrid.classList.remove('locked');
-    const buttons = refs.choicesGrid.querySelectorAll('.choice');
-    buttons.forEach((btn, i) => {
-      btn.disabled = true;
-      btn.classList.remove('selected');
-      if (i === correctIndex) btn.classList.add('correct');
-      else if (selectedChoice === i) btn.classList.add('wrong');
-      else btn.classList.add('dim');
-    });
-
-    const myId = mySession.playerId;
-    const myDelta = deltas[myId] || 0;
-    const myBonus = (bonuses && bonuses[myId]) || 0;
-    const myStreak = (streaks && streaks[myId]) || 0;
-    const c = copy();
-    const correctBtn = buttons[correctIndex];
-    const wasFrozen = iAmFrozenThisQuestion;
-    refs.revealBanner.classList.remove('hidden', 'good', 'bad');
-    replayAnimation(refs.revealBanner);
-
-    Arena.reveal(choices || {}, correctIndex);
-    renderLevelMap(true);
-    if (currentQuestion && currentQuestion.choices) VoiceHost.speak(`Correct answer: ${currentQuestion.choices[correctIndex]}`, { queue: true });
-    const correctCount = Object.values(choices || {}).filter((ch) => ch === correctIndex).length;
-
-    if (myDelta > 0) {
-      const label = c.correct[Math.min(Math.max(myStreak - 1, 0), c.correct.length - 1)];
-      const parts = [];
-      if (assisted && assisted[myId] === 'fifty') parts.push('50/50 −40%');
-      if (assisted && assisted[myId] === 'poll') parts.push('poll −20%');
-      if (myBonus > 0) parts.push(`streak bonus +${myBonus}`);
-      refs.revealBanner.innerHTML = `${escapeHtml(label)} +${myDelta}` + (parts.length ? `<span class="sub">${escapeHtml(parts.join(' · '))}</span>` : '');
-      refs.revealBanner.classList.add('good');
-      if (myStreak >= 2) SoundFX.combo(Math.min(myStreak, 6));
-      else SoundFX.correct();
-      vibrate(myStreak >= 3 ? [30, 40, 30] : 40);
-      const kind = currentTheme() === 'vice' ? 'coin' : currentTheme() === 'candy' ? 'candy' : 'star';
-      Engine.burst(correctBtn, { kind, count: 18 + myStreak * 4, power: 1 });
-      Engine.burst(correctBtn, { kind: 'spark', count: 20, power: 1.1 });
-      Engine.shockwave(correctBtn, '#3ee08f');
-      Engine.floatText(correctBtn, `+${myDelta}`, { cls: 'gold' });
-      if (myStreak >= 2) showCombo(c.combo[Math.min(myStreak - 1, c.combo.length - 1)], `+${myBonus} bonus`);
-      if (myStreak >= 4) Engine.flash('rgba(255,210,63,0.35)');
-      if (myStreak >= 3) { Audience.setMood('cheer', 3400); SoundFX.cheer(); }
-      else { Audience.setMood('clap', 2600); SoundFX.applause(2.2, 0.14); }
-    } else {
-      refs.revealBanner.innerHTML = escapeHtml(wasFrozen ? c.frozen : selectedChoice === null ? c.timeout : c.wrong) + '<span class="sub">+0 points</span>';
-      refs.revealBanner.classList.add('bad');
-      if (!wasFrozen) {
-        SoundFX.wrong();
-        vibrate([30, 50, 30]);
-        Engine.shake(refs.questionCard);
-        Engine.flash('rgba(255,60,90,0.28)');
-        if (selectedChoice !== null) Engine.floatText(buttons[selectedChoice], '✗', { cls: 'bad' });
-      }
-      if (correctCount === 0) { Audience.setMood('gasp', 1900); SoundFX.gasp(); }
-      else if (!wasFrozen) { Audience.setMood('groan', 2000); SoundFX.groan(); }
-      else { Audience.setMood('clap', 1800); SoundFX.applause(1.4, 0.08); }
-    }
-
-    // A rival on a hot streak makes the room feel it.
-    leaderboard.forEach((p) => {
-      const s = streaks && streaks[p.playerId];
-      if (p.playerId !== myId && s >= 3) pushFeed(`🔥 ${escapeHtml(p.avatar || '')} ${escapeHtml(p.name)} is on a ${s} streak`);
-    });
-
-    refs.miniLeaderboard.classList.remove('hidden');
-    renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
-    renderLiveBoard();
-    rankChanges = {};
-    updateStreakChip();
-    refs.answerLockedMsg.classList.add('hidden');
-    refs.lifelineBtn.disabled = true;
-    refs.pollBtn.disabled = true;
-  }
-
-  function showCombo(text, sub) {
-    refs.comboBurst.innerHTML = `${escapeHtml(text)}<span class="sub">${escapeHtml(sub)}</span>`;
-    refs.comboBurst.classList.remove('hidden');
-    replayAnimation(refs.comboBurst);
-    clearTimeout(comboTimer);
-    comboTimer = setTimeout(() => refs.comboBurst.classList.add('hidden'), 1400);
-  }
-
-  function showPowerPrompt(type, opponents, decisionEndsAt, serverNow) {
-    pendingActiveType = type;
-    if (serverNow) clockOffset = serverNow - Date.now();
-    refs.powerModalTitle.textContent = type === 'freeze' ? '🥶 You can freeze!' : '⚡ You can steal!';
-    refs.powerModalDesc.textContent =
-      type === 'freeze'
-        ? 'You answered fastest and correctly. Freeze one opponent out of the next question, or skip.'
-        : 'You answered fastest and correctly. Take 150 points from one opponent, or skip.';
-
-    refs.powerOpponents.innerHTML = '';
-    opponents.forEach((o) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = type === 'freeze' ? `${o.avatar || ''} ${o.name}` : `${o.avatar || ''} ${o.name} — ${o.score} pts`;
-      btn.onclick = () => {
-        const event = type === 'freeze' ? EVENTS.FREEZE_CHOOSE : EVENTS.STEAL_CHOOSE;
-        socket.emit(event, { targetPlayerId: o.playerId });
-        SoundFX.click();
-        refs.powerModal.classList.add('hidden');
-        if (powerRAF) cancelAnimationFrame(powerRAF);
-      };
-      refs.powerOpponents.appendChild(btn);
-    });
-    refs.powerModal.classList.remove('hidden');
-    startPowerCountdown(decisionEndsAt);
-  }
-
-  refs.powerSkipBtn.addEventListener('click', () => {
-    const event = pendingActiveType === 'freeze' ? EVENTS.FREEZE_CHOOSE : EVENTS.STEAL_CHOOSE;
-    socket.emit(event, { targetPlayerId: null });
-    refs.powerModal.classList.add('hidden');
-    if (powerRAF) cancelAnimationFrame(powerRAF);
-  });
-
-  socket.on(EVENTS.STEAL_PROMPT, ({ opponents, decisionEndsAt, serverNow }) => showPowerPrompt('steal', opponents, decisionEndsAt, serverNow));
-  socket.on(EVENTS.FREEZE_PROMPT, ({ opponents, decisionEndsAt, serverNow }) => showPowerPrompt('freeze', opponents, decisionEndsAt, serverNow));
-
-  socket.on(EVENTS.STEAL_WAITING, ({ chooserName }) => {
-    refs.powerWaitingBanner.classList.remove('hidden');
-    refs.powerWaitingBanner.textContent = `⚡ Waiting for ${chooserName} to decide whether to steal…`;
-  });
-  socket.on(EVENTS.FREEZE_WAITING, ({ chooserName }) => {
-    refs.powerWaitingBanner.classList.remove('hidden');
-    refs.powerWaitingBanner.textContent = `🥶 Waiting for ${chooserName} to decide whether to freeze…`;
-  });
-
-  function afterPowerResult(leaderboard) {
-    const oldRank = {};
-    players.forEach((p, i) => { oldRank[p.playerId] = i; });
-    rankChanges = {};
-    leaderboard.forEach((p, i) => {
-      if (oldRank[p.playerId] !== undefined && oldRank[p.playerId] !== i) rankChanges[p.playerId] = oldRank[p.playerId] - i;
-    });
-    players = leaderboard;
-    syncMyStats();
-    renderPlayerRows(refs.miniLeaderboard, leaderboard.slice(0, 6), true);
-    refs.miniLeaderboard.classList.remove('hidden');
-    renderLiveBoard();
-    rankChanges = {};
-    clearTimeout(powerResultTimer);
-    powerResultTimer = setTimeout(() => refs.powerResultBanner.classList.add('hidden'), 3800);
-  }
-
-  socket.on(EVENTS.STEAL_RESULT, ({ stealerId, targetId, pointsMoved, leaderboard }) => {
-    refs.powerModal.classList.add('hidden');
-    refs.powerWaitingBanner.classList.add('hidden');
-    const stealer = leaderboard.find((p) => p.playerId === stealerId);
-    const target = targetId ? leaderboard.find((p) => p.playerId === targetId) : null;
-
-    refs.powerResultBanner.classList.remove('hidden', 'good', 'frozen');
-    replayAnimation(refs.powerResultBanner);
-    if (pointsMoved > 0 && stealer && target) {
-      refs.powerResultBanner.textContent = `⚡ ${stealer.name} stole ${pointsMoved} points from ${target.name}!`;
-      refs.powerResultBanner.classList.add('good');
-      SoundFX.steal();
-      Engine.flash('rgba(255,210,63,0.3)');
-      Engine.burst(refs.powerResultBanner, { kind: 'coin', count: 22 });
-      pushFeed(`⚡ ${escapeHtml(stealer.name)} stole ${pointsMoved} from ${escapeHtml(target.name)}`);
-      if (target.playerId === mySession.playerId) { vibrate([20, 40, 20, 40, 20]); Engine.shake(refs.questionCard); }
-      else if (stealer.playerId === mySession.playerId) vibrate(60);
-    } else {
-      refs.powerResultBanner.textContent = `${stealer ? stealer.name : 'No one'} chose not to steal.`;
-    }
-    afterPowerResult(leaderboard);
-  });
-
-  socket.on(EVENTS.FREEZE_RESULT, ({ freezerId, targetId, targetName, leaderboard }) => {
-    refs.powerModal.classList.add('hidden');
-    refs.powerWaitingBanner.classList.add('hidden');
-    const freezer = leaderboard.find((p) => p.playerId === freezerId);
-
-    refs.powerResultBanner.classList.remove('hidden', 'good', 'frozen');
-    replayAnimation(refs.powerResultBanner);
-    if (targetId && freezer) {
-      refs.powerResultBanner.textContent = `🥶 ${freezer.name} froze ${targetName} out of the next question!`;
-      refs.powerResultBanner.classList.add('frozen');
-      SoundFX.freeze();
-      Engine.flash('rgba(127,212,255,0.3)');
-      Engine.burst(refs.powerResultBanner, { kind: 'star', count: 20, colors: ['#b8ecff', '#7fd4ff', '#ffffff'] });
-      pushFeed(`🥶 ${escapeHtml(freezer.name)} froze ${escapeHtml(targetName)}`);
-      if (targetId === mySession.playerId) vibrate([20, 60, 20, 60]);
-    } else {
-      refs.powerResultBanner.textContent = `${freezer ? freezer.name : 'No one'} chose not to freeze anyone.`;
-    }
-    afterPowerResult(leaderboard);
-  });
-
   socket.on(EVENTS.GAME_FINAL, (data) => {
-    const { leaderboard, podium } = data;
-    if (questionRAF) cancelAnimationFrame(questionRAF);
-    players = leaderboard;
-    teamMode = data.teamMode || 0;
+    players = data.leaderboard;
+    hideCountdown();
+    if (VoiceChat.active) VoiceChat.disable();
+    refreshMicButtons();
     showView('final');
     renderFinal(data);
-    recordDailyBest(leaderboard);
-    VoiceHost.speak(data.teams && data.teams[0] ? `Team ${data.teams[0].name} wins!` : `${leaderboard[0].name} wins!`, { queue: true });
     SoundFX.win();
     vibrate([40, 60, 40, 60, 80]);
     Engine.celebrate();
-    Engine.flash('rgba(255,255,255,0.5)');
+    Engine.flash('rgba(255,255,255,0.4)');
   });
 
-  socket.on(EVENTS.STAGE_TRANSITION, (data) => {
-    const outIds = data.eliminated.map((e) => e.playerId);
-    players = data.leaderboard;
-    syncMyStats();
-    refs.powerModal.classList.add('hidden');
-    refs.powerResultBanner.classList.add('hidden');
-    refs.powerWaitingBanner.classList.add('hidden');
-    const names = data.stagePlan.names;
-    const iOut = outIds.includes(mySession.playerId);
-    if (iOut) iAmEliminated = true;
-
-    stageInfo = { index: data.nextStage, sub: 0, count: data.stagePlan.count, per: data.stagePlan.per, names };
-    idleQuestionPanel(`${names[data.completedStage]} complete — survivors move to ${names[data.nextStage]}`);
-    refs.spectatorMsg.classList.toggle('hidden', !iAmEliminated);
-    Audience.setMood('tense', 2000);
-    VoiceHost.speak(`${names[data.completedStage]} complete.`, { queue: true });
-    showStageBanner(outIds.length ? `${names[data.completedStage]} cleared · zone closing` : `${names[data.completedStage]} cleared`, outIds.length ? '' : 'safe', 2800);
-    transitionTimers.push(setTimeout(() => {
-      const outTeams = teamMode ? [...new Set(players.filter((pl) => outIds.includes(pl.playerId)).map((pl) => pl.team))].map((tm) => `Team ${TEAM_NAMES[tm]}`) : [];
-      const tail = teamMode && outTeams.length ? `${outTeams.join(' & ')} eliminated` : `${outIds.length} eliminated, ${data.advancing.length} advance`;
-      showStageBanner(iOut ? `☠ You are out · #${data.eliminated.find((e) => e.playerId === mySession.playerId).place}` : `${names[data.nextStage]} — ${tail}`, iOut ? '' : 'safe', 3400);
-    }, 2900));
-    transitionTimers.push(setTimeout(() => {
-      updateAlive();
-      renderLevelMap(false);
-      renderLiveBoard();
-    }, data.durationMs - 300));
-
-    Arena.transition(data);
-    renderLiveBoard();
+  socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
+    players = p;
+    showLobby();
   });
 
-  // ---- City Mission: We Gotta Go — the city, the haunted mansion and the bladder ----
+  // ---- The match: the open city and the haunted mansion ----
   socket.on(EVENTS.CITY_START, (payload) => startCityView(payload));
 
   socket.on(EVENTS.CITY_STATE, (snap) => {
@@ -1821,302 +601,52 @@
     lastSnap = snap;
     const w = worldOf(snap);
     if (w !== myWorld) switchWorld(w);
-    City.applyState(toCitySnap(snap));
+    City.applyState(snap); // also feeds the HUD through the onState hook
     if (mazeMounted) Maze3D.applyState(toMazeSnap(snap));
-    updateCityHud(snap);
   });
-
-  socket.on(EVENTS.CITY_QUIZ, (q) => {
-    if (activeView === 'city' || activeView === 'maze') openQuiz(q);
-  });
-
-  socket.on(EVENTS.CITY_RESULT, (r) => handleQuizResult(r));
 
   socket.on(EVENTS.CITY_FX, (e) => {
     if (activeView !== 'city' && activeView !== 'maze') return;
-    if (e.type === 'zap') {
-      City.zapFx(e.from, e.to, e.blocked);
-      if (e.to === mySession.playerId && !e.blocked) {
-        SoundFX.freeze();
-        vibrate([60, 40, 60]);
-        Engine.flash('rgba(255,224,77,0.3)');
-      } else SoundFX.steal();
-      return;
-    }
-    bodyFx(e);
+    City.fx(e);
+    if (mazeMounted) Maze3D.fx(e);
+    combatSound(e);
   });
 
   socket.on(EVENTS.CITY_FEED, ({ text }) => {
     if (activeView === 'city' || activeView === 'maze') pushFeed(escapeHtml(text));
   });
 
-  socket.on(EVENTS.TEAM_UPDATE, ({ teamMode: tm }) => {
-    teamMode = tm || 0;
-    if (activeView === 'lobby') {
-      renderPlayerRows(refs.lobbyPlayers, players, false, true);
-      renderTeamControls();
-    }
-  });
-
-  socket.on(EVENTS.REACTION_SHOW, ({ playerId, emoji }) => {
-    if (activeView !== 'question') return;
-    Arena.react(playerId, emoji);
-    if (playerId !== mySession.playerId) SoundFX.buzz();
-  });
-
-  socket.on(EVENTS.FANS_UPDATE, ({ fans }) => Arena.setFans(fans));
-
   socket.on(EVENTS.BOT_SAY, ({ playerId, text }) => {
-    if (activeView === 'question') Arena.say(playerId, text);
-    else if (activeView === 'city') City.say(playerId, text);
+    if (activeView === 'city') City.say(playerId, text);
     else if (activeView === 'maze' && mazeMounted) Maze3D.say(playerId, text);
   });
 
-  socket.on(EVENTS.GAME_RESET_TO_LOBBY, ({ players: p }) => {
-    players = p;
-    resetArenaState();
-    myLifelines = 0;
-    showLobby();
-  });
-
-  // ---- UI wiring ----
-  refs.joinCodeInput.addEventListener('input', () => {
-    refs.joinCodeInput.value = refs.joinCodeInput.value.toUpperCase().replace(/[^A-Z]/g, '');
-  });
-
-  function requireName() {
-    const name = refs.nameInput.value.trim();
-    if (!name) {
-      showToast('Enter your name first.');
-      Engine.shake(refs.nameInput.closest('.panel'));
-      refs.nameInput.focus();
-      return null;
-    }
-    return name;
+  const worldOf = (snap) => {
+    const m = snap.p.find((e) => e[0] === cityMeIdx);
+    return m ? m[11] || 0 : 0;
+  };
+  // the mansion renderer only shows the people who are inside it
+  function toMazeSnap(snap) {
+    const mine = snap.p.find((e) => e[0] === cityMeIdx) || [];
+    const mask = mine[12] || 0;
+    const open = [];
+    if (mask & 1) open.push('A');
+    if (mask & 2) open.push('B');
+    if (mask & 4) open.push('C');
+    return {
+      t: snap.t,
+      p: snap.p.map((e) => (e[11] === 0 ? [e[0], e[1], e[2], e[3], e[4] | 64, ...e.slice(5)] : e)),
+      g: snap.g || [],
+      b: mine[10] || 0,
+      open,
+      done: snap.p.filter((e) => e[4] & 32).length,
+    };
   }
 
-  refs.createBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    quickPending = false;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: refs.categorySelect.value });
-  });
-
-  refs.quickBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    if (refs.categorySelect.value === 'custom') {
-      showToast('Quick Play needs a ready-made category. For Study Mode, create a room.');
-      return;
-    }
-    quickPending = true;
-    quickBotsWanted = 1;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: refs.categorySelect.value });
-  });
-
-  function readDaily() {
-    try { return JSON.parse(localStorage.getItem(DAILY_KEY) || 'null'); } catch (e) { return null; }
+  function fmtClock(ms) {
+    const t = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
   }
-  function renderDailyChip() {
-    const d = readDaily();
-    refs.dailyChip.textContent = d && d.date === dailyDate ? `Best ${d.best}` : 'New today';
-  }
-  function recordDailyBest(board) {
-    if (currentCategory !== 'daily' || !dailyDate) return;
-    const mine = board.find((p) => p.playerId === mySession.playerId);
-    if (!mine) return;
-    const prev = readDaily();
-    const best = prev && prev.date === dailyDate ? Math.max(prev.best, mine.score) : mine.score;
-    safeSet(DAILY_KEY, JSON.stringify({ date: dailyDate, best }));
-    renderDailyChip();
-  }
-
-  refs.cityBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    quickPending = true;
-    quickBotsWanted = 3;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'city' });
-  });
-
-  refs.dailyBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    quickPending = true;
-    quickBotsWanted = 1;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar, category: 'daily' });
-  });
-
-  refs.voiceBtn.classList.toggle('on', VoiceHost.isOn());
-  refs.voiceBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    const next = !VoiceHost.isOn();
-    VoiceHost.set(next);
-    refs.voiceBtn.classList.toggle('on', next);
-    showToast(next ? '🎙️ Voice host on' : 'Voice host off');
-    if (next) VoiceHost.speak('Voice host is on. Good luck!');
-  });
-
-  refs.joinBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    const name = requireName();
-    if (!name) return;
-    const code = refs.joinCodeInput.value.trim().toUpperCase();
-    if (code.length !== 4) {
-      Engine.shake(refs.joinCodeInput);
-      return showToast('Enter the 4-letter room code.');
-    }
-    quickPending = false;
-    mySession.name = name;
-    mySession.avatar = selectedAvatar;
-    socket.emit(EVENTS.ROOM_JOIN, { roomCode: code, name, avatar: selectedAvatar });
-  });
-
-  refs.joinCodeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') refs.joinBtn.click(); });
-  refs.nameInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    if (refs.joinCodeInput.value.trim().length === 4) refs.joinBtn.click();
-    else refs.createBtn.click();
-  });
-
-  refs.addBotBtn.addEventListener('click', () => {
-    SoundFX.click();
-    socket.emit(EVENTS.BOT_ADD, { difficulty: selectedTier });
-  });
-
-  refs.lifelineBtn.addEventListener('click', () => useLifeline('fifty'));
-  refs.pollBtn.addEventListener('click', () => useLifeline('poll'));
-
-  refs.generateBtn.addEventListener('click', () => {
-    SoundFX.click();
-    const category = refs.studyCategorySelect.value;
-    const subcategory = refs.studySubcategorySelect.value;
-    if (!category) return showToast('Pick a category first.');
-    const subject = !subcategory || subcategory === 'General (mixed topics)' ? category : `${category}: ${subcategory}`;
-    const typed = refs.notesText.value.trim();
-    let notes = null;
-    if (notesPayload) notes = { ...notesPayload, text: typed || undefined };
-    else if (typed) notes = { text: typed, name: 'My notes' };
-    socket.emit(EVENTS.QUESTIONS_GENERATE, { levelKey: refs.levelSelect.value, subject, count: 10, language: refs.aiLangSelect.value, notes });
-  });
-
-  function updateNotesChip() {
-    if (notesPayload) {
-      refs.notesChip.innerHTML = `📎 ${escapeHtml(notesPayload.name)} attached · <a href="#" id="notesClear">remove</a>`;
-      refs.notesChip.classList.remove('hidden');
-      const clear = document.getElementById('notesClear');
-      if (clear) clear.onclick = (e) => { e.preventDefault(); notesPayload = null; refs.notesFile.value = ''; updateNotesChip(); };
-    } else {
-      refs.notesChip.classList.add('hidden');
-    }
-  }
-
-  refs.notesFile.addEventListener('change', async () => {
-    const f = refs.notesFile.files[0];
-    if (!f) return;
-    if (f.size > 3 * 1024 * 1024) {
-      refs.notesFile.value = '';
-      return showToast('That file is over 3 MB — use a smaller one.');
-    }
-    try {
-      if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        let bin = '';
-        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-        notesPayload = { pdf: btoa(bin), name: f.name };
-      } else {
-        refs.notesText.value = (await f.text()).slice(0, 20000);
-        notesPayload = null;
-      }
-      updateNotesChip();
-      refs.notesBox.open = true;
-    } catch (e) {
-      showToast('Could not read that file.');
-    }
-  });
-
-  refs.addQuestionBtn.addEventListener('click', () => {
-    SoundFX.click();
-    const text = refs.manualQText.value.trim();
-    const choices = [refs.manualOpt0.value.trim(), refs.manualOpt1.value.trim(), refs.manualOpt2.value.trim(), refs.manualOpt3.value.trim()];
-    if (!text) return showToast('Enter the question text.');
-    if (choices.some((c) => !c)) return showToast('Fill in all 4 options.');
-    const correctRadio = document.querySelector('input[name="manualCorrect"]:checked');
-    const correctIndex = correctRadio ? Number(correctRadio.value) : 0;
-    socket.emit(EVENTS.QUESTION_ADD, { text, choices, correctIndex });
-    refs.manualQText.value = '';
-    refs.manualOpt0.value = '';
-    refs.manualOpt1.value = '';
-    refs.manualOpt2.value = '';
-    refs.manualOpt3.value = '';
-    document.getElementById('manualCorrect0').checked = true;
-    refs.manualQText.focus();
-  });
-
-  refs.copyCodeBtn.addEventListener('click', async () => {
-    SoundFX.click();
-    const code = mySession.roomCode || '';
-    try {
-      await navigator.clipboard.writeText(code);
-    } catch (e) {
-      // Clipboard API unavailable (older browser, insecure context) — fall back to a hidden textarea.
-      const ta = document.createElement('textarea');
-      ta.value = code;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch (e2) { /* nothing more we can do */ }
-      document.body.removeChild(ta);
-    }
-    refs.copyCodeBtn.textContent = 'Copied!';
-    refs.copyCodeBtn.classList.add('copied');
-    setTimeout(() => {
-      refs.copyCodeBtn.textContent = 'Copy';
-      refs.copyCodeBtn.classList.remove('copied');
-    }, 1600);
-  });
-  refs.startBtn.addEventListener('click', () => {
-    SoundFX.unlock();
-    SoundFX.click();
-    socket.emit(EVENTS.GAME_START);
-  });
-  refs.playAgainBtn.addEventListener('click', () => {
-    SoundFX.click();
-    socket.emit(EVENTS.GAME_PLAY_AGAIN);
-  });
-
-  // ---- City Mission (open world) ----
-  City.mount(refs.cityCanvas, refs.miniMap, refs.joy, refs.joyKnob, {
-    sendInput: (dx, dy) => socket.emit(EVENTS.CITY_INPUT, { dx, dy }),
-    zap: () => socket.emit(EVENTS.CITY_ZAP),
-    gps: updateGps,
-  });
-  refs.zapBtn.addEventListener('click', () => socket.emit(EVENTS.CITY_ZAP));
-
-  function updateTopbarHeight() {
-    const tb = document.querySelector('.topbar');
-    if (tb) document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
-  }
-  updateTopbarHeight();
-  window.addEventListener('resize', updateTopbarHeight);
 
   // A compass arrow to the current target when it is off-screen, like a GPS.
   function updateGps(target, screen, meWorld) {
@@ -2144,38 +674,6 @@
     refs.cityGps.classList.remove('hidden');
   }
 
-  function fmtClock(ms) {
-    const t = Math.max(0, Math.ceil(ms / 1000));
-    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-  }
-
-  /* ---- one game, two worlds: the open city and the haunted mansion ---- */
-
-  const worldOf = (snap) => {
-    const m = snap.p.find((e) => e[0] === cityMeIdx);
-    return m ? m[9] || 0 : 0;
-  };
-  // players inside the mansion are hidden from the city renderer, and the other way round
-  function toCitySnap(snap) {
-    return { ...snap, p: snap.p.map((e) => (e[9] === 1 ? [e[0], e[1], e[2], e[3], e[4] | 64, ...e.slice(5)] : e)) };
-  }
-  function toMazeSnap(snap) {
-    const mine = snap.p.find((e) => e[0] === cityMeIdx) || [];
-    const mask = mine[10] || 0;
-    const open = [];
-    if (mask & 1) open.push('A');
-    if (mask & 2) open.push('B');
-    if (mask & 4) open.push('C');
-    return {
-      t: snap.t,
-      p: snap.p.map((e) => (e[9] === 0 ? [e[0], e[1], e[2], e[3], e[4] | 64, ...e.slice(5)] : e)),
-      g: snap.g || [],
-      b: mine[8] || 0,
-      open,
-      done: snap.p.filter((e) => e[4] & 32).length,
-    };
-  }
-
   function boardHtml(snap) {
     const total = cityInfo.missions.length;
     return snap.p
@@ -2187,8 +685,8 @@
         const info = cityInfo.players[e[0]];
         const done = e[4] & 32;
         const talk = speakingIds.has(info.playerId) || (e[0] === cityMeIdx && speakingIds.has('__me')) ? ' 🎙️' : '';
-        const where = e[9] === 1 ? '🏚️' : '';
-        return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))}${talk} <b>${done ? '🏁' : `${where}${e[5]}/${total}`}</b> ${e[6]}</div>`;
+        const where = e[11] === 1 ? '🏚️' : e[4] & 2048 ? '💀' : '';
+        return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${done ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))}${talk} <b>${done ? '🏁' : `${where}${e[5]}/${total}`}</b> ${money(e[6])}</div>`;
       })
       .join('');
   }
@@ -2212,16 +710,18 @@
 
   function setBladder(pct) {
     const p = Math.max(0, Math.min(100, pct));
-    for (const [face, fill, num, box] of [
+    const face = bladderFace(p);
+    for (const [f, fill, num, box] of [
       [refs.cbFace, refs.cbFill, refs.cbPct, refs.cityBladder],
       [refs.blFace, refs.blFill, refs.blPct, refs.bladder],
     ]) {
       fill.style.width = `${p}%`;
       num.textContent = `${Math.round(p)}%`;
-      face.textContent = bladderFace(p);
+      if (face !== lastFace) f.textContent = face;
       box.classList.toggle('warn', p >= 55 && p < 80);
       box.classList.toggle('panic', p >= 80);
     }
+    lastFace = face;
     if (p >= 80 && !setBladder.warned) {
       setBladder.warned = true;
       SoundFX.siren();
@@ -2230,36 +730,97 @@
     bladderCues(p);
   }
 
-  function updateCityHud(snap) {
+  const setBar = (fill, num, v) => {
+    fill.style.width = `${Math.max(0, Math.min(100, v))}%`;
+    num.textContent = Math.round(v);
+  };
+
+  // everything on the HUD comes from my row of the snapshot (City.me) plus the leaderboard
+  function updateHud(m, snap) {
     if (!cityInfo || !snap) return;
-    const mine = snap.p.find((e) => e[0] === cityMeIdx);
     const total = cityInfo.missions.length;
-    if (mine) {
-      const [, , , , flags, mission, , blaster, bladder] = mine;
-      const m = cityInfo.missions[mission];
-      const wcHint = bladder >= 55 && (mine[9] || 0) === 0 ? '<small class="wc-hint">🚽 Desperate? Find a blue public toilet stall — it opens with a quiz!</small>' : '';
-      refs.cityMission.innerHTML = m
-        ? `MISSION ${mission + 1}/${total} · ${m.icon} ${escapeHtml(m.name)}<small>${escapeHtml(m.line)} — a quiz gate guards the door</small>${wcHint}`
-        : '🏁 All missions done! Waiting for the others…';
-      const chips = [];
-      if (blaster > 0) chips.push(`<span class="ci">🔫 ×${blaster}</span>`);
-      if (flags & 4) chips.push('<span class="ci">🚗 Turbo</span>');
-      if (flags & 2) chips.push('<span class="ci">🛡️ Shield</span>');
-      if (flags & 1) chips.push('<span class="ci warn">⭐ Stunned</span>');
-      if (flags & 128) chips.push('<span class="ci warn">💩 Oops…</span>');
-      refs.cityItems.innerHTML = chips.join('');
-      refs.zapBtn.classList.toggle('hidden', blaster <= 0 || (mine[9] || 0) === 1);
-      refs.zapCount.textContent = blaster;
-      setBladder(bladder || 0);
-      // the mansion panel: which keys are won
-      const mask = mine[10] || 0;
-      const keyChips = ['A', 'B', 'C'].map((L, i) => {
-        const got = mask & (1 << i);
-        return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + L + ' ✓' : '🔑 ' + L.toLowerCase()}</span>`;
-      });
-      refs.mazeObj.innerHTML = `<div>🏚️ Haunted Mansion — find the 🚽 exit!</div><small>Win each key with a quiz · ghosts add to your bladder · Space or 📢 shout scares them</small><div class="maze-keys">${keyChips.join('')}</div>`;
+    const inMansion = m.world === 1;
+    const dead = !!(m.flags & 2048);
+    const hurt = !!(m.flags & 8192);
+    const now = Date.now() + cityOffset;
+
+    // mission text
+    const mission = cityInfo.missions[m.mission];
+    const wcHint = m.bladder >= 55 && !inMansion ? '<small class="wc-hint">🚽 Desperate? Hold still at a blue public toilet stall on a street corner!</small>' : '';
+    refs.cityMission.innerHTML = mission
+      ? `MISSION ${m.mission + 1}/${total} · ${mission.icon} ${escapeHtml(mission.name)}<small>${escapeHtml(mission.line)} — hold still in the ring</small>${wcHint}`
+      : `🏁 All missions done!<small>Grab cash, fight rivals — most money when the clock stops wins</small>${wcHint}`;
+    const keyChips = ['A', 'B', 'C'].map((L, i) => {
+      const got = m.keys & (1 << i);
+      return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + L + ' ✓' : '🔑 ' + L.toLowerCase()}</span>`;
+    });
+    const keyHtml = `<div>🏚️ Haunted Mansion — find the 🚽 exit!</div><small>Touch each key (+$300) · ghosts add to your bladder · F = flashlight · shout to scare them</small><div class="maze-keys">${keyChips.join('')}</div>`;
+    if (keyHtml !== prev.key) {
+      prev.key = keyHtml;
+      refs.mazeObj.innerHTML = keyHtml;
     }
-    const left = snap.endsAt - (Date.now() + cityOffset);
+
+    // vitals
+    setBar(refs.hpFill, refs.hpNum, m.hp);
+    setBar(refs.arFill, refs.arNum, m.armor);
+    refs.mhpFill.style.width = `${Math.max(0, m.hp)}%`;
+    refs.mhpNum.textContent = Math.round(m.hp);
+    refs.hpFill.parentNode.classList.toggle('low', m.hp < 30 && !dead);
+    refs.cashNum.textContent = money(m.cash);
+    refs.mcashNum.textContent = money(m.cash);
+    refs.weaponChip.textContent = `${WEAPON_LABEL[m.weapon] || '🥊 Fists'}${m.ammo >= 0 ? ` · ${m.ammo}` : ''}`;
+    refs.fireBtn.textContent = WEAPON_ICON[m.weapon] || '👊';
+    refs.mazeFireBtn.textContent = WEAPON_ICON[m.weapon] || '👊';
+
+    // wanted
+    const wantedHtml = m.wanted > 0 ? '⭐'.repeat(m.wanted) + '<span class="dim">' + '☆'.repeat(Math.max(0, 5 - m.wanted)) + '</span>' : '';
+    refs.cityWanted.innerHTML = wantedHtml;
+    refs.cityWanted.classList.toggle('on', m.wanted > 0);
+    if (m.wanted > 0 && !inMansion && now - prev.siren > 3200) {
+      prev.siren = now;
+      SoundFX.policeSiren(0.35 + m.wanted * 0.06);
+    }
+
+    // hold-still progress at a door
+    const holding = m.hold > 0 && !dead && !inMansion;
+    refs.holdWrap.classList.toggle('hidden', !holding);
+    if (holding) {
+      refs.holdFill.style.width = `${m.hold}%`;
+      refs.holdLabel.textContent = 'Hold still…';
+    }
+
+    // getting hurt / dying / coming back
+    if ((hurt && !prev.hurt) || m.hp < prev.hp - 1) {
+      const k = Math.min(1, 0.35 + (prev.hp - m.hp) / 40);
+      for (const f of [refs.hurtFlash, refs.mazeHurt]) {
+        f.style.transition = 'none';
+        f.style.opacity = String(k);
+        void f.offsetWidth;
+        f.style.transition = 'opacity 0.5s ease-out';
+        f.style.opacity = '0';
+      }
+    }
+    if (m.hp < 30 && !dead && now - prev.heart > 1100) {
+      prev.heart = now;
+      SoundFX.heartbeat();
+    }
+    if (dead && !prev.dead) {
+      SoundFX.wasted();
+      SoundFX.voice('hurt', 1);
+      vibrate([120, 60, 200]);
+      Engine.flash('rgba(160,0,20,0.35)');
+      refs.wastedSub.textContent = 'Respawning at the hospital…';
+    }
+    if (!dead && prev.dead) {
+      SoundFX.respawn();
+    }
+    refs.wasted.classList.toggle('hidden', !dead);
+    prev.dead = dead;
+    prev.hurt = hurt;
+    prev.hp = m.hp;
+
+    setBladder(m.bladder || 0);
+    const left = snap.endsAt - now;
     refs.cityTimer.textContent = fmtClock(left);
     refs.mazeTimer.textContent = fmtClock(left);
     refs.cityTimer.classList.toggle('urgent', left < 30000);
@@ -2272,22 +833,23 @@
     cityInfo = payload;
     cityOffset = payload.serverNow - Date.now();
     cityMeIdx = payload.players.findIndex((pl) => pl.playerId === mySession.playerId);
-    resetArenaState();
     hideCountdown();
-    leaveStage();
-    closeQuiz();
-    refs.cityLock.classList.add('hidden');
-    refs.mazeLock.classList.add('hidden');
     refs.cityHint.classList.remove('gone');
-    setTimeout(() => refs.cityHint.classList.add('gone'), 9000);
+    setTimeout(() => refs.cityHint.classList.add('gone'), 12000);
+    refs.mazeHint.classList.remove('gone');
     myWorld = 0;
     lastBladder = 0;
+    lastFace = '';
+    prev.dead = false;
+    prev.hp = 100;
+    prev.hurt = false;
+    prev.key = '';
     lastSnap = payload.snapshot;
     flashCooling = false;
     refs.flashBtn.classList.remove('cooling');
+    refs.wasted.classList.add('hidden');
     showView('city');
-    updateTopbarHeight();
-    City.start({ ...payload, snapshot: toCitySnap(payload.snapshot) }, mySession.playerId);
+    City.start(payload, mySession.playerId);
     // build the mansion in the background so walking in is instant
     if (ensureMaze()) {
       Maze3D.start(
@@ -2298,8 +860,8 @@
       );
     }
     SoundFX.prepareBody();
-    updateCityHud(payload.snapshot);
     if (worldOf(payload.snapshot) === 1) switchWorld(1);
+    runCountdown(payload.startsAt, payload.serverNow);
   }
 
   function ensureMaze() {
@@ -2307,6 +869,7 @@
     try {
       Maze3D.mount(refs.mazeCanvas, refs.mazeMini, refs.mazeJoy, refs.mazeKnob, {
         sendInput: (dx, dy) => socket.emit(EVENTS.CITY_INPUT, { dx, dy }),
+        attack: (ang) => socket.emit(EVENTS.CITY_ATTACK, { ang }),
         flash: doFlash,
         danger: (k) => refs.viewMaze.style.setProperty('--danger', k.toFixed(2)),
         thunder: () => SoundFX.thunder(),
@@ -2323,23 +886,18 @@
   // step through the door of the mansion (or back out of it)
   function switchWorld(w) {
     myWorld = w;
-    closeQuiz();
-    refs.cityLock.classList.add('hidden');
-    refs.mazeLock.classList.add('hidden');
     if (w === 1) {
       City.stop();
       showView('maze');
       if (mazeMounted) Maze3D.resume();
-      updateTopbarHeight();
       refs.mazeHint.classList.remove('gone');
-      setTimeout(() => refs.mazeHint.classList.add('gone'), 9000);
+      setTimeout(() => refs.mazeHint.classList.add('gone'), 12000);
       SoundFX.door();
       SoundFX.ghost();
     } else {
       if (mazeMounted) Maze3D.stop();
       showView('city');
       City.resume();
-      updateTopbarHeight();
     }
   }
 
@@ -2352,125 +910,115 @@
       refs.flashBtn.classList.remove('cooling');
     }, 7000);
     SoundFX.flashlight();
-    socket.emit(EVENTS.CITY_ZAP);
+    socket.emit(EVENTS.CITY_USE);
   }
   refs.flashBtn.addEventListener('click', doFlash);
 
-  /* ---- the quiz overlay (the same for city gates, mansion keys and public toilets) ---- */
+  /* ---- sounds for everything that happens around you ---- */
 
-  function qEls() {
-    return activeView === 'maze'
-      ? { box: refs.mazeQuiz, head: refs.mqHead, bar: refs.mqBar, q: refs.mqQ, choices: refs.mqChoices, result: refs.mqResult, lock: refs.mazeLock }
-      : { box: refs.cityQuiz, head: refs.cqHead, bar: refs.cqBar, q: refs.cqQ, choices: refs.cqChoices, result: refs.cqResult, lock: refs.cityLock };
+  // how loud something is for me: full for my own doings, fading with distance, silent from the other world
+  function distVolume(x, y, range, worldOfSource) {
+    const m = City.me;
+    if (!m.init) return 0.5;
+    if (worldOfSource != null && (worldOfSource | 0) !== (m.world | 0)) return 0;
+    const d = Math.hypot(x - m.x, y - m.y);
+    return d > range ? 0 : Math.max(0.1, 1 - d / range);
   }
-
-  function closeQuiz() {
-    cancelAnimationFrame(quizRAF);
-    refs.cityQuiz.classList.add('hidden');
-    refs.mazeQuiz.classList.add('hidden');
+  function panOf(x) {
+    const m = City.me;
+    const c = City.cam;
+    if (!m.init || !c) return 0;
+    return Math.max(-1, Math.min(1, ((x - m.x) * Math.cos(c.yaw)) / 500));
   }
-
-  function openQuiz(q) {
-    const E = qEls();
-    const offsetNow = q.serverNow - Date.now();
-    E.head.textContent = q.head || `${q.mission.icon} ${q.mission.name} — answer to unlock ${q.mission.label}`;
-    E.q.textContent = q.text;
-    E.result.classList.add('hidden');
-    E.choices.innerHTML = '';
-    q.choices.forEach((c, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'cq-choice';
-      b.textContent = `${'ABCD'[i]}: ${c}`;
-      b.onclick = () => {
-        E.choices.querySelectorAll('.cq-choice').forEach((x) => { x.disabled = true; });
-        b.classList.add('selected');
-        SoundFX.lock();
-        socket.emit(EVENTS.CITY_ANSWER, { choiceIndex: i });
-      };
-      E.choices.appendChild(b);
-    });
-    E.box.classList.remove('hidden');
-    cancelAnimationFrame(quizRAF);
-    const tick = () => {
-      const left = q.endsAt - (Date.now() + offsetNow);
-      E.bar.style.width = `${Math.max(0, Math.min(1, left / 15000)) * 100}%`;
-      if (left > 0 && !E.box.classList.contains('hidden')) quizRAF = requestAnimationFrame(tick);
-    };
-    tick();
-    SoundFX.count();
-    VoiceHost.speak(q.text);
+  function playerWorld(playerId) {
+    if (!lastSnap || !cityInfo) return null;
+    const idx = cityInfo.players.findIndex((p) => p.playerId === playerId);
+    const e = lastSnap.p.find((r) => r[0] === idx);
+    return e ? e[11] || 0 : null;
   }
-
-  function floatAtMe(text, color) {
-    if (activeView === 'maze' && mazeMounted) Maze3D.floatText(text, color);
-    else City.floatText(text, color);
-  }
-
-  function handleQuizResult(r) {
-    if (r.kind === 'exit') {
-      floatAtMe(`+${r.gained}`, '#3ee08f');
-      SoundFX.combo(4);
-      return;
-    }
-    const E = qEls();
-    [...E.choices.querySelectorAll('.cq-choice')].forEach((b, i) => {
-      b.disabled = true;
-      if (i === r.correctIndex) b.classList.add('right');
-      else if (b.classList.contains('selected')) b.classList.add('wrong');
-    });
-    E.result.classList.remove('hidden', 'good', 'bad');
-    if (r.correct) {
-      E.result.classList.add('good');
-      if (r.kind === 'key') E.result.textContent = `🔑 Key won — ${r.reward ? r.reward.label : ''} is open for you! +${r.gained}`;
-      else if (r.kind === 'wc') E.result.textContent = `😌 Sweet relief! +${r.gained}`;
-      else if (r.entered) E.result.textContent = `🏚️ The gate creaks open… win 3 keys and find the toilet exit! +${r.gained}`;
-      else E.result.textContent = r.finished ? `🏁 MISSION COMPLETE — you made it! +${r.gained}` : `✅ Unlocked ${r.reward ? r.reward.label : ''}! +${r.gained}`;
-      SoundFX.combo(4);
-      if (r.kind === 'key') SoundFX.key();
-      vibrate([30, 40, 30]);
-      Engine.flash('rgba(62,224,143,0.3)');
-      floatAtMe(`+${r.gained}`, '#3ee08f');
-      if (r.finished) SoundFX.win();
-    } else {
-      E.result.classList.add('bad');
-      E.result.textContent = r.kind === 'wc' ? `❌ Wrong — the stall stays locked! Try again in a moment (${Math.round(r.lockoutMs / 1000)}s)` : `❌ Wrong — access denied. Locked out for ${Math.round(r.lockoutMs / 1000)}s`;
-      SoundFX.wrong();
-      SoundFX.toot();
-      vibrate([40, 60, 40]);
-      Engine.flash('rgba(255,60,90,0.3)');
-      clearTimeout(lockTimer);
-      const until = Date.now() + r.lockoutMs;
-      E.lock.classList.remove('hidden');
-      const tickLock = () => {
-        const left = until - Date.now();
-        if (left <= 0) return E.lock.classList.add('hidden');
-        E.lock.textContent = `🔒 Locked out — ${Math.ceil(left / 1000)}s`;
-        lockTimer = setTimeout(tickLock, 200);
-      };
-      tickLock();
-    }
-    setTimeout(closeQuiz, r.correct ? 1500 : 2200);
-  }
-
-  /* ---- body events: farts, accidents, relief, ghosts, shouts (visuals + real recorded sounds) ---- */
-
-  // how loud something is for me: full for my own body, fading with distance, silent from the other world
   function fxVolume(playerId) {
     if (playerId === mySession.playerId) return 1;
-    if (!lastSnap) return 0.4;
-    const idx = cityInfo ? cityInfo.players.findIndex((p) => p.playerId === playerId) : -1;
+    if (!lastSnap || !cityInfo) return 0.4;
+    const idx = cityInfo.players.findIndex((p) => p.playerId === playerId);
     const a = lastSnap.p.find((e) => e[0] === cityMeIdx);
     const b = lastSnap.p.find((e) => e[0] === idx);
-    if (!a || !b || (a[9] || 0) !== (b[9] || 0)) return 0;
-    const range = (a[9] || 0) === 1 ? 420 : 560;
+    if (!a || !b || (a[11] || 0) !== (b[11] || 0)) return 0;
+    const range = (a[11] || 0) === 1 ? 420 : 560;
     const d = Math.hypot(a[1] - b[1], a[2] - b[2]);
     return d > range ? 0 : Math.max(0.12, 1 - d / range);
   }
 
+  function combatSound(e) {
+    const mine = e.playerId === mySession.playerId;
+    switch (e.type) {
+      case 'shot': {
+        const v = distVolume(e.x, e.y, 760, e.playerId ? playerWorld(e.playerId) : 0);
+        if (v > 0) SoundFX.gun(e.w, mine ? 1 : v, mine ? 0 : panOf(e.x));
+        break;
+      }
+      case 'melee': {
+        const v = mine ? 1 : fxVolume(e.playerId);
+        if (v <= 0) break;
+        if (e.w === 1) e.hit ? SoundFX.bat(v) : SoundFX.swing(v);
+        else e.hit ? SoundFX.punch(v) : SoundFX.swing(v * 0.7);
+        break;
+      }
+      case 'hit': {
+        if (e.dmg <= 0) break;
+        const v = distVolume(e.x, e.y, 520, e.k === 0 ? playerWorld(e.playerId) : 0);
+        if (v > 0.1) SoundFX.hit(v);
+        if (e.k === 0 && e.playerId === mySession.playerId) {
+          if (Math.random() < 0.6) SoundFX.hurtGrunt(0.8);
+          vibrate(30);
+        }
+        break;
+      }
+      case 'boom': {
+        const v = distVolume(e.x, e.y, 1300, 0);
+        if (v > 0) SoundFX.boom(v);
+        break;
+      }
+      case 'crash': {
+        const v = distVolume(e.x, e.y, 700, 0);
+        if (v > 0.1) SoundFX.crash(v);
+        break;
+      }
+      case 'pickup':
+        if (mine) e.what === 'cash' ? SoundFX.cash() : SoundFX.pickup();
+        break;
+      case 'carjack':
+        if (mine) {
+          SoundFX.carDoor(1);
+          SoundFX.engineRev(0.9);
+          vibrate(25);
+        } else {
+          const v = fxVolume(e.playerId);
+          if (v > 0) SoundFX.carDoor(v);
+        }
+        break;
+      case 'wanted':
+        if (mine) {
+          SoundFX.wanted();
+          vibrate([40, 40, 40]);
+        }
+        break;
+      case 'heist':
+        if (mine) SoundFX.heistAlarm();
+        break;
+      case 'reward':
+        if (mine) {
+          SoundFX.cash();
+          SoundFX.pickup();
+        }
+        break;
+      case 'respawn':
+        break;
+      default:
+        bodyFx(e);
+    }
+  }
+
   function bodyFx(e) {
-    if (City.fx) City.fx(e);
-    if (mazeMounted) Maze3D.fx(e);
     const mine = e.playerId === mySession.playerId;
     const vol = fxVolume(e.playerId);
     if (e.type === 'fart') {
@@ -2501,6 +1049,48 @@
     }
   }
 
+  /* ---- controls on screen ---- */
+
+  City.mount(refs.cityCanvas, refs.miniMap, refs.joy, refs.joyKnob, {
+    sendInput: (dx, dy) => socket.emit(EVENTS.CITY_INPUT, { dx, dy }),
+    attack: (ang) => socket.emit(EVENTS.CITY_ATTACK, { ang }),
+    use: () => socket.emit(EVENTS.CITY_USE),
+    weapon: (code) => {
+      SoundFX.reload();
+      socket.emit(EVENTS.CITY_WEAPON, { code });
+    },
+    gps: updateGps,
+    onState: updateHud,
+  });
+
+  function holdButton(btn, setter) {
+    const on = (e) => {
+      SoundFX.unlock();
+      btn.classList.add('down');
+      setter(true);
+      e.preventDefault();
+    };
+    const off = () => {
+      btn.classList.remove('down');
+      setter(false);
+    };
+    btn.addEventListener('pointerdown', on);
+    btn.addEventListener('pointerup', off);
+    btn.addEventListener('pointerleave', off);
+    btn.addEventListener('pointercancel', off);
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+  holdButton(refs.fireBtn, (v) => City.setFire(v));
+  holdButton(refs.mazeFireBtn, (v) => mazeMounted && Maze3D.setFire(v));
+  refs.useBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    socket.emit(EVENTS.CITY_USE);
+  });
+  refs.weaponBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    City.cycleWeapon();
+  });
+
   /* ---- the microphone: team voice chat + shout-to-scare ---- */
 
   function refreshMicButtons() {
@@ -2515,7 +1105,7 @@
     SoundFX.unlock();
     SoundFX.click();
     if (VoiceChat.active) VoiceChat.disable();
-    else if (!(await VoiceChat.enable())) showToast('Microphone blocked — allow it in your browser to talk with your team and to scare ghosts by shouting.');
+    else if (!(await VoiceChat.enable())) showToast('Microphone blocked — allow it in your browser to talk with your gang and to scare ghosts by shouting.');
     refreshMicButtons();
   }
   refs.micBtnCity.addEventListener('click', toggleMic);
@@ -2540,14 +1130,111 @@
     error: () => {},
   });
 
+  // ---- UI wiring ----
+  refs.joinCodeInput.addEventListener('input', () => {
+    refs.joinCodeInput.value = refs.joinCodeInput.value.toUpperCase().replace(/[^A-Z]/g, '');
+  });
+
+  function requireName() {
+    const name = refs.nameInput.value.trim();
+    if (!name) {
+      showToast('Enter your name first.');
+      Engine.shake(refs.nameInput.closest('.panel'));
+      refs.nameInput.focus();
+      return null;
+    }
+    return name;
+  }
+
+  refs.createBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    quickPending = false;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar });
+  });
+
+  refs.quickBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    quickPending = true;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar });
+  });
+
+  refs.joinBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    const name = requireName();
+    if (!name) return;
+    const code = refs.joinCodeInput.value.trim().toUpperCase();
+    if (code.length !== 4) {
+      Engine.shake(refs.joinCodeInput);
+      return showToast('Enter the 4-letter room code.');
+    }
+    quickPending = false;
+    mySession.name = name;
+    mySession.avatar = selectedAvatar;
+    socket.emit(EVENTS.ROOM_JOIN, { roomCode: code, name, avatar: selectedAvatar });
+  });
+
+  refs.joinCodeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') refs.joinBtn.click(); });
+  refs.nameInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (refs.joinCodeInput.value.trim().length === 4) refs.joinBtn.click();
+    else refs.createBtn.click();
+  });
+
+  refs.addBotBtn.addEventListener('click', () => {
+    SoundFX.click();
+    socket.emit(EVENTS.BOT_ADD, { difficulty: selectedTier });
+  });
+
+  refs.copyCodeBtn.addEventListener('click', async () => {
+    SoundFX.click();
+    const code = mySession.roomCode || '';
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = code;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* nothing more we can do */ }
+      document.body.removeChild(ta);
+    }
+    refs.copyCodeBtn.textContent = 'Copied!';
+    refs.copyCodeBtn.classList.add('copied');
+    setTimeout(() => {
+      refs.copyCodeBtn.textContent = 'Copy';
+      refs.copyCodeBtn.classList.remove('copied');
+    }, 1600);
+  });
+  refs.startBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    SoundFX.click();
+    socket.emit(EVENTS.GAME_START);
+  });
+  refs.playAgainBtn.addEventListener('click', () => {
+    SoundFX.click();
+    socket.emit(EVENTS.GAME_PLAY_AGAIN);
+  });
 
   // ---- Back / leave ----
   function openLeave() {
     if (activeView === 'home') return;
-    const inMatch = activeView === 'question' || activeView === 'city' || activeView === 'maze' || (activeView === 'lobby' && !refs.countdownOverlay.classList.contains('hidden'));
+    const inMatch = activeView === 'city' || activeView === 'maze';
     refs.leaveTitle.textContent = inMatch ? 'Leave the match?' : 'Leave the room?';
     refs.leaveDesc.textContent = inMatch
-      ? "You'll drop out of this match and can't rejoin it. Your points stay on the board."
+      ? "You'll drop out of this match and can't rejoin it. Your cash stays on the board."
       : amHost() && players.filter((p) => !p.isBot).length > 1
         ? 'The host crown passes to the next player. You can rejoin later with the room code.'
         : 'You can rejoin later with the room code (if the room is still open).';
@@ -2559,7 +1246,6 @@
     refs.leaveModal.classList.add('hidden');
     socket.emit(EVENTS.ROOM_LEAVE);
     hideCountdown();
-    resetArenaState();
     quickPending = false;
     clearSession();
     players = [];
@@ -2574,7 +1260,7 @@
   // The browser/phone Back gesture does the same thing instead of leaving the page by accident.
   window.addEventListener('popstate', () => {
     if (activeView !== 'home') {
-      try { history.pushState({ trivia: 1 }, ''); } catch (e) { /* ignore */ }
+      try { history.pushState({ chaos: 1 }, ''); } catch (e) { /* ignore */ }
       openLeave();
     } else {
       historyArmed = false;
@@ -2584,23 +1270,10 @@
     if (e.key === 'Escape' && !refs.leaveModal.classList.contains('hidden')) refs.leaveModal.classList.add('hidden');
   });
 
-  // Keyboard answers on laptops/desktops: 1-4 or A-D.
-  document.addEventListener('keydown', (e) => {
-    if (activeView !== 'question' || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '').toUpperCase())) return;
-    if (document.querySelector('.modal:not(.hidden)')) return;
-    const map = { '1': 0, '2': 1, '3': 2, '4': 3, a: 0, b: 1, c: 2, d: 3 };
-    const idx = map[e.key.toLowerCase()];
-    if (idx !== undefined) selectChoice(idx);
-    else if (e.key.toLowerCase() === 'f') useLifeline('fifty');
-    else if (e.key.toLowerCase() === 'p') useLifeline('poll');
-  });
-
   function openModal(modal) {
     modal.classList.remove('hidden');
   }
-  // Tapping the dimmed backdrop closes info modals (not the power-round decision).
-  [refs.howToPlayModal, refs.hallOfFameModal, refs.themeModal].forEach((m) => {
+  [refs.howToPlayModal, refs.hallOfFameModal].forEach((m) => {
     m.addEventListener('click', (e) => { if (e.target === m) m.classList.add('hidden'); });
   });
 
@@ -2609,21 +1282,10 @@
 
   refs.hallOfFameBtn.addEventListener('click', () => {
     SoundFX.click();
-    populateLeaderboardCategorySelect();
     openModal(refs.hallOfFameModal);
     loadHallOfFame();
   });
   refs.closeHallOfFame.addEventListener('click', () => refs.hallOfFameModal.classList.add('hidden'));
-
-  function populateLeaderboardCategorySelect() {
-    if (refs.lbCategorySelect.options.length > 1) return; // already populated
-    CATEGORIES.forEach((c) => {
-      const opt = document.createElement('option');
-      opt.value = c.key;
-      opt.textContent = `${c.emoji} ${c.label}`;
-      refs.lbCategorySelect.appendChild(opt);
-    });
-  }
 
   refs.periodPills.addEventListener('click', (e) => {
     const btn = e.target.closest('.filter-pill');
@@ -2634,34 +1296,6 @@
     loadHallOfFame();
   });
 
-  refs.lbCategorySelect.addEventListener('change', () => {
-    lbCategory = refs.lbCategorySelect.value;
-    lbSubject = '';
-    refs.lbSubjectSelect.classList.add('hidden');
-    refs.lbSubjectSelect.innerHTML = '<option value="">All Subjects</option>';
-    if (lbCategory === 'custom') {
-      fetch('/api/leaderboard/subjects?category=custom')
-        .then((r) => r.json())
-        .then(({ subjects }) => {
-          if (!subjects || !subjects.length) return;
-          subjects.forEach((s) => {
-            const opt = document.createElement('option');
-            opt.value = s;
-            opt.textContent = s;
-            refs.lbSubjectSelect.appendChild(opt);
-          });
-          refs.lbSubjectSelect.classList.remove('hidden');
-        })
-        .catch(() => {});
-    }
-    loadHallOfFame();
-  });
-
-  refs.lbSubjectSelect.addEventListener('change', () => {
-    lbSubject = refs.lbSubjectSelect.value;
-    loadHallOfFame();
-  });
-
   function formatRelativeDate(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diffMs / 60000);
@@ -2669,18 +1303,14 @@
     if (mins < 60) return `${mins}m ago`;
     const hours = Math.floor(mins / 60);
     if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
+    return `${Math.floor(hours / 24)}d ago`;
   }
 
   function loadHallOfFame() {
     refs.hallOfFameList.innerHTML = '';
     refs.hallOfFameEmpty.classList.add('hidden');
     refs.hallOfFameUnavailable.classList.add('hidden');
-    const params = new URLSearchParams({ period: lbPeriod });
-    if (lbCategory) params.set('category', lbCategory);
-    if (lbSubject) params.set('subject', lbSubject);
-    fetch(`/api/leaderboard?${params.toString()}`)
+    fetch(`/api/leaderboard?period=${encodeURIComponent(lbPeriod)}`)
       .then((r) => r.json())
       .then(({ enabled, scores }) => {
         if (!enabled) {
@@ -2695,14 +1325,13 @@
           const row = document.createElement('div');
           row.className = 'hof-row';
           row.style.animationDelay = `${Math.min(i, 10) * 35}ms`;
-          const metaBits = [s.subject || s.category || '', formatRelativeDate(s.playedAt)].filter(Boolean);
           const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
           row.innerHTML =
             `<div class="hof-rank">${rank}</div>` +
             `<div class="hof-avatar">${escapeHtml(s.avatar || '')}</div>` +
             `<div class="hof-info"><div class="hof-name">${escapeHtml(s.name)}</div>` +
-            `<div class="hof-meta">${escapeHtml(metaBits.join(' · '))}</div></div>` +
-            `<div class="hof-score">${s.score}</div>`;
+            `<div class="hof-meta">${escapeHtml(formatRelativeDate(s.playedAt))}</div></div>` +
+            `<div class="hof-score">${money(s.score)}</div>`;
           refs.hallOfFameList.appendChild(row);
         });
       })
@@ -2717,28 +1346,9 @@
     if (!nowMuted) SoundFX.click();
   });
 
-  refs.themeBtn.addEventListener('click', () => {
-    SoundFX.click();
-    renderThemeSwatches();
-    openModal(refs.themeModal);
-  });
-  refs.closeThemeModal.addEventListener('click', () => refs.themeModal.classList.add('hidden'));
-  refs.autoStageToggle.checked = autoStageEnabled();
-  refs.autoStageToggle.addEventListener('change', () => {
-    safeSet(AUTO_STAGE_KEY, refs.autoStageToggle.checked ? '1' : '0');
-    if (!refs.autoStageToggle.checked) leaveStage();
-  });
-
   // ---- Boot ----
-  userTheme = currentTheme();
-  Engine.init(currentTheme());
-  Audience.mount(refs.audienceCanvas);
-  const bootTheme = THEMES.find((t) => t.key === currentTheme());
-  const bootMeta = document.querySelector('meta[name="theme-color"]');
-  if (bootMeta && bootTheme) bootMeta.setAttribute('content', bootTheme.meta);
-
+  Engine.init('vice');
   refs.muteBtn.textContent = SoundFX.isMuted() ? '🔇' : '🔊';
-  renderThemeSwatches();
   renderBotTierPills();
 
   const existing = loadSession();

@@ -1,34 +1,30 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="vice">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Trivia Royale — Live Multiplayer Trivia</title>
-<meta name="description" content="Play live trivia with friends anywhere — join with a room code, no login, no app install. Combo streaks, steal points, freeze opponents, beat smart bots, and race to the top of the Hall of Fame." />
-<meta name="theme-color" content="#3d1fb0" />
+<title>City Chaos: We Gotta Go — 3D Multiplayer Brawl</title>
+<meta name="description" content="A free-roam 3D city brawl you play with friends in the browser: fists, bats and guns, hijack cars, rob the bank, dodge the cops, survive the haunted mansion — and whatever you do, don't let your bladder hit 100%." />
+<meta name="theme-color" content="#12002e" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Trivia Royale" />
+<meta name="apple-mobile-web-app-title" content="City Chaos" />
 <meta name="format-detection" content="telephone=no" />
 <link rel="manifest" href="manifest.webmanifest" />
-<script>try{var t=localStorage.getItem('triviaRoyaleTheme');if(['candy','battle','vice','hotseat','midnight','light'].indexOf(t)<0)t='candy';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','candy');}</script>
 
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Trivia Royale — Live Multiplayer Trivia" />
-<meta property="og:description" content="Play live trivia with friends anywhere — join with a room code, no login. Combo streaks, steal points, freeze opponents, and beat smart bots." />
-<meta property="og:image" content="/og-image.png" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Trivia Royale — Live Multiplayer Trivia" />
-<meta name="twitter:description" content="Play live trivia with friends anywhere — join with a room code, no login." />
-<meta name="twitter:image" content="/og-image.png" />
+<meta property="og:title" content="City Chaos: We Gotta Go" />
+<meta property="og:description" content="Free-roam 3D multiplayer brawl in your browser — fight, drive, rob the bank, survive the haunted mansion, and don't wet your pants." />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="City Chaos: We Gotta Go" />
+<meta name="twitter:description" content="Free-roam 3D multiplayer brawl in your browser. Join with a room code — no login." />
 
 <link rel="icon" href="icon.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Sora:wght@700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
-<link rel="stylesheet" href="studio.css" />
 <link rel="stylesheet" href="city.css" />
 </head>
 <body>
@@ -41,11 +37,9 @@
 
   <header class="topbar">
     <button id="backBtn" class="icon-btn back-btn hidden" type="button" aria-label="Back">←</button>
-    <div class="brand"><span class="brand-bolt">⚡</span><span class="brand-text">Trivia Royale</span></div>
+    <div class="brand"><span class="brand-bolt">🌆</span><span class="brand-text">City Chaos</span></div>
     <div class="topbar-actions">
       <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
-      <button id="themeBtn" class="icon-btn" type="button" aria-label="Change theme">🎨</button>
-      <button id="voiceBtn" class="icon-btn" type="button" aria-label="Voice host on or off" title="Voice host">🎙️</button>
       <button id="hallOfFameBtn" class="link-btn" type="button" aria-label="Hall of Fame"><span class="lb-ico">🏆</span><span class="lb-txt"> Hall of Fame</span></button>
       <button id="howToPlayBtn" class="link-btn" type="button" aria-label="How to play"><span class="lb-ico">❓</span><span class="lb-txt"> How to Play</span></button>
     </div>
@@ -53,9 +47,8 @@
 
   <div id="toast" class="toast hidden" role="status"></div>
   <div id="feed" class="kill-feed" aria-live="polite"></div>
-  <div id="comboBurst" class="combo-burst hidden" aria-hidden="true"></div>
 
-  <!-- 3-2-1 countdown before the first question -->
+  <!-- 3-2-1 countdown before the match -->
   <div id="countdownOverlay" class="countdown-overlay hidden" aria-live="assertive">
     <div class="cd-ready" id="cdReady">Get ready</div>
     <div class="cd-num" id="cdNum">3</div>
@@ -67,13 +60,13 @@
     <!-- HOME -->
     <section id="view-home" class="view">
       <div class="hero">
-        <h1 class="hero-logo"><span class="logo-a">Trivia</span><span class="logo-b">Royale</span></h1>
-        <p class="subtitle">Live multiplayer trivia. Join with a code — no login, no install. Chain combos, steal points, freeze rivals, and take on smart bots.</p>
+        <h1 class="hero-logo"><span class="logo-a">City</span><span class="logo-b">Chaos</span></h1>
+        <p class="subtitle">A free-roam 3D city brawl for you and your friends. Punch, swing, shoot, hijack cars and rob the bank — then survive the haunted mansion and find a toilet before your bladder gives up.</p>
         <div class="hero-chips">
-          <span class="chip">📱 Any device</span>
-          <span class="chip">🤖 4 bot levels</span>
-          <span class="chip">🎓 Class 1 → PhD</span>
-          <span class="chip">🏆 Hall of Fame</span>
+          <span class="chip">🥊 Fists · 🏏 Bat · 🔫 Guns</span>
+          <span class="chip">🚗 Drive &amp; run people over</span>
+          <span class="chip">🚓 Wanted stars</span>
+          <span class="chip">🎙️ Real voice chat</span>
         </div>
       </div>
 
@@ -92,14 +85,8 @@
         </div>
 
         <div class="panel home-actions">
-          <div class="field">
-            <span>Category (for a new room)</span>
-            <select id="categorySelect" class="select"></select>
-          </div>
+          <button id="quickBtn" class="btn btn-city" type="button">⚡ Quick Play vs 3 Bots</button>
           <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
-          <button id="quickBtn" class="btn btn-accent" type="button">⚡ Quick Play vs Bot</button>
-          <button id="dailyBtn" class="btn btn-daily" type="button">📅 Daily Challenge <span class="daily-chip" id="dailyChip"></span></button>
-          <button id="cityBtn" class="btn btn-city" type="button">🌆 City Mission: We Gotta Go <span class="daily-chip">NEW</span></button>
           <div class="or-divider"><span>or join friends</span></div>
           <label class="field">
             <span>Room code</span>
@@ -122,169 +109,28 @@
             </div>
             <p class="hint">Share this code, or scan the QR — anyone can join from their own phone, tablet or laptop.</p>
             <div id="lobbyQr" class="qr-wrap"></div>
-            <p class="category-badge" id="lobbyCategory"></p>
           </div>
         </div>
 
         <div class="lobby-right">
           <div class="panel">
-            <div class="panel-title"><span>Squad</span><span id="squadCount" class="count-pill">1/10</span></div>
+            <div class="panel-title"><span>Gang</span><span id="squadCount" class="count-pill">1/10</span></div>
             <div class="player-list" id="lobbyPlayers"></div>
 
-            <div id="teamControls" class="bot-controls hidden">
-              <p class="eyebrow">Game mode</p>
-              <div id="teamPills" class="tier-pills"></div>
-              <p id="teamHint" class="hint"></p>
-            </div>
-            <p id="lobbyModeMsg" class="hint hidden"></p>
-
             <div id="botControls" class="bot-controls hidden">
-              <p class="eyebrow">Computer opponent</p>
+              <p class="eyebrow">Computer rivals</p>
               <div id="botTierPills" class="tier-pills"></div>
               <button id="addBotBtn" class="btn btn-secondary" type="button">🤖 Add Computer Player</button>
               <p id="soloHint" class="hint hidden">Playing solo? Add a computer player — pick how tough it should be.</p>
             </div>
           </div>
 
-          <!-- CUSTOM / STUDY MODE QUESTION SETUP (host-only controls; everyone sees the pool) -->
-          <div id="customPanel" class="panel custom-panel hidden">
-            <div class="panel-title"><span>📝 Question Setup</span></div>
-
-            <div id="customHostControls" class="hidden">
-              <div class="ai-gen-box">
-                <label class="field"><span>Level</span><select id="levelSelect" class="select"></select></label>
-                <label class="field"><span>Category</span><select id="studyCategorySelect" class="select"></select></label>
-                <label class="field"><span>Sub-category</span><select id="studySubcategorySelect" class="select"></select></label>
-                <label class="field"><span>Language</span>
-                  <select id="aiLangSelect" class="select"><option value="English">English</option><option value="Hinglish">Hinglish (Hindi in English letters)</option><option value="Hindi">हिन्दी (Hindi)</option></select>
-                </label>
-                <details class="notes-box" id="notesBox">
-                  <summary>📎 Make questions from my own notes (optional)</summary>
-                  <textarea id="notesText" rows="4" maxlength="20000" placeholder="Paste your notes or a chapter here…"></textarea>
-                  <label class="btn btn-secondary file-btn">📄 Upload PDF / text file<input id="notesFile" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden /></label>
-                  <p id="notesChip" class="hint hidden"></p>
-                </details>
-                <button id="generateBtn" class="btn btn-primary" type="button">🤖 Generate 10 Questions with AI</button>
-                <p id="generatingStatus" class="hint hidden"></p>
-                <p id="aiDisabledHint" class="hint hidden">AI generation isn't set up on this server — add questions manually below instead.</p>
-              </div>
-
-              <div class="or-divider"><span>or add your own</span></div>
-
-              <div class="manual-add-box">
-                <input id="manualQText" type="text" placeholder="Question text" maxlength="300" />
-                <div class="manual-options">
-                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="0" id="manualCorrect0" checked aria-label="Option A is correct" /><input id="manualOpt0" type="text" placeholder="Option A" maxlength="120" /></div>
-                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="1" id="manualCorrect1" aria-label="Option B is correct" /><input id="manualOpt1" type="text" placeholder="Option B" maxlength="120" /></div>
-                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="2" id="manualCorrect2" aria-label="Option C is correct" /><input id="manualOpt2" type="text" placeholder="Option C" maxlength="120" /></div>
-                  <div class="manual-option-row"><input type="radio" name="manualCorrect" value="3" id="manualCorrect3" aria-label="Option D is correct" /><input id="manualOpt3" type="text" placeholder="Option D" maxlength="120" /></div>
-                </div>
-                <p class="hint" style="margin:2px 0 8px">Select the radio next to the correct option.</p>
-                <button id="addQuestionBtn" class="btn btn-secondary" type="button">Add Question</button>
-              </div>
-            </div>
-
-            <p class="eyebrow" id="questionPoolCount">0 questions ready</p>
-            <div id="questionPoolList" class="question-pool-list"></div>
-            <p id="needMoreQuestionsMsg" class="hint hidden">Host needs to add at least 4 questions before starting.</p>
-          </div>
-
-          <button id="startBtn" class="btn btn-primary btn-start hidden" type="button">▶ Start Game</button>
+          <button id="startBtn" class="btn btn-primary btn-start hidden" type="button">▶ Start the Chaos</button>
           <p id="lobbyWaitingMsg" class="hint hidden">Waiting for the host to start the game…</p>
           <p id="lobbyNeedMoreMsg" class="hint hidden">Need at least 2 players to start.</p>
         </div>
       </div>
     </section>
-
-    <!-- QUESTION -->
-    <section id="view-question" class="view hidden">
-      <div class="q-layout">
-        <div class="q-main">
-          <div class="hud">
-            <div class="hud-left">
-              <span class="chip" id="qProgress"></span>
-              <span id="powerBadge" class="power-badge hidden"></span>
-              <span id="streakChip" class="chip streak-chip hidden"></span>
-            </div>
-            <div class="timer-ring" id="timerRing" aria-live="off">
-              <svg viewBox="0 0 44 44" aria-hidden="true">
-                <circle class="ring-bg" cx="22" cy="22" r="19"></circle>
-                <circle class="ring-fg" id="ringFg" cx="22" cy="22" r="19"></circle>
-              </svg>
-              <span class="q-timer" id="qTimer">15</span>
-            </div>
-          </div>
-          <div class="timer-bar"><div id="timerFill" class="timer-fill"></div></div>
-
-          <div id="studioMainSlot">
-          <div class="studio" id="studio">
-            <div class="arena-hud">
-              <span class="arena-level" id="arenaLevel">Level 1</span>
-              <span class="alive-chip" id="aliveChip">👤 <b id="aliveCount">0</b> alive</span>
-              <button class="map-btn" id="mapBtn" type="button" aria-label="Toggle full map">🗺 Map</button>
-            </div>
-            <div id="teamStrip" class="team-strip hidden"></div>
-            <div class="arena-wrap">
-              <canvas id="arenaCanvas" class="arena-canvas" aria-label="Match map: every level is a room, every player sits at a table"></canvas>
-              <div id="stageBanner" class="stage-banner hidden"></div>
-            </div>
-            <div class="level-map" id="levelMap" aria-label="Level map"></div>
-            <div class="reaction-bar" id="reactionBar" aria-label="Send a reaction"></div>
-            <canvas id="audienceCanvas" class="audience" aria-hidden="true"></canvas>
-          </div>
-          </div>
-
-          <p id="frozenNotice" class="frozen-notice hidden"></p>
-
-          <div class="question-card" id="questionCard">
-            <h2 id="questionText" class="question-text"></h2>
-          </div>
-
-          <div class="choices" id="choicesGrid">
-            <button class="choice choice-0" data-i="0" type="button"><span class="choice-key">A</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
-            <button class="choice choice-1" data-i="1" type="button"><span class="choice-key">B</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
-            <button class="choice choice-2" data-i="2" type="button"><span class="choice-key">C</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
-            <button class="choice choice-3" data-i="3" type="button"><span class="choice-key">D</span><span class="choice-label"></span><span class="poll" aria-hidden="true"></span></button>
-          </div>
-
-          <div class="q-actions">
-            <button id="lifelineBtn" class="lifeline-btn" type="button" aria-label="Use 50/50 booster">✂️ 50/50 <b id="lifelineCount">2</b></button>
-            <button id="pollBtn" class="lifeline-btn" type="button" aria-label="Ask the audience">📊 Audience Poll <b id="pollCount">1</b></button>
-            <span class="kbd-hint">Tap an answer to lock it in · keys 1–4 / A–D on a keyboard</span>
-          </div>
-
-          <!-- Studio floor: four contestant desks + the fastest-finger lane + the live audience -->
-
-          <p id="answerLockedMsg" class="hint locked-msg hidden">🔒 Locked in! Waiting for the others…</p>
-          <p id="spectatorMsg" class="hint spectator-msg hidden">☠ You have been eliminated — you are watching from the stands. Tap ← to leave.</p>
-          <p id="frozenLockedMsg" class="hint hidden">🥶 You're frozen this round — no points possible.</p>
-
-          <div id="revealBanner" class="reveal-banner hidden"></div>
-          <div id="powerWaitingBanner" class="reveal-banner hidden"></div>
-          <div id="powerResultBanner" class="reveal-banner hidden"></div>
-          <div id="miniLeaderboard" class="mini-leaderboard hidden"></div>
-        </div>
-
-        <aside class="q-side">
-          <div id="studioSideSlot"></div>
-          <div class="panel">
-            <div class="panel-title"><span>Live Ranking</span></div>
-            <div id="liveBoard" class="live-board"></div>
-          </div>
-        </aside>
-      </div>
-    </section>
-
-    <!-- POWER ROUND modal (steal or freeze — shown on top of question/reveal view) -->
-    <div id="powerModal" class="modal hidden">
-      <div class="modal-box">
-        <h3 id="powerModalTitle"></h3>
-        <p id="powerModalDesc"></p>
-        <div id="powerOpponents" class="steal-opponents"></div>
-        <button id="powerSkipBtn" class="btn btn-secondary" type="button">Skip</button>
-        <p class="hint">Decide within <span id="powerCountdown">10</span>s</p>
-      </div>
-    </div>
 
     <!-- FINAL -->
     <section id="view-final" class="view hidden">
@@ -301,9 +147,9 @@
       </div>
     </section>
 
-    <!-- CITY MISSION: open world, quiz gates at every target -->
+    <!-- THE CITY -->
     <section id="view-city" class="view hidden">
-      <canvas id="cityCanvas" class="city-canvas" aria-label="City map"></canvas>
+      <canvas id="cityCanvas" class="city-canvas" aria-label="City"></canvas>
       <div class="city-hud">
         <div class="city-top">
           <div class="city-leftcol">
@@ -312,7 +158,8 @@
           </div>
           <div class="city-rightcol">
             <div class="city-timer" id="cityTimer">8:00</div>
-            <div class="bladder" id="cityBladder" title="Your bladder — find a public toilet before it hits 100%!">
+            <div class="wanted" id="cityWanted" title="Wanted level"></div>
+            <div class="bladder" id="cityBladder" title="Your bladder — find a public toilet stall before it hits 100%!">
               <span class="bl-face" id="cbFace">😌</span>
               <div class="bl-track"><i id="cbFill"></i></div>
               <b class="bl-pct" id="cbPct">0%</b>
@@ -320,28 +167,32 @@
             <canvas id="miniMap" class="mini-map" width="180" height="106" aria-label="Radar"></canvas>
           </div>
         </div>
-        <div class="city-items" id="cityItems"></div>
-        <button id="micBtnCity" class="mic-btn" type="button">🎙️ Mic off</button>
+
         <div class="city-gps hidden" id="cityGps"><span class="gps-arrow" id="gpsArrow">➤</span><span id="gpsDist"></span></div>
-        <div class="city-lock hidden" id="cityLock"></div>
-        <p class="city-hint" id="cityHint">WASD to move · drag to look around · Space to zap · or tap the ground to walk</p>
+        <div class="hold-wrap hidden" id="holdWrap"><span id="holdLabel"></span><div class="hold-track"><i id="holdFill"></i></div></div>
+
+        <div class="vitals" id="cityVitals">
+          <div class="vit-row"><span>❤️</span><div class="vit-track"><i id="hpFill" class="hp"></i></div><b id="hpNum">100</b></div>
+          <div class="vit-row"><span>🛡️</span><div class="vit-track"><i id="arFill" class="ar"></i></div><b id="arNum">0</b></div>
+          <div class="vit-cash"><b id="cashNum">$0</b><span id="weaponChip" class="weapon-chip">🥊 Fists</span></div>
+        </div>
+
+        <div class="hurt-flash" id="hurtFlash"></div>
+        <div class="wasted hidden" id="wasted"><b>WASTED</b><small id="wastedSub"></small></div>
+        <p class="city-hint" id="cityHint">WASD move · Space / click = fight · F = car · 1-5 or Tab = weapon · drag = look around · hold the door to enter</p>
+        <button id="micBtnCity" class="mic-btn" type="button">🎙️ Mic off</button>
       </div>
       <div class="joy" id="joy"><div class="joy-knob" id="joyKnob"></div></div>
-      <button id="zapBtn" class="zap-btn hidden" type="button" aria-label="Zap a nearby rival with your blaster">⚡<b id="zapCount">3</b></button>
-      <div class="city-quiz hidden" id="cityQuiz">
-        <div class="cq-box">
-          <div class="cq-head" id="cqHead"></div>
-          <div class="cq-bar"><i id="cqBar"></i></div>
-          <h3 class="cq-q" id="cqQ"></h3>
-          <div class="cq-choices" id="cqChoices"></div>
-          <div class="cq-result hidden" id="cqResult"></div>
-        </div>
+      <div class="act-btns">
+        <button id="weaponBtn" class="act-btn act-small" type="button" aria-label="Switch weapon">🔁</button>
+        <button id="useBtn" class="act-btn act-small" type="button" aria-label="Get in or out of a car">🚗</button>
+        <button id="fireBtn" class="act-btn act-fire" type="button" aria-label="Attack">👊</button>
       </div>
     </section>
 
-    <!-- WE GOTTA GO: haunted co-op maze, quiz keys, ghosts and a very full bladder -->
+    <!-- THE HAUNTED MANSION -->
     <section id="view-maze" class="view hidden">
-      <canvas id="mazeCanvas" class="city-canvas" aria-label="Haunted maze"></canvas>
+      <canvas id="mazeCanvas" class="city-canvas" aria-label="Haunted mansion"></canvas>
       <div class="city-hud">
         <div class="city-top">
           <div class="city-leftcol">
@@ -350,28 +201,26 @@
           </div>
           <div class="city-rightcol">
             <div class="city-timer" id="mazeTimer">8:00</div>
-            <div class="bladder" id="bladder" title="Team bladder — reach the toilet before it hits 100%">
+            <div class="bladder" id="bladder" title="Your bladder — reach the toilet before it hits 100%">
               <span class="bl-face" id="blFace">😌</span>
               <div class="bl-track"><i id="blFill"></i></div>
               <b class="bl-pct" id="blPct">0%</b>
             </div>
-            <canvas id="mazeMini" class="mini-map maze-mini" width="210" height="150" aria-label="Maze map"></canvas>
+            <canvas id="mazeMini" class="mini-map maze-mini" width="210" height="150" aria-label="Mansion map"></canvas>
           </div>
         </div>
-        <div class="city-lock hidden" id="mazeLock"></div>
+        <div class="vitals" id="mazeVitals">
+          <div class="vit-row"><span>❤️</span><div class="vit-track"><i id="mhpFill" class="hp"></i></div><b id="mhpNum">100</b></div>
+          <div class="vit-cash"><b id="mcashNum">$0</b></div>
+        </div>
+        <div class="hurt-flash" id="mazeHurt"></div>
         <button id="micBtnMaze" class="mic-btn" type="button">🎙️ Mic off</button>
-        <p class="city-hint" id="mazeHint">Win the 3 keys 🔑 (each one is a quiz), open the gates and find the 🚽 exit — WASD to move · drag to look · Space = flashlight · shout into your mic to scare ghosts</p>
+        <p class="city-hint" id="mazeHint">Touch the 3 keys 🔑 to open the gates, dodge the ghosts and find the 🚽 exit — WASD move · Space = fight · F = flashlight · shout into your mic to scare ghosts</p>
       </div>
       <div class="joy" id="mazeJoy"><div class="joy-knob" id="mazeKnob"></div></div>
-      <button id="flashBtn" class="zap-btn flash-btn" type="button" aria-label="Flashlight — scare nearby ghosts">🔦</button>
-      <div class="city-quiz hidden" id="mazeQuiz">
-        <div class="cq-box">
-          <div class="cq-head" id="mqHead"></div>
-          <div class="cq-bar"><i id="mqBar"></i></div>
-          <h3 class="cq-q" id="mqQ"></h3>
-          <div class="cq-choices" id="mqChoices"></div>
-          <div class="cq-result hidden" id="mqResult"></div>
-        </div>
+      <div class="act-btns">
+        <button id="flashBtn" class="act-btn act-small flash-btn" type="button" aria-label="Flashlight — scare nearby ghosts">🔦</button>
+        <button id="mazeFireBtn" class="act-btn act-fire" type="button" aria-label="Attack">👊</button>
       </div>
     </section>
 
@@ -392,25 +241,17 @@
     <div class="modal-box">
       <h3>How to Play</h3>
       <ul class="rules-list">
-        <li>Join with a room code (or scan the lobby QR) — no account needed. Playing alone? Hit <strong>Quick Play vs Bot</strong>, or add a 🤖 computer player of any level: 🍬 Rookie, ⚔️ Veteran, 🔥 Elite or 👑 Legend.</li>
-        <li>Each question gives everyone 15 seconds. <strong>Tap an answer and it locks in instantly.</strong> Faster and correct = more points: <code>200–1000</code> per question. Wrong or no answer = 0.</li>
-        <li>🔥 <strong>Combos</strong> — answer correctly in a row and every extra streak step adds bonus points (up to +200).</li>
-        <li>✂️ <strong>50/50</strong> (2 per game) removes two wrong answers for 60% points. 📊 <strong>Audience Poll</strong> (1 per game) shows what the studio audience thinks — usually right, not always — for 80% points.</li>
-        <li>🗺️ <strong>Levels &amp; the map</strong> — a match is 2–4 levels (Qualifier → … → Grand Final). Each level is a room, and every player sits at their own table as an animated character. Lamps and numbers show who locked in first and how fast. Tap the map to zoom out and see every room.</li>
-        <li>☠️ <strong>Elimination</strong> — at the end of each level the storm closes on the room: the lowest scorers are knocked out (with 2 players left, nobody is cut). The survivors stand up, run down the corridor and sit at new tables in the next room. Out? Stay and watch the rest of the tournament from the stands.</li>
+        <li>🌆 <strong>The goal</strong> — you are loose in a 3D city with your friends (or 🤖 computer rivals). Your <strong>cash</strong> is your score. Whoever has the most when the 8 minutes are up wins — and finishing all four missions earns a big bonus.</li>
+        <li>🎯 <strong>Missions</strong> — 1) 🔫 the Gun Store (grab guns), 2) 🏚️ the Haunted Mansion, 3) 💰 the Bank heist, 4) 🚽 the Royal Restroom (finish). Stand in the glowing ring at a door and <strong>hold still</strong> to complete it. Side stops work any time: 🏥 Hospital heals, 🚗 Garage gives a car, 🍔 Diner, 🎮 Arcade and 📻 Radio pay cash, 🚓 Police lets you bribe your stars away.</li>
+        <li>🥊 <strong>Fighting</strong> — <code>Space</code> / <code>J</code> or a mouse click / tap / the 👊 button attacks (hold to keep going; it auto-aims at whoever is in front of you). Fists, 🏏 bat, 🔫 pistol, SMG and shotgun (<code>1–5</code> or <code>Tab</code> to switch). Armed guards protect every building, and other players will fight back — or take revenge.</li>
+        <li>🚗 <strong>Cars</strong> — walk up to a car and press <code>F</code> (or 🚗) to hijack it. Drive with WASD (or the stick). Run people over, but cars crash, catch fire and explode.</li>
+        <li>⭐ <strong>Wanted level</strong> — hurt people, rob the bank or blow things up and the cops come, more of them with every star. Lose them by hiding, waiting it out, or bribing the police.</li>
+        <li>💀 <strong>Wasted?</strong> You respawn at the hospital after a few seconds with your pistol (half the ammo) and a moment of protection. You drop 20% of your cash on the street (grab it back!) and whoever took you out earns +$250.</li>
+        <li>🚽 <strong>The bladder</strong> — everyone's bladder keeps filling. Your character starts dancing, holding it with both hands and letting out toots. Find a blue public toilet stall on a street corner (hold the door) — or reach the mansion and Royal Restroom. At 100% you have an <em>accident</em>: −$250 and everyone hears it.</li>
+        <li>🏚️ <strong>The Haunted Mansion</strong> — a maze with 3 keys 🔑 (just walk into them for +$300) that open lettered gates, ghosts 👻 that add to your bladder and freeze you, and a 🚽 exit worth $1000 with instant relief. <code>F</code> = flashlight stuns nearby ghosts.</li>
+        <li>🎙️ <strong>Microphone</strong> — tap the mic to talk with your whole gang using real voice chat. <strong>Shout</strong> into it and nearby ghosts flee (and your character screams).</li>
         <li>← The back arrow (or your phone's back gesture) lets you leave a room or match at any time.</li>
-        <li>🤝 <strong>Team mode</strong> — the host can split the room into 2–4 colour teams. Scores are shared; with 3+ teams the lowest team is knocked out together at the end of each level.</li>
-        <li>📅 <strong>Daily Challenge</strong> — the same 12 questions for everyone each day (India time). Your best score of the day is shown on the button, and the Hall of Fame has a “Today” filter.</li>
-        <li>😎 <strong>Reactions</strong> pop up over your table for everyone. If you're eliminated, tap a contender's table to cheer for them. The computer players talk back, too. 🎙️ turns on a spoken voice host.</li>
-        <li>🌆 <strong>City Mission: We Gotta Go</strong> — race through a 3D city. Every target has a <strong>quiz gate</strong> (a correct answer unlocks 🔫 a blaster, 🚗 a turbo car, 🛡️ a shield or 💰 cash); one target is the 🏚️ <strong>Haunted Mansion</strong> where you win 3 keys with quizzes, dodge ghosts and find the toilet exit. Your <strong>bladder</strong> keeps filling — find a blue public toilet stall (quiz-locked too) before it hits 100%! Switch on 🎙️ to talk with your team, and shout to scare ghosts. First to the 🚽 Royal Restroom wins.</li>
-        <li>🏅 At the end you get awards — Fastest Finger, Streak King, Sharpshooter, Point Thief, Comeback Kid.</li>
-        <li>🇮🇳 Try the <strong>Hinglish GK</strong> category, or in Study Mode pick English / Hinglish / Hindi and even paste your own notes or upload a PDF to turn them into a quiz.</li>
-        <li>Every 3rd question is a <strong>power round</strong>, alternating between:</li>
-        <li>⚡ <strong>Steal Round</strong> — the fastest correct answer can steal 150 points from one opponent.</li>
-        <li>🥶 <strong>Freeze Round</strong> — the fastest correct answer can freeze one opponent out of the very next question.</li>
-        <li>After the last question, whoever has the most points wins. <strong>Play Again</strong> reuses the same room and code.</li>
-        <li>📝 <strong>Custom / Study Mode</strong> — build your own quiz: pick a level (Class 1 to PhD or a competitive exam), a category and sub-category, and let AI write the questions — or add your own by hand.</li>
-        <li>🎨 Tap the palette to switch between Candy Blast, Battle Zone, Neon City, Midnight and Daylight.</li>
+        <li>🏅 At the end there are awards — Top Gun, Mission Master, Punching Bag, Leaky Pants / Iron Bladder and Loudest Cheeks — and your score goes to the 🏆 Hall of Fame.</li>
       </ul>
       <button id="closeHowToPlay" class="btn btn-secondary" type="button">Got it</button>
     </div>
@@ -420,24 +261,16 @@
   <div id="hallOfFameModal" class="modal hidden">
     <div class="modal-box">
       <h3>🏆 Hall of Fame</h3>
-      <p class="hint">The highest scores ever recorded, across every room ever played.</p>
-
+      <p class="hint">The biggest bank balances ever recorded, across every room ever played.</p>
       <div class="leaderboard-filters">
         <div class="filter-pills" id="periodPills">
           <button type="button" class="filter-pill active" data-period="all">All Time</button>
           <button type="button" class="filter-pill" data-period="today">Today</button>
-          <button type="button" class="filter-pill" data-period="year">This Year</button>
-          <button type="button" class="filter-pill" data-period="month">This Month</button>
           <button type="button" class="filter-pill" data-period="week">This Week</button>
+          <button type="button" class="filter-pill" data-period="month">This Month</button>
+          <button type="button" class="filter-pill" data-period="year">This Year</button>
         </div>
-        <select id="lbCategorySelect" class="select">
-          <option value="">All Categories</option>
-        </select>
-        <select id="lbSubjectSelect" class="select hidden">
-          <option value="">All Subjects</option>
-        </select>
       </div>
-
       <div id="hallOfFameList" class="hall-of-fame-list"></div>
       <p id="hallOfFameEmpty" class="hint hidden">No games match these filters yet.</p>
       <p id="hallOfFameUnavailable" class="hint hidden">The Hall of Fame isn't set up on this server yet.</p>
@@ -445,33 +278,17 @@
     </div>
   </div>
 
-  <!-- THEME PICKER -->
-  <div id="themeModal" class="modal hidden">
-    <div class="modal-box">
-      <h3>🎨 Choose a Theme</h3>
-      <div id="themeSwatchGrid" class="theme-swatch-grid"></div>
-      <label class="toggle-row"><input type="checkbox" id="autoStageToggle" checked /><span>Switch to the <strong>Hot Seat</strong> studio panel when a quiz starts</span></label>
-      <button id="closeThemeModal" class="btn btn-secondary" type="button">Close</button>
-    </div>
-  </div>
-
   <script src="events.js"></script>
   <script src="vendor/qrcode.js"></script>
   <script src="sound.js"></script>
   <script src="engine.js"></script>
-  <script src="studio.js"></script>
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/SkeletonUtils.js"></script>
   <script src="soldier.js"></script>
   <script src="voice.js"></script>
-  <script src="arena2d.js"></script>
-  <script src="arena3d.js"></script>
-  <script src="arena.js"></script>
-  <script src="city2d.js"></script>
   <script src="city3d_world.js"></script>
   <script src="city3d.js"></script>
-  <script src="city.js"></script>
   <script src="maze3d.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>

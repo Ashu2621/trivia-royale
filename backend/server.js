@@ -6,43 +6,26 @@ const { Server } = require('socket.io');
 const rooms = require('./rooms');
 const socketHandlers = require('./socketHandlers');
 const db = require('./db');
-const ai = require('./ai');
 const bots = require('./bots');
-const { getCategoryList, dailyKey } = require('./questions');
-const { getLevelList } = require('./levels');
 
 const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.get('/api/meta', (req, res) => {
-  res.json({
-    categories: getCategoryList(),
-    avatars: rooms.AVATARS,
-    levels: getLevelList(),
-    aiEnabled: ai.isEnabled(),
-    botTiers: bots.listTiers(),
-    daily: dailyKey(),
-  });
+  res.json({ avatars: rooms.AVATARS, botTiers: bots.listTiers() });
 });
 const VALID_PERIODS = new Set(['all', 'today', 'week', 'month', 'year']);
 
 app.get('/api/leaderboard', async (req, res) => {
   const period = VALID_PERIODS.has(req.query.period) ? req.query.period : 'all';
-  const category = typeof req.query.category === 'string' && req.query.category ? req.query.category : null;
-  const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
-  const scores = await db.getTopScores({ limit: 20, period, category, subject });
+  const scores = await db.getTopScores({ limit: 20, period });
   res.json({ enabled: db.isEnabled(), scores });
-});
-app.get('/api/leaderboard/subjects', async (req, res) => {
-  const category = typeof req.query.category === 'string' ? req.query.category : null;
-  const subjects = await db.getSubjectsForCategory(category);
-  res.json({ subjects });
 });
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 8e6 }); // room for a small PDF of study notes
+const io = new Server(server);
 
 io.on('connection', (socket) => socketHandlers.register(io, socket));
 
@@ -50,5 +33,5 @@ rooms.startCleanupSweep();
 db.connect();
 
 server.listen(PORT, () => {
-  console.log(`Trivia Royale listening on port ${PORT}`);
+  console.log(`City Chaos listening on port ${PORT}`);
 });

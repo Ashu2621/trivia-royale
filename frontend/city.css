@@ -125,3 +125,71 @@ body.in-city #app { padding: 0; max-width: none; }
 .mic-btn.on { border-color: #3ee08f; box-shadow: 0 0 0 calc(var(--mic, 0) * 6px) rgba(62, 224, 143, 0.35); }
 .city-mission small.wc-hint { color: #7fd8ff; font-weight: 700; margin-top: 4px; }
 .city-board .cb-row b { min-width: 2.2em; text-align: right; }
+
+/* ---- final awards ---- */
+.awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 4px 0 16px; }
+.award { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow); animation: rowIn 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.award.mine { border-color: #ffe08a; box-shadow: 0 0 20px rgba(255, 224, 138, 0.45); }
+.award-ico { font-size: 1.7rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4)); }
+.award-txt { display: flex; flex-direction: column; min-width: 0; }
+.award-txt b { font: 800 0.92rem var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+.award-txt small { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 520px) { .awards { grid-template-columns: 1fr; } }
+
+/* ============ City Chaos: combat HUD ============ */
+.wanted { min-height: 26px; padding: 3px 10px; border-radius: 999px; background: rgba(8, 12, 32, 0.84); border: 1px solid var(--panel-border); color: #ffd23f; font-size: 0.95rem; letter-spacing: 0.06em; display: none; }
+.wanted.on { display: block; border-color: #ff5470; animation: wantedFlash 0.7s steps(2, jump-none) infinite; }
+.wanted .dim { opacity: 0.35; }
+@keyframes wantedFlash { 0% { box-shadow: 0 0 0 2px rgba(77, 125, 255, 0.85); } 100% { box-shadow: 0 0 0 2px rgba(255, 70, 90, 0.85); } }
+
+.vitals { position: absolute; left: 8px; bottom: calc(160px + env(safe-area-inset-bottom)); width: 184px; display: flex; flex-direction: column; gap: 5px; pointer-events: none; }
+@media (hover: hover) and (pointer: fine) { .vitals { bottom: calc(18px + env(safe-area-inset-bottom)); width: 240px; } }
+.vit-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; background: rgba(8, 12, 32, 0.82); color: #fff; font-weight: 800; font-size: 0.8rem; }
+.vit-row b { min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.vit-track { flex: 1; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+.vit-track i { display: block; height: 100%; width: 0; border-radius: 999px; transition: width 0.2s ease; }
+.vit-track i.hp { background: linear-gradient(90deg, #ff5470, #ffb703 45%, #3ee08f); background-size: 240px 100%; }
+.vit-track i.ar { background: linear-gradient(90deg, #4b8fd6, #9fe6ff); }
+.vit-track.low { animation: blShake 0.5s linear infinite; box-shadow: 0 0 0 2px rgba(255, 84, 112, 0.7); }
+.vit-cash { display: flex; align-items: center; gap: 8px; }
+.vit-cash b { padding: 4px 12px; border-radius: 999px; background: rgba(8, 12, 32, 0.86); border: 1px solid #3ee08f; color: #7dffb3; font: 800 1.05rem var(--font-display); font-variant-numeric: tabular-nums; }
+.weapon-chip { padding: 4px 10px; border-radius: 999px; background: rgba(8, 12, 32, 0.86); border: 1px solid var(--panel-border); color: #fff; font-weight: 800; font-size: 0.8rem; white-space: nowrap; }
+
+.hold-wrap { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); width: min(260px, 70vw); text-align: center; color: #ffd23f; font: 800 0.9rem var(--font-display); text-shadow: 0 2px 4px #000; }
+.hold-track { margin-top: 4px; height: 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); border: 2px solid rgba(255, 255, 255, 0.6); overflow: hidden; }
+.hold-track i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffd23f, #ff9d3a); }
+
+.hurt-flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 3; background: radial-gradient(ellipse at 50% 50%, rgba(255, 0, 30, 0) 35%, rgba(255, 0, 30, 0.6) 100%); }
+.wasted { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; pointer-events: none; background: radial-gradient(ellipse at 50% 50%, rgba(20, 0, 5, 0.25), rgba(20, 0, 5, 0.7)); filter: saturate(0.4); animation: wastedIn 0.6s ease-out both; }
+.wasted b { font: 400 clamp(3rem, 12vw, 6.5rem) 'Bungee', var(--font-display); color: #e01b2f; text-shadow: 0 0 30px rgba(224, 27, 47, 0.7), 0 4px 0 #400; letter-spacing: 0.06em; }
+.wasted small { color: #ffd0d6; font-weight: 700; font-size: 1rem; }
+@keyframes wastedIn { from { opacity: 0; transform: scale(1.25); } to { opacity: 1; transform: none; } }
+
+.act-btns { position: absolute; right: 14px; bottom: calc(22px + env(safe-area-inset-bottom)); display: flex; align-items: flex-end; gap: 12px; z-index: 2; }
+.act-btn { border-radius: 50%; border: 3px solid #fff; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 12px 24px rgba(0, 0, 0, 0.45); color: #fff; }
+.act-fire { width: 92px; height: 92px; font-size: 2.6rem; background: radial-gradient(circle at 35% 30%, #ff9a9a, #e63946 60%, #a3121f); }
+.act-small { width: 58px; height: 58px; font-size: 1.5rem; background: radial-gradient(circle at 35% 30%, #cfd8ff, #4361ee 60%, #23349a); }
+.act-btn.down { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.act-btn.flash-btn { background: radial-gradient(circle at 35% 30%, #f5fbff, #9fd4ff 60%, #4b8fd6); }
+.act-btn.flash-btn.cooling { filter: grayscale(0.8) brightness(0.6); }
+@media (hover: hover) and (pointer: fine) {
+  .act-fire { width: 74px; height: 74px; font-size: 2.1rem; }
+  .act-small { width: 48px; height: 48px; font-size: 1.2rem; }
+  .act-btns { bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+body.in-city .kill-feed { top: calc(var(--topbar-h, 58px) + 170px); }
+.kill-feed .feed-item { font-size: 0.8rem; }
+
+/* layout fixes: action buttons stack on narrow screens, the mic sits above the vitals */
+.mic-btn { left: 8px; right: auto; bottom: calc(118px + env(safe-area-inset-bottom)); }
+@media (hover: none), (pointer: coarse) { .mic-btn { bottom: calc(262px + env(safe-area-inset-bottom)); } }
+@media (max-width: 700px) {
+  .act-btns { flex-direction: column; align-items: flex-end; gap: 10px; }
+  .vitals { width: 176px; }
+}
+
+@media (max-width: 430px) {
+  .city-mission small:not(.wc-hint) { display: none; }
+  .city-mission { max-width: 56vw; }
+  .city-board .cb-row { font-size: 0.68rem; }
+}
