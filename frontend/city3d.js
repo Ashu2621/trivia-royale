@@ -240,9 +240,119 @@ const City3D = (function () {
     return m;
   }
 
+  /* ------------------------------------------- skinned soldier model */
+
+  // A real rigged, textured character (Mixamo "Vanguard", MIT-hosted in three.js examples)
+  // with Idle / Walk / Run clips. Everyone in the city is this model, tinted per person.
+  let soldierGLTF = null;
+  let modelWait = Promise.resolve();
+  const SOLDIER_SCALE = 27; // 1.83 m model -> ~49 world units
+
+  function loadModels() {
+    if (!T.GLTFLoader || !T.SkeletonUtils) return;
+    modelWait = new Promise((resolve) => {
+      new T.GLTFLoader().load(
+        'models/Soldier.glb',
+        (g) => {
+          soldierGLTF = g;
+          resolve();
+        },
+        undefined,
+        (err) => {
+          console.warn('soldier model failed to load, using the built-in figures', err);
+          resolve();
+        }
+      );
+    });
+  }
+
+  function buildSoldier(look, o) {
+    geos();
+    const npc = !!o.npc;
+    const root = new T.Group();
+    const inner = T.SkeletonUtils.clone(soldierGLTF.scene);
+    inner.scale.setScalar(SOLDIER_SCALE * (npc ? look.sv : 1));
+    inner.rotation.y = Math.PI / 2; // the model faces +Z, our heading faces +X
+    root.add(inner);
+    const tint = new T.Color(look.shirt).lerp(new T.Color('#ffffff'), npc ? 0.4 : 0.55);
+    inner.traverse((m) => {
+      if (!m.isMesh) return;
+      m.castShadow = npc ? q.npcShadows : true;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+      m.material = m.material.clone();
+      if (/body/i.test(m.material.name)) m.material.color.copy(tint);
+      m.material.roughness = 0.62;
+      world && world.envMats.push(m.material);
+    });
+    const mixer = new T.AnimationMixer(inner);
+    const acts = {};
+    for (const name of ['Idle', 'Walk', 'Run']) {
+      const a = mixer.clipAction(T.AnimationClip.findByName(soldierGLTF.animations, name));
+      a.play();
+      a.setEffectiveWeight(name === 'Idle' ? 1 : 0);
+      acts[name] = a;
+    }
+    mixer.update(Math.random() * 2);
+
+    // rifle in the right hand
+    const gun = new T.Group();
+    gun.visible = false;
+    const hand = inner.getObjectByName('mixamorigRightHand');
+    if (hand) {
+      const ws = new T.Vector3();
+      hand.getWorldScale(ws);
+      gun.scale.setScalar(1 / (ws.x || 0.27));
+      gun.position.set(0, 6, 3);
+      gun.rotation.set(0, 0, Math.PI / 2);
+      hand.add(gun);
+    } else root.add(gun);
+    const metal = pm('#23262c', 0.45, 0.7);
+    part(G.gunBody, metal, gun, 0, -3, 0);
+    part(G.gunBarrel, pm('#111', 0.4, 0.8), gun, 0, -14, 0);
+    part(G.gunMag, pm('#1a1c20', 0.6, 0.4), gun, 0, -3.5, 0).position.x = 2.4;
+    part(G.gunScope, pm('#2c313a', 0.4, 0.6), gun, 0, -1, 0).position.x = -1.9;
+    const tip = part(new T.SphereGeometry(1.6, 6, 6), new T.MeshBasicMaterial({ color: 0xffa040, toneMapped: false }), gun, 0, -19, 0, false);
+    tip.visible = false;
+
+    const blob = new T.Mesh(G.shadow, new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2;
+    blob.scale.set(32, 32, 1);
+    blob.position.y = 0.9;
+    root.add(blob);
+    const shield = new T.Mesh(new T.SphereGeometry(23, 20, 14), new T.MeshBasicMaterial({ color: 0x5adcff, transparent: true, opacity: 0.2, depthWrite: false, blending: T.AdditiveBlending }));
+    shield.position.y = 25;
+    shield.visible = false;
+    root.add(shield);
+
+    return { root, inner, mixer, acts, w: { Idle: 1, Walk: 0, Run: 0 }, gun, tip, shield, blob, phase: Math.random() * TAU, h: 0, px: 0, py: 0, seen: false, soldier: !npc, baseScale: inner.scale.x };
+  }
+
+  function animateSoldier(p, dt, moving, speed, st) {
+    const dazed = !!(st && st.stunned);
+    const won = !!(st && st.finished);
+    const go = moving && !dazed && !(st && st.thinking);
+    const target = { Idle: go ? 0 : 1, Walk: go && speed < 105 ? 1 : 0, Run: go && speed >= 105 ? 1 : 0 };
+    const k = Math.min(1, dt * 9);
+    for (const n of ['Idle', 'Walk', 'Run']) {
+      p.w[n] += (target[n] - p.w[n]) * k;
+      p.acts[n].setEffectiveWeight(Math.max(0.0001, p.w[n]));
+    }
+    p.acts.Walk.setEffectiveTimeScale(clamp(speed / 38, 0.6, 2.2));
+    p.acts.Run.setEffectiveTimeScale(clamp(speed / 125, 0.7, 1.9));
+    p.acts.Idle.setEffectiveTimeScale(dazed ? 0.4 : 1);
+    p.mixer.update(dt);
+    p.inner.position.y = won ? Math.abs(Math.sin(nowT * 7)) * 6 : 0;
+    p.inner.rotation.z = dazed ? Math.sin(nowT * 5) * 0.28 : 0;
+    p.inner.rotation.x = dazed ? 0.22 : 0;
+    p.gun.visible = !!(st && st.armed);
+    p.tip.visible = false;
+  }
+
   // a person, 49 units tall, facing +X (his right hand is +Z)
   function buildPerson(look, o) {
     geos();
+    if (soldierGLTF) return buildSoldier(look, o || {});
     o = o || {};
     const soldier = !!o.soldier;
     const skin = pm(look.skin, 0.65);
@@ -334,7 +444,9 @@ const City3D = (function () {
   }
 
   const _tmp = new T.Vector3();
-  function animatePerson(p, dt, moving, speedK, st) {
+  function animatePerson(p, dt, moving, speed, st) {
+    if (p.mixer) return animateSoldier(p, dt, moving, speed, st);
+    const speedK = Math.min(1.4, speed / 60);
     const aim = !!(st && st.aim);
     const dazed = !!(st && st.stunned);
     const won = !!(st && st.finished);
@@ -626,7 +738,7 @@ const City3D = (function () {
     if (payload.snapshot) applyState(payload.snapshot);
     running = false;
     resize();
-    begin();
+    Promise.race([modelWait, new Promise((r) => setTimeout(r, 7000))]).then(begin);
   }
 
   function buildEntities() {
@@ -652,6 +764,7 @@ const City3D = (function () {
       helmet: HELMET[(h >>> 5) % HELMET.length],
       vest: VEST[(h >>> 9) % VEST.length],
       cap: ((h >>> 17) & 3) === 0,
+      sv: 0.93 + ((h >>> 19) & 7) * 0.013,
       soldier,
     };
   }
@@ -803,7 +916,7 @@ const City3D = (function () {
         look.skin = SKIN[n.look[0] % SKIN.length];
         look.shirt = SHIRT[n.look[1] % SHIRT.length];
         look.hair = HAIR[(n.look[0] + n.look[1]) % HAIR.length];
-        o = npcObjs[i] = buildPerson(look, { soldier: false });
+        o = npcObjs[i] = buildPerson(look, { soldier: false, npc: true });
         if (!withShadow) o.root.traverse((m) => (m.castShadow = false));
         entityGroup.add(o.root);
       }
@@ -811,7 +924,7 @@ const City3D = (function () {
       const moving = !!n.walk && f.moved > 0.02;
       o.root.position.set(n.x, 4.4 * 0, n.y);
       o.root.rotation.y = o.h;
-      animatePerson(o, dt, moving, Math.min(1.2, f.speed / 60), null);
+      animatePerson(o, dt, moving, f.speed, null);
     }
 
     // traffic
@@ -879,7 +992,7 @@ const City3D = (function () {
         o.car.head.emissiveIntensity = 0.4 + world.night * 3;
         if (moving && Math.random() < dt * 22) burst(x - Math.cos(-o.h) * 30, 4, y + Math.sin(-o.h) * 30, '#cfc9bd', 1, 28, 14, 0.6, -10);
       } else {
-        animatePerson(o.person, dt, moving, flags & 4 ? 1.4 : 1, { armed: blaster > 0, aim: blaster > 0 && !moving, stunned: !!(flags & 1), finished: !!(flags & 32), thinking: !!(flags & 8) });
+        animatePerson(o.person, dt, moving, f.speed, { armed: blaster > 0, aim: blaster > 0 && !moving, stunned: !!(flags & 1), finished: !!(flags & 32), thinking: !!(flags & 8) });
         if (isMe && moving && Math.random() < dt * 9) burst(x, 2, y, '#d9d2c2', 1, 18, 9, 0.5, -10);
       }
       o.person.shield.visible = !!(flags & 2);
@@ -1215,7 +1328,14 @@ const City3D = (function () {
     }
     if (keys.rotL) cam.yawT -= dt * 1.8;
     if (keys.rotR) cam.yawT += dt * 1.8;
-    frame(dt);
+    try {
+      frame(dt);
+    } catch (err) {
+      if (!loop.warned) {
+        loop.warned = true;
+        console.error('city frame failed', err);
+      }
+    }
     requestAnimationFrame(loop);
   }
 
@@ -1377,6 +1497,7 @@ const City3D = (function () {
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.setClearColor(0x0b1022, 1);
     tuneQuality();
+    loadModels();
     mini = miniEl;
     mctx = mini.getContext('2d');
     hooks = h || {};
