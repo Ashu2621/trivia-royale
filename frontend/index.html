@@ -63,9 +63,9 @@
         <h1 class="hero-logo"><span class="logo-a">City</span><span class="logo-b">Chaos</span></h1>
         <p class="subtitle">A free-roam 3D city brawl for you and your friends. Punch, swing, shoot, hijack cars and rob the bank — then survive the haunted mansion and find a toilet before your bladder gives up.</p>
         <div class="hero-chips">
-          <span class="chip">🥊 Fists · 🏏 Bat · 🔫 Guns</span>
-          <span class="chip">🚗 Drive &amp; run people over</span>
-          <span class="chip">🚓 Wanted stars</span>
+          <span class="chip">🪂 Battle Royale</span>
+          <span class="chip">🌆 GTA-style free roam</span>
+          <span class="chip">🔫 Pistol · SMG · AR · Sniper</span>
           <span class="chip">🎙️ Real voice chat</span>
         </div>
       </div>
@@ -85,7 +85,8 @@
         </div>
 
         <div class="panel home-actions">
-          <button id="quickBtn" class="btn btn-city" type="button">⚡ Quick Play vs 3 Bots</button>
+          <button id="quickBtn" class="btn btn-city" type="button">🌆 Quick Play: City Chaos (vs 3 bots)</button>
+          <button id="quickRoyaleBtn" class="btn btn-royale" type="button">🪂 Quick Play: City Royale (vs 9 bots)</button>
           <button id="createBtn" class="btn btn-primary" type="button">Create a Room</button>
           <div class="or-divider"><span>or join friends</span></div>
           <label class="field">
@@ -116,6 +117,12 @@
           <div class="panel">
             <div class="panel-title"><span>Gang</span><span id="squadCount" class="count-pill">1/10</span></div>
             <div class="player-list" id="lobbyPlayers"></div>
+
+            <div id="modeControls" class="bot-controls hidden">
+              <p class="eyebrow">Game mode</p>
+              <div id="modePills" class="tier-pills"></div>
+              <p id="modeHint" class="hint"></p>
+            </div>
 
             <div id="botControls" class="bot-controls hidden">
               <p class="eyebrow">Computer rivals</p>
@@ -157,6 +164,7 @@
             <div class="city-board" id="cityBoard"></div>
           </div>
           <div class="city-rightcol">
+            <div class="br-hud" id="brHud"><span id="brAlive">🧍 10</span><span id="brKills">☠ 0</span><span id="brZone">🌀</span></div>
             <div class="city-timer" id="cityTimer">8:00</div>
             <div class="wanted" id="cityWanted" title="Wanted level"></div>
             <div class="bladder" id="cityBladder" title="Your bladder — find a public toilet stall before it hits 100%!">
@@ -178,12 +186,15 @@
         </div>
 
         <div class="hurt-flash" id="hurtFlash"></div>
-        <div class="wasted hidden" id="wasted"><b>WASTED</b><small id="wastedSub"></small></div>
-        <p class="city-hint" id="cityHint">WASD move · Space / click = fight · F = car · 1-5 or Tab = weapon · drag = look around · hold the door to enter</p>
+        <div class="wasted hidden" id="wasted"><b id="wastedTitle">WASTED</b><small id="wastedSub"></small></div>
+        <div class="spec-banner hidden" id="specBanner"></div>
+        <p class="city-hint" id="cityHint">WASD move · Space / click = fight · F = car · R = reload · 1-7 or Tab = weapon · right-click / Z = aim · drag = look around</p>
         <button id="micBtnCity" class="mic-btn" type="button">🎙️ Mic off</button>
       </div>
       <div class="joy" id="joy"><div class="joy-knob" id="joyKnob"></div></div>
       <div class="act-btns">
+        <button id="adsBtn" class="act-btn act-small" type="button" aria-label="Aim down sights">🔭</button>
+        <button id="reloadBtn" class="act-btn act-small" type="button" aria-label="Reload">↻</button>
         <button id="weaponBtn" class="act-btn act-small" type="button" aria-label="Switch weapon">🔁</button>
         <button id="useBtn" class="act-btn act-small" type="button" aria-label="Get in or out of a car">🚗</button>
         <button id="fireBtn" class="act-btn act-fire" type="button" aria-label="Attack">👊</button>
@@ -241,9 +252,10 @@
     <div class="modal-box">
       <h3>How to Play</h3>
       <ul class="rules-list">
-        <li>🌆 <strong>The goal</strong> — you are loose in a 3D city with your friends (or 🤖 computer rivals). Your <strong>cash</strong> is your score. Whoever has the most when the 8 minutes are up wins — and finishing all four missions earns a big bonus.</li>
+        <li>🪂 <strong>City Royale (Battle Royale)</strong> — everybody parachutes into the city with bare fists. Grab guns, ammo, armor and medkits from the streets (rarity: pistol → SMG → shotgun → 🟣 assault rifle → 🟡 sniper), fight, and stay inside the shrinking 🌀 storm circle (the white ring shows where the next one will be). Supply drops 📦 with heavy weapons fall into every new circle. Eliminated players drop their loot; the <strong>last one standing wins</strong>.</li>
+        <li>🌆 <strong>City Chaos (free roam)</strong> — you are loose in a 3D city with your friends (or 🤖 computer rivals). Your <strong>cash</strong> is your score. Whoever has the most when the 8 minutes are up wins — and finishing all four missions earns a big bonus.</li>
         <li>🎯 <strong>Missions</strong> — 1) 🔫 the Gun Store (grab guns), 2) 🏚️ the Haunted Mansion, 3) 💰 the Bank heist, 4) 🚽 the Royal Restroom (finish). Stand in the glowing ring at a door and <strong>hold still</strong> to complete it. Side stops work any time: 🏥 Hospital heals, 🚗 Garage gives a car, 🍔 Diner, 🎮 Arcade and 📻 Radio pay cash, 🚓 Police lets you bribe your stars away.</li>
-        <li>🥊 <strong>Fighting</strong> — <code>Space</code> / <code>J</code> or a mouse click / tap / the 👊 button attacks (hold to keep going; it auto-aims at whoever is in front of you). Fists, 🏏 bat, 🔫 pistol, SMG and shotgun (<code>1–5</code> or <code>Tab</code> to switch). Armed guards protect every building, and other players will fight back — or take revenge.</li>
+        <li>🥊 <strong>Fighting</strong> — <code>Space</code> / <code>J</code> or a mouse click / tap / the 👊 button attacks (hold to keep going; it auto-aims at whoever is in front of you). Fists, 🏏 bat, 🔫 pistol, SMG, shotgun, assault rifle and 🎯 sniper (<code>1–7</code> or <code>Tab</code> to switch). Guns have magazines — <code>R</code> reloads — and the crosshair widens when you spray or run. Hold right-click / <code>Z</code> to aim down sights (sniper zooms a lot). Armed guards protect every building, and other players will fight back — or take revenge.</li>
         <li>🚗 <strong>Cars</strong> — walk up to a car and press <code>F</code> (or 🚗) to hijack it. Drive with WASD (or the stick). Run people over, but cars crash, catch fire and explode.</li>
         <li>⭐ <strong>Wanted level</strong> — hurt people, rob the bank or blow things up and the cops come, more of them with every star. Lose them by hiding, waiting it out, or bribing the police.</li>
         <li>💀 <strong>Wasted?</strong> You respawn at the hospital after a few seconds with your pistol (half the ammo) and a moment of protection. You drop 20% of your cash on the street (grab it back!) and whoever took you out earns +$250.</li>
@@ -285,6 +297,7 @@
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/SkeletonUtils.js"></script>
+  <script src="post.js"></script>
   <script src="soldier.js"></script>
   <script src="voice.js"></script>
   <script src="city3d_world.js"></script>

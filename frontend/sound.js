@@ -430,7 +430,16 @@ const SoundFX = (function () {
     // ---- City Chaos: combat ----
     gun(kind, volume, pan) {
       const v = volume == null ? 1 : volume;
-      if (kind === 3) { // SMG: a short, dry rattle
+      if (kind === 6) { // sniper: a huge, deep crack with a long tail
+        snap(0, 0.5, 900, 0.5, 0.3 * v, 0.8, 'bandpass', pan);
+        snap(0, 0.9, 380, 0.4, 0.22 * v, 0.6, 'lowpass', pan);
+        thump(0, 180, 40, 0.5, 0.26 * v);
+        snap(0.25, 0.4, 1500, 1.5, 0.05 * v, 1.2, 'bandpass', pan);
+      } else if (kind === 5) { // assault rifle: a punchy crack
+        snap(0, 0.12, 1300, 0.7, 0.19 * v, 1.05, 'bandpass', pan);
+        thump(0, 240, 70, 0.1, 0.13 * v);
+        snap(0.05, 0.16, 2600, 2, 0.04 * v, 1.3, 'bandpass', pan);
+      } else if (kind === 3) { // SMG: a short, dry rattle
         snap(0, 0.09, 1900, 0.7, 0.16 * v, 1.2, 'bandpass', pan);
         thump(0, 260, 90, 0.08, 0.1 * v);
       } else if (kind === 4) { // shotgun: a big boom with a low thud
@@ -468,6 +477,16 @@ const SoundFX = (function () {
     },
     ricochet() {
       sweep(2600, 900, 0, 0.22, 'sine', 0.04);
+    },
+    hitmarker() {
+      tone(1900, 0, 0.05, 'square', 0.05);
+    },
+    killDing() {
+      tone(1200, 0, 0.09, 'triangle', 0.12);
+      tone(1800, 0.08, 0.16, 'triangle', 0.12);
+    },
+    zoneWarn() {
+      for (let i = 0; i < 3; i++) sweep(300, 220, i * 0.5, 0.45, 'sawtooth', 0.06);
     },
     hurtGrunt(volume) {
       voiceLine('hurt', volume == null ? 0.8 : volume);

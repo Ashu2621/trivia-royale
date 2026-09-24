@@ -389,7 +389,7 @@ const Soldier = (function () {
       const showGun = wc >= 2 && obj.deadK < 0.5 && p.hold < 0.5;
       if (obj.wcode !== wc) {
         obj.wcode = wc;
-        obj.gun.scale.setScalar(obj.gunBase * (wc === 2 ? 0.75 : wc === 3 ? 0.95 : 1.2));
+        obj.gun.scale.setScalar(obj.gunBase * ([1, 1, 0.75, 0.95, 1.05, 1.2, 1.55][wc] || 1));
       }
       obj.gun.visible = showGun;
       obj.tip.visible = false;

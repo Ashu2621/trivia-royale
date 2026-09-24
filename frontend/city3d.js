@@ -38,8 +38,10 @@ const City = (function () {
   const GUARD_TINT = '#a8742a';
   const COP_TINT = '#2b4fa8';
   const CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#ecf0f1', '#9b59b6'];
-  const PICKUP_ICON = ['💵', '🔫', '🔫', '🔫', '❤️', '🛡️', '🏏']; // cash pistol smg shotgun health armor bat
-  const PICKUP_COLOR = ['#5ee38f', '#cfd8e3', '#ffb347', '#ff6b6b', '#ff5470', '#5ac8ff', '#d9a05b'];
+  const PICKUP_ICON = ['💵', '🔫', '🔫', '🔫', '❤️', '🛡️', '🏏', '🔫', '🎯', '📦']; // cash pistol smg shotgun health armor bat ar sniper ammo
+  const PICKUP_COLOR = ['#5ee38f', '#cfd8e3', '#5ee38f', '#5aa8ff', '#ff5470', '#5ac8ff', '#d9a05b', '#b47cff', '#ffd23f', '#ffe08a'];
+  const AIR_MS = 7500;
+  const WEAPON_COUNT = 7;
   const HIT_COLOR = ['#ff5a5a', '#ffffff', '#ffb347', '#7fb4ff', '#9fe6ff'];
 
   let canvas = null;
@@ -60,6 +62,18 @@ const City = (function () {
   let last = 0;
   let nowT = 0;
   let q = null;
+  let post = null;
+  let mode = 'city';
+  let airUntil = 0;
+  let spectateIdx = -1;
+  let zoneMesh = null;
+  let nextRing = null;
+  const hitDirs = [];
+  const hitMark = { at: -9, kill: false };
+  const cross = { heat: 0 };
+  let ads = false;
+  let adsK = 0;
+  const flares = [];
 
   let map = null;
   let missions = [];
@@ -82,7 +96,7 @@ const City = (function () {
   const bubbles = new Map();
 
   function newMe() {
-    return { x: 0, y: 0, ang: 0, init: false, flags: 0, mission: 0, cash: 0, weapon: 0, hp: 100, armor: 0, bladder: 0, world: 0, keys: 0, wanted: 0, ammo: -1, kills: 0, hold: 0, owned: 1 };
+    return { x: 0, y: 0, ang: 0, init: false, flags: 0, mission: 0, cash: 0, weapon: 0, hp: 100, armor: 0, bladder: 0, world: 0, keys: 0, wanted: 0, ammo: -1, kills: 0, hold: 0, owned: 1, mag: -1, reloading: false, place: 0, spectate: -1 };
   }
 
   // camera rig
@@ -119,7 +133,9 @@ const City = (function () {
   }
 
   function speedOf(flags) {
-    if (flags & (1 | 4 | 32 | 64 | 128 | 2048)) return 0;
+    if (flags & 2048) return 0;
+    if (flags & 131072) return 210;
+    if (flags & (1 | 4 | 32 | 64 | 128)) return 0;
     return BASE_SPEED * (flags & 256 ? CLENCH_MUL : 1);
   }
 
@@ -403,7 +419,7 @@ const City = (function () {
     t.m.position.copy(_a).lerp(_b, 0.5);
     t.m.scale.set(width || 1, len, width || 1);
     t.m.quaternion.setFromUnitVectors(UP, d.normalize());
-    t.m.material.color.set(color || '#ffe6a0');
+    t.m.material.color.set(color || '#ffe6a0').multiplyScalar(post ? 3.2 : 1);
     t.max = t.life = life || 0.1;
     t.m.visible = true;
   }
@@ -430,6 +446,7 @@ const City = (function () {
     }
     flashSprite.position.set(x, y, z);
     flashSprite.userData.size = size;
+    flashSprite.material.color.set(0xffb060).multiplyScalar(post ? 4 : 1);
     flashLife = 0.45;
     flashSprite.visible = true;
   }
@@ -472,6 +489,9 @@ const City = (function () {
     scene.add(entityGroup);
     marker = buildMarker();
     scene.add(marker.group);
+    const zm = buildZone();
+    zoneMesh = zm.wall;
+    nextRing = zm.ring;
     particles = [];
     smoke = [];
     makeParticles();
@@ -550,7 +570,7 @@ const City = (function () {
     for (const p of particles) {
       if (p.life > 0) continue;
       p.sp.position.set(x, y, z);
-      p.sp.material.color.set(color);
+      p.sp.material.color.set(color).multiplyScalar(post ? 1.9 : 1);
       const a = Math.random() * TAU;
       const u = Math.random() * 2 - 1;
       const s = (speed || 60) * (0.4 + Math.random() * 0.8);
@@ -650,8 +670,26 @@ const City = (function () {
   }
 
   // server events: gunfire, punches, hits, explosions, body noises
+  function combatMarks(e) {
+    const myId = (players[meIdx] || {}).playerId;
+    if (!myId) return;
+    if (e.type === 'hit' && e.by === myId && e.dmg > 0) {
+      hitMark.at = nowT;
+      hitMark.kill = false;
+    } else if (e.type === 'kill' && e.killer === myId) {
+      hitMark.at = nowT;
+      hitMark.kill = true;
+    } else if (e.type === 'shot' && e.playerId === myId) cross.heat = Math.min(1, cross.heat + (e.w === 6 ? 1 : e.w === 4 ? 0.5 : 0.16));
+    else if (e.type === 'hit' && e.k === 0 && e.playerId === myId && e.from) hitDirs.push({ ang: Math.atan2(e.from[1] - me.y, e.from[0] - me.x), born: nowT });
+    else if (e.type === 'airdrop') {
+      flares.push({ x: e.x, y: e.y, born: nowT, life: 60 });
+      textFx('📦 SUPPLY DROP', '#ffd23f', e.x, e.y, 110, 3);
+    } else if (e.type === 'zone' && !reduceMotion) cam.shake = Math.max(cam.shake, 5);
+  }
+
   function fxEvent(e) {
     if (!scene || !e) return;
+    combatMarks(e);
     const P = e.playerId ? posOf(e.playerId) : null;
     const isMe = !!P && P.idx === meIdx;
     const px = P ? P.x : me.x;
@@ -779,6 +817,13 @@ const City = (function () {
     meIdx = indexById.has(myPlayerId) ? indexById.get(myPlayerId) : -1;
     offset = payload.serverNow - Date.now();
     startsAt = payload.startsAt;
+    mode = payload.mode || 'city';
+    airUntil = payload.airUntil || 0;
+    spectateIdx = -1;
+    hitDirs.length = 0;
+    flares.length = 0;
+    ads = false;
+    adsK = 0;
     snaps = [];
     cur = null;
     fx.length = 0;
@@ -828,7 +873,7 @@ const City = (function () {
     if (snaps.length > 12) snaps.shift();
     const e = s.p.find((r) => r[0] === meIdx);
     if (!e) return;
-    const [, sx, sy, ang, flags, mission, cash, weapon, hp, armor, bladder, w, kmask, wanted, ammo, kills, hold, owned] = e;
+    const [, sx, sy, ang, flags, mission, cash, weapon, hp, armor, bladder, w, kmask, wanted, ammo, kills, hold, owned, mag] = e;
     me.flags = flags;
     me.mission = mission;
     me.cash = cash;
@@ -843,6 +888,10 @@ const City = (function () {
     me.kills = kills || 0;
     me.hold = hold || 0;
     me.owned = owned || 1;
+    me.mag = mag == null ? -1 : mag;
+    me.reloading = !!(flags & 32768);
+    me.place = mode === 'royale' ? mission : 0;
+    me.spectate = spectateIdx;
     if (!me.init) {
       me.x = sx;
       me.y = sy;
@@ -852,6 +901,8 @@ const City = (function () {
       cam.z = sy;
     } else if (flags & 4) {
       // driving: the car mesh is the truth (see syncEntities)
+    } else if (mode === 'royale' && flags & 2048) {
+      // eliminated: the camera follows someone else (see updateCamera)
     } else {
       const err = Math.hypot(sx - me.x, sy - me.y);
       if (err > 90 || flags & (1 | 2048 | 128)) {
@@ -908,6 +959,8 @@ const City = (function () {
         return { x: jump ? e[0] : l(o[0], e[0]), y: jump ? e[1] : l(o[1], e[1]), ang: lerpAng(o[2] / 100, e[2] / 100, k), hp: e[3], shooting: e[4] };
       }),
       pk: b.pk || [],
+      z: b.z ? [l(a.z ? a.z[0] : b.z[0], b.z[0]), l(a.z ? a.z[1] : b.z[1], b.z[1]), l(a.z ? a.z[2] : b.z[2], b.z[2]), b.z[3], b.z[4], b.z[5], b.z[6], b.z[7], b.z[8], b.z[9]] : null,
+      al: b.al,
       endsAt: b.endsAt,
     };
   }
@@ -933,6 +986,51 @@ const City = (function () {
 
   function turnTo(obj, ang, dt, rate) {
     obj.h += angDiff(obj.h, yawOf(ang)) * Math.min(1, dt * (rate || 14));
+  }
+
+  function buildChute(tint) {
+    const g = new T.Group();
+    const canopy = new T.Mesh(
+      new T.SphereGeometry(34, 20, 8, 0, TAU, 0, Math.PI * 0.5),
+      new T.MeshStandardMaterial({ color: tint, roughness: 0.7, side: T.DoubleSide, emissive: tint, emissiveIntensity: 0.15 })
+    );
+    canopy.position.y = 96;
+    canopy.scale.y = 0.7;
+    canopy.castShadow = false;
+    g.add(canopy);
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      pts.push(new T.Vector3(Math.cos(a) * 34, 96, Math.sin(a) * 34), new T.Vector3(0, 48, 0));
+    }
+    g.add(new T.LineSegments(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: 0xe8e8e8 })));
+    g.visible = false;
+    return g;
+  }
+
+  function buildZone() {
+    const vs = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+    const fs = `uniform float time; varying vec2 vUv;
+      void main(){
+        float h = vUv.y;
+        float bands = 0.5 + 0.5 * sin(vUv.x * 220.0 + time * 1.6) * sin(h * 14.0 - time * 2.4);
+        float a = (1.0 - h) * (0.10 + 0.10 * bands) + 0.012;
+        a *= smoothstep(0.9, 0.3, h);
+        gl_FragColor = vec4(vec3(0.3, 0.55, 0.95), a);
+      }`;
+    const geo = new T.CylinderGeometry(1, 1, 900, 112, 1, true);
+    geo.translate(0, 450, 0);
+    const wall = new T.Mesh(geo, new T.ShaderMaterial({ uniforms: { time: { value: 0 } }, vertexShader: vs, fragmentShader: fs, transparent: true, side: T.DoubleSide, depthWrite: false, blending: T.AdditiveBlending, fog: false }));
+    wall.frustumCulled = false;
+    wall.visible = false;
+    scene.add(wall);
+    const ringGeo = new T.RingGeometry(0.99, 1, 128);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ring = new T.Mesh(ringGeo, new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, toneMapped: false, side: T.DoubleSide, depthWrite: false }));
+    ring.frustumCulled = false;
+    ring.visible = false;
+    scene.add(ring);
+    return { wall, ring };
   }
 
   function makeNpc(i, n) {
@@ -1060,6 +1158,16 @@ const City = (function () {
         entityGroup.add(o.root);
       }
       const inCar = !!(flags & 4);
+      const air = !!(flags & 131072);
+      const airH = air ? 520 * Math.pow(clamp((airUntil - nowServer()) / AIR_MS, 0, 1), 0.85) : 0;
+      if (air && !o.chute) {
+        o.chute = buildChute(PLAYER_TINT[e.idx % PLAYER_TINT.length]);
+        o.root.add(o.chute);
+      }
+      if (o.chute) o.chute.visible = air;
+      if (o.wasAir && !air) burst(x, 4, y, '#d9d2c2', 16, 90, 16, 0.8, -10);
+      o.wasAir = air;
+      o.blob.position.y = 0.9 - airH;
       o.root.visible = !inCar;
       o.pos = { x, y };
       if (inCar) {
@@ -1084,14 +1192,14 @@ const City = (function () {
         const v = inputVector();
         moving = (!!(v.dx || v.dy) && speedOf(flags) > 0) || f.moved > 0.2;
       }
-      o.root.position.set(x, 0, y);
+      o.root.position.set(x, airH, y);
       o.root.rotation.y = o.h;
       const bl = isMe ? me.bladder : e.bladder;
       const weapon = isMe ? me.weapon : e.weapon;
       animatePerson(
         o,
         dt,
-        moving && !dead,
+        moving && !dead && !air,
         f.speed,
         Object.assign(
           {
@@ -1108,7 +1216,7 @@ const City = (function () {
         )
       );
       if (isMe && moving && !dead && Math.random() < dt * 9) burst(x, 2, y, '#d9d2c2', 1, 18, 9, 0.5, -10);
-      labels.push({ x, z: y, h: dead ? 30 : 88, info, isMe, idx: e.idx, flags, hp: e.hp, armor: e.armor, wanted: e.wanted, dead });
+      labels.push({ x, z: y, h: (dead ? 30 : 88) + airH, info, isMe, idx: e.idx, flags, hp: e.hp, armor: e.armor, wanted: e.wanted, dead });
     }
   }
 
@@ -1142,10 +1250,38 @@ const City = (function () {
   function updateCamera(dt) {
     const aspect = W / Math.max(1, H);
     camera.aspect = aspect;
-    camera.fov = aspect < 0.9 ? 60 : 46;
+    adsK += ((ads && !(me.flags & 4) ? 1 : 0) - adsK) * Math.min(1, dt * 8);
+    const sniper = me.weapon === 6;
+    camera.fov = (aspect < 0.9 ? 60 : 46) - adsK * (sniper ? 20 : 11);
     camera.updateProjectionMatrix();
-    const tx = me.init ? me.x : map.w / 2;
-    const tz = me.init ? me.y : map.h / 2;
+    let tx = me.init ? me.x : map.w / 2;
+    let tz = me.init ? me.y : map.h / 2;
+    me.spectate = -1;
+    if (mode === 'royale' && me.flags & 2048 && cur) {
+      // eliminated: watch whoever is still standing
+      const alive = (idx) => {
+        const e = cur.p.find((r) => r.idx === idx);
+        return !!e && !(e.flags & (2048 | 64));
+      };
+      if (spectateIdx < 0 || !alive(spectateIdx)) {
+        let best = -1;
+        let bestHp = -1;
+        for (const e of cur.p) {
+          if (e.flags & (2048 | 64) || e.idx === meIdx) continue;
+          if (e.hp > bestHp) {
+            bestHp = e.hp;
+            best = e.idx;
+          }
+        }
+        spectateIdx = best;
+      }
+      const o = playerObjs[spectateIdx];
+      if (o && o.pos) {
+        tx = o.pos.x;
+        tz = o.pos.y;
+        me.spectate = spectateIdx;
+      }
+    }
     cam.x += (tx - cam.x) * Math.min(1, dt * 9);
     cam.z += (tz - cam.z) * Math.min(1, dt * 9);
     cam.yaw += angDiff(cam.yaw, cam.yawT) * Math.min(1, dt * 10);
@@ -1153,7 +1289,8 @@ const City = (function () {
     cam.dist += (cam.distT - cam.dist) * Math.min(1, dt * 8);
     const portraitBoost = aspect < 0.9 ? 1 + (0.9 - aspect) * 0.9 : 1;
     const inCar = !!(me.flags & 4);
-    const d = (cam.dist + (inCar ? 90 : 0)) * portraitBoost;
+    const airNow = !!(me.flags & 131072);
+    const d = Math.max(120, (cam.dist + (inCar ? 90 : 0) + (airNow ? 220 : 0)) * portraitBoost * (1 - adsK * (sniper ? 0.5 : 0.28)));
     const fx_ = Math.sin(cam.yaw);
     const fz_ = -Math.cos(cam.yaw);
     const cp = Math.cos(cam.pitch);
@@ -1199,6 +1336,15 @@ const City = (function () {
     if (d.y >= -1e-4) return null;
     const t = -o.y / d.y;
     return { x: o.x + d.x * t, y: o.z + d.z * t };
+  }
+
+  // what the floating icon / GPS points at: your mission, or the safe zone when you are in the storm
+  function markTarget() {
+    if (mode === 'royale') {
+      const z = cur && cur.z;
+      return z && me.flags & 65536 ? { door: { x: z[3], y: z[4] }, icon: '🌀', name: 'Safe zone' } : null;
+    }
+    return missions[me.mission] || null;
   }
 
   /* --------------------------------------------------------- overlay */
@@ -1294,7 +1440,7 @@ const City = (function () {
       }
     }
     // mission icon floating over the target
-    const target = missions[me.mission];
+    const target = markTarget();
     if (target) {
       const p = project(target.door.x, 120, target.door.y);
       if (!p.behind && p.x > 0 && p.x < W && p.y > 0 && p.y < H) {
@@ -1374,7 +1520,20 @@ const City = (function () {
       mctx.fillStyle = b.color;
       mctx.fillRect(b.x * k, b.y * k, b.w * k, b.h * k);
     }
-    const target = missions[me.mission];
+    if (mode === 'royale' && cur && cur.z) {
+      const z = cur.z;
+      mctx.lineWidth = 2;
+      mctx.strokeStyle = '#7fd4ff';
+      mctx.beginPath();
+      mctx.arc(z[0] * k, z[1] * k, Math.max(1, z[2] * k), 0, TAU);
+      mctx.stroke();
+      mctx.lineWidth = 1.5;
+      mctx.strokeStyle = '#ffffff';
+      mctx.beginPath();
+      mctx.arc(z[3] * k, z[4] * k, Math.max(1, z[5] * k), 0, TAU);
+      mctx.stroke();
+    }
+    const target = markTarget();
     if (target) {
       const pulse = 3 + Math.sin(nowT * 5) * 1.5;
       mctx.strokeStyle = '#ffd23f';
@@ -1434,9 +1593,11 @@ const City = (function () {
       slowFrames = 0;
       if (qualityStep === 1) {
         dprMax = 1;
+        if (post) post.setQuality(1);
         resize();
       } else if (qualityStep === 2) {
         world.sun.castShadow = false;
+        if (post) post.setQuality(2);
       } else {
         renderer.setPixelRatio(0.75);
         dprMax = 0.75;
@@ -1447,6 +1608,120 @@ const City = (function () {
 
   /* ------------------------------------------------------------- loop */
 
+  function updateZone(s) {
+    const on = mode === 'royale' && !!s.z;
+    zoneMesh.visible = on;
+    nextRing.visible = on;
+    if (!on) return;
+    const z = s.z;
+    zoneMesh.position.set(z[0], 0, z[1]);
+    zoneMesh.scale.set(Math.max(1, z[2]), 1, Math.max(1, z[2]));
+    zoneMesh.material.uniforms.time.value = nowT;
+    nextRing.position.set(z[3], 1.5, z[4]);
+    nextRing.scale.set(Math.max(1, z[5]), 1, Math.max(1, z[5]));
+    for (const f of flares) {
+      if (nowT - f.born > f.life) continue;
+      if (Math.random() < 0.5) puff(f.x + rand(-4, 4), 8, f.y + rand(-4, 4), 1, '#ff3d3d', 26, 3.2, 70);
+    }
+  }
+
+  let lastCross = 0;
+  function drawCombatOverlay() {
+    const dtc = nowT - lastCross;
+    lastCross = nowT;
+    cross.heat = Math.max(0, cross.heat - dtc * 1.6);
+    const alive = !(me.flags & (2048 | 4 | 131072));
+    // supply drop flares
+    for (let i = flares.length - 1; i >= 0; i--) {
+      const f = flares[i];
+      if (nowT - f.born > f.life) {
+        flares.splice(i, 1);
+        continue;
+      }
+      const p = project(f.x, 90, f.y);
+      if (p.behind || p.x < 10 || p.x > W - 10 || p.y < 10 || p.y > H - 10) continue;
+      octx.font = '26px system-ui, "Apple Color Emoji", sans-serif';
+      octx.textAlign = 'center';
+      octx.fillText('📦', p.x, p.y);
+      octx.font = '800 12px system-ui, sans-serif';
+      octx.fillStyle = '#ffd23f';
+      octx.fillText(`${Math.round(Math.hypot(f.x - me.x, f.y - me.y) / 10)} m`, p.x, p.y + 16);
+    }
+    // where the shots are going
+    if (alive && me.weapon >= 2 && me.init) {
+      const reach = me.weapon === 6 ? 380 : me.weapon === 4 ? 130 : 210;
+      const p = project(me.x + Math.cos(me.ang) * reach, 26, me.y + Math.sin(me.ang) * reach);
+      if (!p.behind) {
+        const moving = !!(keys.up || keys.down || keys.left || keys.right || joy.x || joy.y);
+        const gap = (me.weapon === 6 ? 3 : 7) + cross.heat * 16 + (moving ? 5 : 0) - adsK * 3 + (me.weapon === 4 ? 10 : 0);
+        octx.strokeStyle = me.reloading ? 'rgba(255,210,90,0.9)' : 'rgba(255,255,255,0.92)';
+        octx.lineWidth = 2;
+        octx.shadowColor = 'rgba(0,0,0,0.8)';
+        octx.shadowBlur = 3;
+        octx.beginPath();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          octx.moveTo(p.x + dx * gap, p.y + dy * gap);
+          octx.lineTo(p.x + dx * (gap + 8), p.y + dy * (gap + 8));
+        }
+        octx.stroke();
+        octx.fillStyle = 'rgba(255,60,60,0.95)';
+        octx.fillRect(p.x - 1, p.y - 1, 2, 2);
+        octx.shadowBlur = 0;
+        // hit marker
+        const hk = nowT - hitMark.at;
+        if (hk < 0.28) {
+          octx.strokeStyle = hitMark.kill ? 'rgba(255,50,50,1)' : 'rgba(255,255,255,1)';
+          octx.lineWidth = hitMark.kill ? 3.5 : 2.5;
+          const r0 = 6 + hk * 30;
+          octx.globalAlpha = 1 - hk / 0.28;
+          octx.beginPath();
+          for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+            octx.moveTo(p.x + dx * r0, p.y + dy * r0);
+            octx.lineTo(p.x + dx * (r0 + 8), p.y + dy * (r0 + 8));
+          }
+          octx.stroke();
+          octx.globalAlpha = 1;
+        }
+      }
+    }
+    // a scope vignette for the sniper
+    if (adsK > 0.05 && me.weapon === 6 && alive) {
+      const g = octx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.18, W / 2, H / 2, Math.min(W, H) * 0.62);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, `rgba(0,0,0,${0.75 * adsK})`);
+      octx.fillStyle = g;
+      octx.fillRect(0, 0, W, H);
+    }
+    // where you are being hit from
+    const fwd = Math.atan2(-Math.cos(cam.yaw), Math.sin(cam.yaw));
+    for (let i = hitDirs.length - 1; i >= 0; i--) {
+      const h = hitDirs[i];
+      const age = nowT - h.born;
+      if (age > 1.5) {
+        hitDirs.splice(i, 1);
+        continue;
+      }
+      const rel = h.ang - fwd;
+      const fxv = Math.cos(rel);
+      const rxv = Math.sin(rel);
+      const cx = W / 2 + rxv * Math.min(W, H) * 0.36;
+      const cy = H / 2 - fxv * Math.min(W, H) * 0.36;
+      octx.save();
+      octx.translate(cx, cy);
+      octx.rotate(Math.atan2(-fxv, rxv) + Math.PI / 2);
+      octx.globalAlpha = 1 - age / 1.5;
+      octx.fillStyle = 'rgba(255,40,50,0.95)';
+      octx.beginPath();
+      octx.moveTo(0, -16);
+      octx.lineTo(22, 12);
+      octx.lineTo(-22, 12);
+      octx.closePath();
+      octx.fill();
+      octx.restore();
+    }
+    octx.globalAlpha = 1;
+  }
+
   function frame(dt) {
     const s = sample(nowServer() - 110);
     if (!s || !world) return;
@@ -1454,15 +1729,26 @@ const City = (function () {
     world.setTime(p);
     syncEntities(s, dt);
     updateCamera(dt);
-    const target = missions[me.mission] || null;
+    const target = mode === 'royale' ? markTarget() : missions[me.mission] || null;
     updateMarker(nowT);
-    world.update(nowT, dt, focus, camPos, target ? missionBuilding[me.mission] : -1);
+    world.update(nowT, dt, focus, camPos, mode === 'royale' ? -1 : target ? missionBuilding[me.mission] : -1);
+    updateZone(s);
     stepParticles(dt);
     stepSmoke(dt);
     stepTracers(dt);
     stepFlash(dt);
-    renderer.render(scene, camera);
+    if (post) {
+      const ps = post.state;
+      ps.hurt = Math.max(ps.hurt * Math.pow(0.02, dt), me.flags & 8192 ? 0.9 : 0);
+      ps.lowHp = me.flags & 2048 ? 1 : clamp((38 - me.hp) / 38, 0, 1);
+      ps.time = nowT;
+      const n = world.night;
+      ps.tint = me.flags & 65536 ? [0.8, 0.92, 1.25] : [1 - n * 0.06, 1 - n * 0.02, 1 + n * 0.1];
+      ps.exposure = 0.98 + n * 0.12;
+    }
+    if (!(post && post.render(scene, camera))) renderer.render(scene, camera);
     drawOverlay();
+    drawCombatOverlay();
     drawMinimap();
     if (hooks.gps) {
       const sp = target ? project(target.door.x, 20, target.door.y) : { x: 0, y: 0 };
@@ -1525,6 +1811,7 @@ const City = (function () {
     H = rect.height;
     renderer.setPixelRatio(dpr);
     renderer.setSize(W, H, false);
+    if (post) post.setSize(W * dpr, H * dpr);
     overlay.width = Math.round(W * dpr);
     overlay.height = Math.round(H * dpr);
     if (camera) {
@@ -1537,8 +1824,8 @@ const City = (function () {
 
   function cycleWeapon() {
     const owned = me.owned || 1;
-    for (let i = 1; i <= 5; i++) {
-      const code = (me.weapon + i) % 5;
+    for (let i = 1; i <= WEAPON_COUNT; i++) {
+      const code = (me.weapon + i) % WEAPON_COUNT;
       if (owned & (1 << code)) {
         hooks.weapon && hooks.weapon(code);
         me.weapon = code;
@@ -1563,13 +1850,17 @@ const City = (function () {
         e.preventDefault();
       } else if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
         hooks.use && hooks.use();
-      } else if (e.key >= '1' && e.key <= '5') {
+      } else if (e.key >= '1' && e.key <= '7') {
         const code = Number(e.key) - 1;
         if ((me.owned || 1) & (1 << code)) {
           hooks.weapon && hooks.weapon(code);
           me.weapon = code;
         }
-      } else if ((e.key === 'Tab' || e.key === 'r' || e.key === 'R') && !e.repeat) {
+      } else if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
+        hooks.reload && hooks.reload();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        if (!e.repeat) ads = !ads;
+      } else if (e.key === 'Tab' && !e.repeat) {
         cycleWeapon();
         e.preventDefault();
       } else if (e.key === '+' || e.key === '=') cam.distT = clamp(cam.distT - 40, 190, 560);
@@ -1626,6 +1917,10 @@ const City = (function () {
     let pinch = 0;
     canvas.addEventListener('pointerdown', (e) => {
       if (!map || !running) return;
+      if (e.button === 2) {
+        ads = true;
+        return;
+      }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       canvas.setPointerCapture(e.pointerId);
       if (pointers.size === 1) {
@@ -1666,6 +1961,7 @@ const City = (function () {
       drag.y = e.clientY;
     });
     const up = (e) => {
+      if (e.button === 2) ads = false;
       pointers.delete(e.pointerId);
       if (fire.ptr && fire.ptr.id === e.pointerId) fire.ptr = null;
       if (drag && drag.id === e.pointerId) {
@@ -1707,6 +2003,14 @@ const City = (function () {
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.setClearColor(0x0b1022, 1);
     tuneQuality();
+    if (typeof Post !== 'undefined' && !/[?&]nopost/.test(location.search)) {
+      try {
+        post = Post.create(renderer, { mobile });
+      } catch (err) {
+        console.warn('post-processing unavailable', err);
+        post = null;
+      }
+    }
     Soldier.load();
     mini = miniEl;
     mctx = mini.getContext('2d');
@@ -1738,6 +2042,12 @@ const City = (function () {
     floatText,
     resume() { if (map && !running) begin(); },
     setFire(on) { fire.btn = !!on; },
+    setAds(on) { ads = !!on; },
+    toggleAds() { ads = !ads; return ads; },
+    reload() { hooks.reload && hooks.reload(); },
+    get mode() { return mode; },
+    get zone() { return cur && cur.z; },
+    get alive() { return cur && cur.al; },
     cycleWeapon,
     get running() { return running; },
     get view() { return cur; },

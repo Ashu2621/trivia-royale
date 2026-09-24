@@ -13,6 +13,7 @@ const EVENTS = {
   CITY_ATTACK: 'city:attack',
   CITY_USE: 'city:use',
   CITY_WEAPON: 'city:weapon',
+  CITY_RELOAD: 'city:reload',
   CITY_SHOUT: 'city:shout',
   VOICE_JOIN: 'voice:join',
   VOICE_LEAVE: 'voice:leave',

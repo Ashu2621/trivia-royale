@@ -1,7 +1,20 @@
 const EVENTS = require('./events');
 const rooms = require('./rooms');
 const game = require('./game');
-const city = require('./city');
+const cityMod = require('./city');
+const royale = require('./royale');
+
+// the running match is either City Chaos or City Royale
+const sim = (room) => (room.mode === 'royale' ? royale : cityMod);
+const city = {
+  initPayload: (room) => sim(room).initPayload(room),
+  setInput: (room, ...a) => sim(room).setInput(room, ...a),
+  attack: (io, room, ...a) => sim(room).attack(io, room, ...a),
+  use: (io, room, ...a) => sim(room).use(io, room, ...a),
+  selectWeapon: (room, ...a) => sim(room).selectWeapon(room, ...a),
+  reload: (room, ...a) => sim(room).reload(room, ...a),
+  shout: (io, room, ...a) => sim(room).shout(io, room, ...a),
+};
 
 // socket.id -> { roomCode, playerId }, so a disconnect knows which room/player it belonged to
 const socketMeta = new Map();
@@ -66,14 +79,14 @@ function register(io, socket) {
     io.to(room.code).emit(EVENTS.PLAYER_LIST_UPDATE, { players: rooms.serializePlayers(room) });
   });
 
-  socket.on(EVENTS.GAME_START, () => {
+  socket.on(EVENTS.GAME_START, ({ mode } = {}) => {
     const ctx = getContext(socket);
     if (!ctx) return;
     const { room, player } = ctx;
     if (!player.isCreator) return sendError(socket, 'NOT_HOST', 'Only the room host can start the game.');
     if (room.state !== 'lobby') return;
     if (rooms.countConnected(room) < 2) return sendError(socket, 'NOT_ENOUGH_PLAYERS', 'Need at least 2 players (add a computer player!) to start.');
-    game.startGame(io, room);
+    game.startGame(io, room, mode);
   });
 
   socket.on(EVENTS.ROOM_LEAVE, () => {
@@ -101,6 +114,10 @@ function register(io, socket) {
   socket.on(EVENTS.CITY_WEAPON, ({ code } = {}) => {
     const ctx = getContext(socket);
     if (ctx) city.selectWeapon(ctx.room, ctx.player.playerId, code);
+  });
+  socket.on(EVENTS.CITY_RELOAD, () => {
+    const ctx = getContext(socket);
+    if (ctx) city.reload(ctx.room, ctx.player.playerId);
   });
   // a loud shout into the microphone (the client measures the volume)
   socket.on(EVENTS.CITY_SHOUT, () => {

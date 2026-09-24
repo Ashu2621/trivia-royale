@@ -89,15 +89,7 @@ const COP_HP = 70;
 const GUARD_HP = 60;
 const NPC_HP = 30;
 
-const WEAPONS = {
-  fists: { code: 0, melee: true, dmg: 14, range: 42, cd: 420, cone: 1.2, label: 'Fists' },
-  bat: { code: 1, melee: true, dmg: 32, range: 58, cd: 720, cone: 1.5, label: 'Bat' },
-  pistol: { code: 2, dmg: 17, range: 520, cd: 380, spread: 0.03, ammoKey: 'pistol', label: 'Pistol' },
-  smg: { code: 3, dmg: 9, range: 460, cd: 110, spread: 0.1, ammoKey: 'smg', label: 'SMG' },
-  shotgun: { code: 4, dmg: 11, pellets: 6, range: 250, cd: 900, spread: 0.24, ammoKey: 'shotgun', label: 'Shotgun' },
-};
-const WEAPON_BY_CODE = ['fists', 'bat', 'pistol', 'smg', 'shotgun'];
-const AMMO_CAP = { pistol: 120, smg: 300, shotgun: 40 };
+const { WEAPONS, WEAPON_BY_CODE, AMMO_CAP, emptyAmmo, emptyWeapons, gunGate, startReload, spreadFor, afterShot } = require('./weapons');
 
 /* ------------------------------------------------------------------ map */
 
@@ -502,8 +494,13 @@ function startCity(io, room) {
       armor: 0,
       cash: 0,
       weapon: STARTER_ARSENAL ? 'pistol' : 'fists',
-      weapons: { fists: true, bat: STARTER_ARSENAL, pistol: STARTER_ARSENAL, smg: STARTER_ARSENAL, shotgun: STARTER_ARSENAL },
-      ammo: STARTER_ARSENAL ? { pistol: 120, smg: 300, shotgun: 40 } : { pistol: 0, smg: 0, shotgun: 0 },
+      weapons: STARTER_ARSENAL ? { fists: true, bat: true, pistol: true, smg: true, shotgun: true, ar: true, sniper: true } : emptyWeapons(),
+      ammo: STARTER_ARSENAL ? { pistol: 120, smg: 300, shotgun: 48, ar: 240, sniper: 30 } : emptyAmmo(),
+      mag: {},
+      reloadUntil: 0,
+      reloadKey: '',
+      heat: 0,
+      heatAt: 0,
       nextAttackAt: 0,
       attackUntil: 0,
       hurtUntil: 0,
@@ -652,7 +649,7 @@ function addBladder(ps, amount) {
 
 /* ------------------------------------------------------------------ pickups */
 
-const PICKUP_CODE = { cash: 0, pistol: 1, smg: 2, shotgun: 3, health: 4, armor: 5, bat: 6 };
+const PICKUP_CODE = { cash: 0, pistol: 1, smg: 2, shotgun: 3, health: 4, armor: 5, bat: 6, ar: 7, sniper: 8, ammo: 9 };
 
 function dropPickup(sim, type, x, y, value, ttl) {
   if (sim.pickups.length > 70) sim.pickups.shift();
@@ -796,7 +793,7 @@ function damagePlayer(io, room, sim, id, ps, dmg, killer, cause, now) {
     ps.lastHurtBy = idOfPs(sim, killer);
     ps.lastHurtAt = now;
   }
-  fx(io, room, { type: 'hit', x: Math.round(ps.x), y: Math.round(ps.y), dmg: Math.round(dmg), k: 0, playerId: id });
+  fx(io, room, { type: 'hit', x: Math.round(ps.x), y: Math.round(ps.y), dmg: Math.round(dmg), k: 0, playerId: id, by: killer ? idOfPs(sim, killer) : null, from: killer ? [Math.round(killer.x), Math.round(killer.y)] : null });
   if (ps.hp <= 0) {
     killPlayer(io, room, sim, id, ps, killer, cause, now);
     return true;
@@ -823,7 +820,7 @@ function hitTarget(io, room, sim, att, tgt, dmg, cause, now) {
   const ref = tgt.ref;
   const before = tgt.kind === 'npc' ? ref.hp : ref.hp;
   ref.hp = before - dmg;
-  fx(io, room, { type: 'hit', x: Math.round(ref.x), y: Math.round(ref.y), dmg: Math.round(dmg), k: tgt.kind === 'npc' ? 1 : tgt.kind === 'guard' ? 2 : 3 });
+  fx(io, room, { type: 'hit', x: Math.round(ref.x), y: Math.round(ref.y), dmg: Math.round(dmg), k: tgt.kind === 'npc' ? 1 : tgt.kind === 'guard' ? 2 : 3, by: attId });
   if (tgt.kind === 'npc' && ref.state !== 2 && ref.hp > 0) {
     ref.state = 1;
     ref.fleeUntil = now + 6000;
@@ -847,6 +844,7 @@ function attackNow(io, room, id, ps, now, opt) {
     ps.weapon = key;
     w = WEAPONS[key];
   }
+  if (!w.melee && !gunGate(ps, key, now)) return false;
   const world = ps.world;
   const targets = gatherTargets(sim, room, id, world, now);
   let aim = ps.ang;
@@ -888,13 +886,15 @@ function attackNow(io, room, id, ps, now, opt) {
     return true;
   }
 
-  ps.ammo[w.ammoKey] -= 1;
+  const moving = !!(ps.input && (ps.input.dx || ps.input.dy));
+  const spr = spreadFor(ps, w, now, moving);
+  afterShot(ps, key, now);
   const pellets = w.pellets || 1;
   const ends = [];
   const ox = ps.x + Math.cos(aim) * 14;
   const oy = ps.y + Math.sin(aim) * 14;
   for (let i = 0; i < pellets; i++) {
-    const a = aim + (Math.random() - 0.5) * 2 * (w.spread || 0);
+    const a = aim + (Math.random() - 0.5) * 2 * spr;
     const wall = wallDistance(sim, world, ox, oy, a, w.range);
     let best = wall;
     let hit = null;
@@ -1088,9 +1088,9 @@ function completeAct(io, room, sim, id, ps, b, isMission, now) {
   const k = KINDS[b.kind];
   const who = nameOf(room, id);
   if (k.act === 'weapons') {
-    for (const wk of ['pistol', 'smg', 'shotgun']) {
+    for (const wk of ['pistol', 'smg', 'shotgun', 'ar', 'sniper']) {
       ps.weapons[wk] = true;
-      ps.ammo[wk] = Math.min(AMMO_CAP[wk], ps.ammo[wk] + { pistol: 60, smg: 150, shotgun: 20 }[wk]);
+      ps.ammo[wk] = Math.min(AMMO_CAP[wk], ps.ammo[wk] + { pistol: 60, smg: 150, shotgun: 20, ar: 90, sniper: 10 }[wk]);
     }
     ps.weapons.bat = true;
     ps.armor = Math.min(100, ps.armor + 30);
@@ -1752,6 +1752,7 @@ function snapshot(room) {
       if (ps.deadUntil > now) flags |= 2048;
       if (ps.attackUntil > now) flags |= 4096;
       if (ps.hurtUntil > now) flags |= 8192;
+      if (ps.reloadUntil > now) flags |= 32768;
       if (ps.invulnUntil > now) flags |= 16384;
       let keys = 0;
       if (ps.opened.has('A')) keys |= 1;
@@ -1761,12 +1762,13 @@ function snapshot(room) {
       const ammo = w && !w.melee ? ps.ammo[w.ammoKey] : -1;
       const hold = ps.holdNeed ? Math.min(100, Math.round((ps.holdMs / ps.holdNeed) * 100)) : 0;
       let owned = 0;
+      const magNow = w && !w.melee ? Math.min(ps.mag[ps.weapon] === undefined ? Math.min(w.mag, ps.ammo[w.ammoKey]) : ps.mag[ps.weapon], ps.ammo[w.ammoKey]) : -1;
       WEAPON_BY_CODE.forEach((k, code) => {
         const wk = WEAPONS[k];
         if (ps.weapons[k] && (wk.melee || ps.ammo[wk.ammoKey] > 0)) owned |= 1 << code;
       });
-      // 0 idx 1 x 2 y 3 angle*100 4 flags 5 mission 6 cash 7 weapon 8 hp 9 armor 10 bladder 11 world 12 keys 13 wanted 14 ammo 15 kills 16 hold% 17 owned-weapons mask
-      return [ps.idx, Math.round(ps.x), Math.round(ps.y), Math.round(ps.ang * 100), flags, ps.mission, ps.cash, w ? w.code : 0, Math.max(0, Math.round(ps.hp)), Math.round(ps.armor), Math.round(ps.bladder * 10) / 10, ps.world, keys, ps.wanted, ammo, ps.kills, hold, owned];
+      // 0 idx 1 x 2 y 3 angle*100 4 flags 5 mission 6 cash 7 weapon 8 hp 9 armor 10 bladder 11 world 12 keys 13 wanted 14 ammo(total) 15 kills 16 hold% 17 owned-weapons mask 18 magazine
+      return [ps.idx, Math.round(ps.x), Math.round(ps.y), Math.round(ps.ang * 100), flags, ps.mission, ps.cash, w ? w.code : 0, Math.max(0, Math.round(ps.hp)), Math.round(ps.armor), Math.round(ps.bladder * 10) / 10, ps.world, keys, ps.wanted, ammo, ps.kills, hold, owned, magNow];
     }),
     n: sim.npcs.map((n) => [Math.round(n.x), Math.round(n.y), n.d, n.path.length ? 1 : 0, n.state]),
     c: sim.cars.map((c) => [Math.round(c.x), Math.round(c.y), Math.round(c.ang * 100), c.color, c.driver ? sim.players.get(c.driver).idx : -1, Math.round((Math.max(0, c.hp) / CAR_HP) * 100), c.mode === 'wreck' ? 3 : c.mode === 'player' ? 1 : c.mode === 'parked' ? 2 : 0]),
@@ -2046,7 +2048,20 @@ function selectWeapon(room, playerId, code) {
   const key = WEAPON_BY_CODE[Number(code)];
   if (!key || !ps.weapons[key]) return;
   if (WEAPONS[key].ammoKey && ps.ammo[WEAPONS[key].ammoKey] <= 0) return;
+  if (ps.reloadKey && ps.reloadKey !== key) {
+    ps.reloadUntil = 0;
+    ps.reloadKey = '';
+  }
   ps.weapon = key;
+}
+
+// R: reload the gun in your hands
+function reload(room, playerId) {
+  const sim = room.city;
+  if (!sim || room.state !== 'city') return;
+  const ps = sim.players.get(playerId);
+  if (!ps || ps.deadUntil > Date.now() || ps.veh) return;
+  startReload(ps, ps.weapon, Date.now());
 }
 
 function shout(io, room, playerId) {
@@ -2063,4 +2078,4 @@ function stopCity(room) {
   room.city = null;
 }
 
-module.exports = { startCity, initPayload, setInput, attack, use, selectWeapon, shout, finishCity, stopCity, MAP, KINDS, WEAPONS, findPath };
+module.exports = { startCity, initPayload, setInput, attack, use, selectWeapon, reload, shout, finishCity, stopCity, MAP, KINDS, WEAPONS, findPath, collides, nearestWalkable, randomWalkable, wallDistance, segmentClear, CELL, PLAYER_R, BASE_SPEED };

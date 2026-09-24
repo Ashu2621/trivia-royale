@@ -1,6 +1,7 @@
 (function () {
   const SESSION_KEY = 'cityChaosSession';
   const TIER_KEY = 'cityChaosBotTier';
+  const MODE_KEY = 'cityChaosMode';
   const MAX_PLAYERS = 10;
   const QUICK_BOTS = 3;
 
@@ -14,6 +15,18 @@
     nameInput: el('nameInput'),
     avatarPicker: el('avatarPicker'),
     quickBtn: el('quickBtn'),
+    quickRoyaleBtn: el('quickRoyaleBtn'),
+    modeControls: el('modeControls'),
+    modePills: el('modePills'),
+    modeHint: el('modeHint'),
+    brHud: el('brHud'),
+    brAlive: el('brAlive'),
+    brKills: el('brKills'),
+    brZone: el('brZone'),
+    specBanner: el('specBanner'),
+    wastedTitle: el('wastedTitle'),
+    adsBtn: el('adsBtn'),
+    reloadBtn: el('reloadBtn'),
     createBtn: el('createBtn'),
     joinCodeInput: el('joinCodeInput'),
     joinBtn: el('joinBtn'),
@@ -115,8 +128,8 @@
     hallOfFameUnavailable: el('hallOfFameUnavailable'),
   };
 
-  const WEAPON_LABEL = ['🥊 Fists', '🏏 Bat', '🔫 Pistol', '🔫 SMG', '🔫 Shotgun'];
-  const WEAPON_ICON = ['👊', '🏏', '🔫', '🔫', '🔫'];
+  const WEAPON_LABEL = ['🥊 Fists', '🏏 Bat', '🔫 Pistol', '🔫 SMG', '🔫 Shotgun', '🔫 Assault Rifle', '🎯 Sniper'];
+  const WEAPON_ICON = ['👊', '🏏', '🔫', '🔫', '🔫', '🔫', '🎯'];
 
   let mySession = { playerId: null, roomCode: null, name: null, isCreator: false };
   let selectedAvatar = null;
@@ -126,6 +139,10 @@
   let toastTimer = null;
   let countdownTimer = null;
   let quickPending = false;
+  let quickMode = 'city';
+  let quickBotsWanted = 3;
+  let selectedMode = safeGetEarly(MODE_KEY) === 'royale' ? 'royale' : 'city';
+  let matchMode = 'city';
   let wakeLock = null;
   let lbPeriod = 'all';
 
@@ -140,8 +157,11 @@
   let flashCooling = false;
   let lastBladder = 0;
   let lastFace = '';
-  const prev = { dead: false, hp: 100, hurt: false, world: 0, wanted: 0, siren: 0, heart: 0, key: '' };
+  const prev = { dead: false, hp: 100, hurt: false, world: 0, wanted: 0, siren: 0, heart: 0, key: '', storm: 0 };
 
+  function safeGetEarly(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
   function safeGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
   }
@@ -363,7 +383,31 @@
     });
   }
 
+  const MODES = [
+    { key: 'city', label: 'City Chaos', emoji: '🌆', hint: 'Free-roam GTA-style brawl: missions, cars, cops, the haunted mansion and your bladder. Most cash in 8 minutes wins.' },
+    { key: 'royale', label: 'City Royale', emoji: '🪂', hint: 'Battle Royale: parachute in, loot guns, stay inside the shrinking storm circle. Last one standing wins.' },
+  ];
+  function renderModePills() {
+    refs.modePills.innerHTML = '';
+    MODES.forEach((m) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tier-pill' + (m.key === selectedMode ? ' active' : '');
+      btn.innerHTML = `<span class="tier-emoji">${m.emoji}</span><span>${escapeHtml(m.label)}</span>`;
+      btn.onclick = () => {
+        SoundFX.click();
+        selectedMode = m.key;
+        safeSet(MODE_KEY, m.key);
+        renderModePills();
+      };
+      refs.modePills.appendChild(btn);
+    });
+    refs.modeHint.textContent = (MODES.find((m) => m.key === selectedMode) || MODES[0]).hint;
+  }
+
   function renderLobbyControls() {
+    refs.modeControls.classList.toggle('hidden', !amHost());
+    if (amHost()) renderModePills();
     refs.lobbyCode.textContent = mySession.roomCode || '----';
     refs.squadCount.textContent = `${players.length}/${MAX_PLAYERS}`;
     const connectedCount = players.filter((p) => p.connected).length;
@@ -421,7 +465,7 @@
     clearInterval(countdownTimer);
     const offset = serverNow - Date.now();
     if (startsAt - (Date.now() + offset) < 300) return;
-    refs.cdReady.textContent = 'Get ready';
+    refs.cdReady.textContent = matchMode === 'royale' ? 'Get ready to drop' : 'Get ready';
     refs.cdSquad.innerHTML = '';
     refs.countdownOverlay.classList.remove('hidden');
     let shown = null;
@@ -494,6 +538,15 @@
     const board = data.leaderboard;
     const myIndex = board.findIndex((p) => p.playerId === mySession.playerId);
     const won = myIndex === 0;
+    if (data.mode === 'royale') {
+      const st = data.stats && data.stats[mySession.playerId];
+      const place = st ? st.place : myIndex + 1;
+      refs.finalTitle.textContent = place === 1 ? '🏆 WINNER WINNER!' : `#${place} of ${data.total || board.length}`;
+      replayAnimation(refs.finalTitle);
+      refs.finalSub.textContent = st ? `You placed #${place} with ${st.kills} elimination${st.kills === 1 ? '' : 's'} and ${st.damage} damage. ${board[0].name} won the match.` : '';
+      updateFinalControls();
+      return;
+    }
     refs.finalTitle.textContent = won ? '👑 King of the City!' : 'Final Results';
     replayAnimation(refs.finalTitle);
     const st = data.stats && data.stats[mySession.playerId];
@@ -544,8 +597,8 @@
     saveSession();
     applyRoomState(data.roomState);
     if (quickPending && data.isCreator) {
-      const tiers = [selectedTier, 'veteran', 'rookie'];
-      for (let i = 0; i < QUICK_BOTS; i++) socket.emit(EVENTS.BOT_ADD, { difficulty: tiers[i % tiers.length] });
+      const tiers = [selectedTier, 'veteran', 'rookie', 'elite', 'veteran', 'legend', 'rookie', 'elite', 'veteran'];
+      for (let i = 0; i < quickBotsWanted; i++) socket.emit(EVENTS.BOT_ADD, { difficulty: tiers[i % tiers.length] });
     }
   });
 
@@ -562,9 +615,9 @@
 
   socket.on(EVENTS.PLAYER_LIST_UPDATE, ({ players: p }) => {
     players = p;
-    if (quickPending && players.filter((x) => x.isBot).length >= QUICK_BOTS && activeView === 'lobby') {
+    if (quickPending && players.filter((x) => x.isBot).length >= quickBotsWanted && activeView === 'lobby') {
       quickPending = false;
-      socket.emit(EVENTS.GAME_START);
+      socket.emit(EVENTS.GAME_START, { mode: quickMode });
     }
     if (activeView === 'lobby') {
       renderPlayerRows(refs.lobbyPlayers, players, false, true);
@@ -676,6 +729,20 @@
 
   function boardHtml(snap) {
     const total = cityInfo.missions.length;
+    if (matchMode === 'royale') {
+      return snap.p
+        .filter((e) => !(e[4] & 64))
+        .slice()
+        .sort((a, b) => (a[4] & 2048) - (b[4] & 2048) || b[6] - a[6])
+        .slice(0, 5)
+        .map((e) => {
+          const info = cityInfo.players[e[0]];
+          const out = e[4] & 2048;
+          const talk = speakingIds.has(info.playerId) || (e[0] === cityMeIdx && speakingIds.has('__me')) ? ' 🎙️' : '';
+          return `<div class="cb-row${e[0] === cityMeIdx ? ' me' : ''}${out ? ' done' : ''}">${escapeHtml(info.avatar)} ${escapeHtml(info.name.slice(0, 9))}${talk} <b>${out ? '💀' : '❤️' + e[8]}</b> ☠${e[6]}</div>`;
+        })
+        .join('');
+    }
     return snap.p
       .filter((e) => !(e[4] & 64))
       .slice()
@@ -744,17 +811,18 @@
     const hurt = !!(m.flags & 8192);
     const now = Date.now() + cityOffset;
 
+    if (matchMode === 'royale') refs.cityMission.innerHTML = royaleMissionText(m, snap, now);
     // mission text
     const mission = cityInfo.missions[m.mission];
     const wcHint = m.bladder >= 55 && !inMansion ? '<small class="wc-hint">🚽 Desperate? Hold still at a blue public toilet stall on a street corner!</small>' : '';
-    refs.cityMission.innerHTML = mission
+    if (matchMode !== 'royale') refs.cityMission.innerHTML = mission
       ? `MISSION ${m.mission + 1}/${total} · ${mission.icon} ${escapeHtml(mission.name)}<small>${escapeHtml(mission.line)} — hold still in the ring</small>${wcHint}`
       : `🏁 All missions done!<small>Grab cash, fight rivals — most money when the clock stops wins</small>${wcHint}`;
     const keyChips = ['A', 'B', 'C'].map((L, i) => {
       const got = m.keys & (1 << i);
       return `<span class="${got ? 'got' : ''}">${got ? '🔓 ' + L + ' ✓' : '🔑 ' + L.toLowerCase()}</span>`;
     });
-    const keyHtml = `<div>🏚️ Haunted Mansion — find the 🚽 exit!</div><small>Touch each key (+$300) · ghosts add to your bladder · F = flashlight · shout to scare them</small><div class="maze-keys">${keyChips.join('')}</div>`;
+    const keyHtml = matchMode === 'royale' ? '' : `<div>🏚️ Haunted Mansion — find the 🚽 exit!</div><small>Touch each key (+$300) · ghosts add to your bladder · F = flashlight · shout to scare them</small><div class="maze-keys">${keyChips.join('')}</div>`;
     if (keyHtml !== prev.key) {
       prev.key = keyHtml;
       refs.mazeObj.innerHTML = keyHtml;
@@ -768,7 +836,8 @@
     refs.hpFill.parentNode.classList.toggle('low', m.hp < 30 && !dead);
     refs.cashNum.textContent = money(m.cash);
     refs.mcashNum.textContent = money(m.cash);
-    refs.weaponChip.textContent = `${WEAPON_LABEL[m.weapon] || '🥊 Fists'}${m.ammo >= 0 ? ` · ${m.ammo}` : ''}`;
+    refs.weaponChip.textContent = `${WEAPON_LABEL[m.weapon] || '🥊 Fists'}${m.ammo >= 0 ? (m.reloading ? ' · ↻ reloading…' : ` · ${Math.max(0, m.mag)} / ${Math.max(0, m.ammo - Math.max(0, m.mag))}`) : ''}`;
+    refs.reloadBtn.classList.toggle('on', !!m.reloading);
     refs.fireBtn.textContent = WEAPON_ICON[m.weapon] || '👊';
     refs.mazeFireBtn.textContent = WEAPON_ICON[m.weapon] || '👊';
 
@@ -809,17 +878,23 @@
       SoundFX.voice('hurt', 1);
       vibrate([120, 60, 200]);
       Engine.flash('rgba(160,0,20,0.35)');
-      refs.wastedSub.textContent = 'Respawning at the hospital…';
+      refs.wastedTitle.textContent = matchMode === 'royale' ? `#${m.place || '?'} ELIMINATED` : 'WASTED';
+      refs.wastedSub.textContent = matchMode === 'royale' ? 'Spectating the survivors — the match goes on' : 'Respawning at the hospital…';
     }
-    if (!dead && prev.dead) {
+    if (!dead && prev.dead && matchMode !== 'royale') {
       SoundFX.respawn();
     }
     refs.wasted.classList.toggle('hidden', !dead);
+    if (matchMode === 'royale') {
+      const sp = m.spectate >= 0 ? cityInfo.players[m.spectate] : null;
+      refs.specBanner.classList.toggle('hidden', !(dead && sp));
+      if (dead && sp) refs.specBanner.textContent = `👁 Spectating ${sp.avatar} ${sp.name}`;
+    }
     prev.dead = dead;
     prev.hurt = hurt;
     prev.hp = m.hp;
 
-    setBladder(m.bladder || 0);
+    if (matchMode !== 'royale') setBladder(m.bladder || 0);
     const left = snap.endsAt - now;
     refs.cityTimer.textContent = fmtClock(left);
     refs.mazeTimer.textContent = fmtClock(left);
@@ -827,10 +902,44 @@
     const rows = boardHtml(snap);
     refs.cityBoard.innerHTML = rows;
     refs.mazeBoard.innerHTML = rows;
+    if (matchMode === 'royale') updateBrHud(m, snap, now);
+  }
+
+  function royaleMissionText(m, snap, now) {
+    if (now < cityInfo.airUntil) return '🪂 Steer with WASD — pick your landing spot!<small>Loot guns and armor the moment you land</small>';
+    if (m.flags & 2048) return `💀 You placed #${m.place || '?'}<small>Watch the rest of the match</small>`;
+    const armed = m.weapon >= 2;
+    return `🪂 CITY ROYALE — last one standing wins<small>${armed ? 'Stay inside the storm circle and eliminate the others' : 'Find a weapon! Guns are lying on the streets near buildings'}</small>`;
+  }
+
+  function updateBrHud(m, snap, now) {
+    const alive = snap.al == null ? 0 : snap.al;
+    refs.brAlive.textContent = `🧍 ${alive} alive`;
+    refs.brKills.textContent = `☠ ${m.kills}`;
+    const z = snap.z;
+    let txt = '🌀 …';
+    let hot = !!(m.flags & 65536);
+    if (now < cityInfo.airUntil) txt = '🪂 Dropping…';
+    else if (z) {
+      if (now < z[6]) txt = `🌀 Shrinks in ${fmtClock(z[6] - now)}`;
+      else if (now < z[7]) {
+        txt = '🌀 Closing!';
+        hot = true;
+      } else txt = '🌀 Final circle';
+      if (m.flags & 65536) txt = '⚠ IN THE STORM';
+    }
+    refs.brZone.textContent = txt;
+    refs.brZone.classList.toggle('hot', hot);
+    if (z && m.flags & 65536 && now - prev.storm > 1500) {
+      prev.storm = now;
+      SoundFX.zoneWarn();
+    }
   }
 
   function startCityView(payload) {
     cityInfo = payload;
+    matchMode = payload.mode || 'city';
+    document.body.classList.toggle('mode-royale', matchMode === 'royale');
     cityOffset = payload.serverNow - Date.now();
     cityMeIdx = payload.players.findIndex((pl) => pl.playerId === mySession.playerId);
     hideCountdown();
@@ -851,7 +960,7 @@
     showView('city');
     City.start(payload, mySession.playerId);
     // build the mansion in the background so walking in is instant
-    if (ensureMaze()) {
+    if (matchMode !== 'royale' && ensureMaze()) {
       Maze3D.start(
         { ...payload.mansion, players: payload.players, startsAt: payload.startsAt, serverNow: payload.serverNow, snapshot: toMazeSnap(payload.snapshot) },
         mySession.playerId,
@@ -965,6 +1074,7 @@
       }
       case 'hit': {
         if (e.dmg <= 0) break;
+        if (e.by === mySession.playerId) SoundFX.hitmarker();
         const v = distVolume(e.x, e.y, 520, e.k === 0 ? playerWorld(e.playerId) : 0);
         if (v > 0.1) SoundFX.hit(v);
         if (e.k === 0 && e.playerId === mySession.playerId) {
@@ -1010,6 +1120,15 @@
           SoundFX.cash();
           SoundFX.pickup();
         }
+        break;
+      case 'kill':
+        if (e.killer === mySession.playerId) SoundFX.killDing();
+        break;
+      case 'airdrop':
+        SoundFX.pickup();
+        break;
+      case 'zone':
+        SoundFX.zoneWarn();
         break;
       case 'respawn':
         break;
@@ -1059,6 +1178,10 @@
       SoundFX.reload();
       socket.emit(EVENTS.CITY_WEAPON, { code });
     },
+    reload: () => {
+      SoundFX.reload();
+      socket.emit(EVENTS.CITY_RELOAD);
+    },
     gps: updateGps,
     onState: updateHud,
   });
@@ -1085,6 +1208,14 @@
   refs.useBtn.addEventListener('click', () => {
     SoundFX.unlock();
     socket.emit(EVENTS.CITY_USE);
+  });
+  refs.reloadBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    City.reload();
+  });
+  refs.adsBtn.addEventListener('click', () => {
+    SoundFX.unlock();
+    refs.adsBtn.classList.toggle('on', City.toggleAds());
   });
   refs.weaponBtn.addEventListener('click', () => {
     SoundFX.unlock();
@@ -1157,16 +1288,20 @@
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar });
   });
 
-  refs.quickBtn.addEventListener('click', () => {
+  function quickPlay(mode) {
     SoundFX.unlock();
     SoundFX.click();
     const name = requireName();
     if (!name) return;
+    quickMode = mode;
+    quickBotsWanted = mode === 'royale' ? 9 : QUICK_BOTS;
     quickPending = true;
     mySession.name = name;
     mySession.avatar = selectedAvatar;
     socket.emit(EVENTS.ROOM_CREATE, { name, avatar: selectedAvatar });
-  });
+  }
+  refs.quickRoyaleBtn.addEventListener('click', () => quickPlay('royale'));
+  refs.quickBtn.addEventListener('click', () => quickPlay('city'));
 
   refs.joinBtn.addEventListener('click', () => {
     SoundFX.unlock();
@@ -1221,7 +1356,7 @@
   refs.startBtn.addEventListener('click', () => {
     SoundFX.unlock();
     SoundFX.click();
-    socket.emit(EVENTS.GAME_START);
+    socket.emit(EVENTS.GAME_START, { mode: selectedMode });
   });
   refs.playAgainBtn.addEventListener('click', () => {
     SoundFX.click();

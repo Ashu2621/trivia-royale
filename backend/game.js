@@ -2,6 +2,7 @@
 const EVENTS = require('./events');
 const rooms = require('./rooms');
 const city = require('./city');
+const royale = require('./royale');
 
 const { serializePlayers, clearRoomTimers } = rooms;
 
@@ -9,10 +10,12 @@ function emitToRoom(io, room, event, payload) {
   io.to(room.code).emit(event, payload);
 }
 
-function startGame(io, room) {
+function startGame(io, room, mode) {
   if (room.state !== 'lobby') return;
   clearRoomTimers(room);
-  city.startCity(io, room);
+  room.mode = mode === 'royale' ? 'royale' : 'city';
+  if (room.mode === 'royale') royale.startRoyale(io, room);
+  else city.startCity(io, room);
 }
 
 function resetToLobby(io, room) {
@@ -26,6 +29,7 @@ function resetToLobby(io, room) {
     p.score = 0;
   }
   city.stopCity(room);
+  room.mode = null;
   room.state = 'lobby';
   emitToRoom(io, room, EVENTS.GAME_RESET_TO_LOBBY, { players: serializePlayers(room) });
 }
