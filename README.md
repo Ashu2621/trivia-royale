@@ -39,6 +39,10 @@ A co-op mode for the whole team: you are stuck in **haunted halls** and the shar
 - **Real 3D** (Three.js): a moonlit haunted maze with mossy stone walls, flickering torches, gates, glowing keys, floating ghosts, thunder and lightning, and a golden toilet. As the bladder fills everyone hops and the screen sways.
 - A fresh maze every match, generated on the server and checked so every door is a real chokepoint and every key is reachable before its own door. Computer players play as teammates. Code: `backend/maze.js` (simulation), `frontend/maze3d.js` (renderer).
 
+## 🎬 Hot Seat studio in 3D
+
+The Hot Seat / battle-royale match screen (every level a room, every player at a desk, survivors running to the next room while the storm closes) is now a real **3D game-show studio** too: glossy reflective floors, truss spotlights, an LED wall screen per level, a rigged soldier avatar behind each desk, parachute drops at the start, collapse animations for the eliminated and a running-through-the-corridor finale. It falls back to the classic 2D map when WebGL isn't available (or with `?arena2d`). Code: `frontend/arena3d.js`, `frontend/arena2d.js`, `frontend/arena.js` (picks one).
+
 ## More ways to play
 
 - **🤝 Team mode** — the host picks Solo / 2 / 3 / 4 teams in the lobby. Players are dealt onto colour teams (humans first); shirts and table stripes show the team, a live team-score strip sits above the map, and steal/freeze can only target other teams. With 3+ teams the lowest-scoring team is knocked out together at the end of each level; with 2 teams the match is a straight team-vs-team score race.

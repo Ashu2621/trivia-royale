@@ -226,3 +226,4 @@ html[data-theme="hotseat"] .choices.locked .choice:not(.selected):not(.correct) 
   .link-btn { padding: 0 10px; min-height: 36px; }
   .reaction-btn { width: 36px; height: 36px; font-size: 1.05rem; }
 }
+.arena-overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
